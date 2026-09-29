@@ -9,15 +9,35 @@ param(
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 
+# ============================================================
+# MYC PRODUCTION UPDATER
+#
+# Autoridades independientes:
+#
+# - Git HEAD: codigo presente en el worktree.
+# - Deployment state: ultimo commit desplegado exitosamente.
+# - Alembic: estado real del esquema PostgreSQL.
+# - frontend/dist: artefacto real publicado.
+#
+# Un git pull NO equivale a un deployment.
+# ============================================================
+
 $BackendPath = Join-Path $ProjectPath 'backend'
 $FrontendPath = Join-Path $ProjectPath 'frontend'
 
 $Python = Join-Path $ProjectPath 'venv\Scripts\python.exe'
 $Requirements = Join-Path $ProjectPath 'requirements.txt'
 
+$FrontendPackageJson = Join-Path $FrontendPath 'package.json'
+$FrontendPackageLock = Join-Path $FrontendPath 'package-lock.json'
+$FrontendNodeModules = Join-Path $FrontendPath 'node_modules'
+
 $FrontendDist = Join-Path $FrontendPath 'dist'
 $FrontendNextDist = Join-Path $FrontendPath 'dist.__next'
 $FrontendPreviousDist = Join-Path $FrontendPath 'dist.__previous'
+
+$StateRoot = 'C:\MYC\state'
+$DeploymentStatePath = Join-Path $StateRoot 'production-deployment.json'
 
 $BackendService = 'MYCBackend'
 $FrontendService = 'MYCFrontend'
@@ -30,13 +50,36 @@ $LocalFrontendHealth = 'http://127.0.0.1:5173'
 $PublicBackendHealth = 'https://api-erp.mycmetrology.com.mx/api/health'
 $PublicFrontendHealth = 'https://erp.mycmetrology.com.mx/'
 
+$ExpectedPublicApiHost = 'api-erp.mycmetrology.com.mx'
+
 function Write-Step {
-    param([string]$Title)
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Title
+    )
 
     Write-Host ''
     Write-Host '========================================'
     Write-Host $Title
     Write-Host '========================================'
+}
+
+function Write-Ok {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message
+    )
+
+    Write-Host "OK  $Message"
+}
+
+function Write-Warn {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message
+    )
+
+    Write-Host "WARN  $Message" -ForegroundColor Yellow
 }
 
 function Invoke-External {
@@ -59,7 +102,12 @@ function Invoke-External {
         & $Executable @Arguments
 
         if ($LASTEXITCODE -ne 0) {
-            throw "Comando fallo con codigo $LASTEXITCODE`: $Executable $($Arguments -join ' ')"
+            throw (
+                "Comando fallo con codigo {0}: {1} {2}" -f
+                $LASTEXITCODE,
+                $Executable,
+                ($Arguments -join ' ')
+            )
         }
     }
     finally {
@@ -82,85 +130,27 @@ function Get-GitOutput {
     return $Output
 }
 
-function Wait-ServiceState {
+function Test-GitCommitExists {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Name,
-
-        [Parameter(Mandatory = $true)]
-        [ValidateSet('Running', 'Stopped')]
-        [string]$ExpectedStatus,
-
-        [int]$TimeoutSeconds = 30
+        [string]$Commit
     )
 
-    $Deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-
-    do {
-        $Service = Get-Service -Name $Name -ErrorAction Stop
-
-        if ($Service.Status.ToString() -eq $ExpectedStatus) {
-            return
-        }
-
-        Start-Sleep -Seconds 1
-    }
-    while ((Get-Date) -lt $Deadline)
-
-    throw "El servicio '$Name' no alcanzo el estado '$ExpectedStatus' dentro de $TimeoutSeconds segundos."
+    & git cat-file -e "$Commit^{commit}" 2>$null
+    return ($LASTEXITCODE -eq 0)
 }
 
-function Assert-ServiceRunning {
+function Test-GitAncestor {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Name
-    )
+        [string]$Ancestor,
 
-    $Service = Get-Service -Name $Name -ErrorAction Stop
-
-    if ($Service.Status -ne 'Running') {
-        throw "El servicio '$Name' no esta Running. Estado: $($Service.Status)"
-    }
-
-    Write-Host "$Name -> Running"
-}
-
-function Wait-HttpSuccess {
-    param(
         [Parameter(Mandatory = $true)]
-        [string]$Url,
-
-        [int]$Attempts = 15,
-
-        [int]$DelaySeconds = 2
+        [string]$Descendant
     )
 
-    $LastError = $null
-
-    for ($Attempt = 1; $Attempt -le $Attempts; $Attempt++) {
-        try {
-            $Response = Invoke-WebRequest `
-                -Uri $Url `
-                -UseBasicParsing `
-                -TimeoutSec 10
-
-            if ($Response.StatusCode -ge 200 -and $Response.StatusCode -lt 400) {
-                Write-Host "OK $Url -> HTTP $($Response.StatusCode)"
-                return
-            }
-
-            $LastError = "HTTP $($Response.StatusCode)"
-        }
-        catch {
-            $LastError = $_.Exception.Message
-        }
-
-        if ($Attempt -lt $Attempts) {
-            Start-Sleep -Seconds $DelaySeconds
-        }
-    }
-
-    throw "Health check fallo para '$Url'. Ultimo error: $LastError"
+    & git merge-base --is-ancestor $Ancestor $Descendant 2>$null
+    return ($LASTEXITCODE -eq 0)
 }
 
 function Get-ChangedFilesBetween {
@@ -201,7 +191,13 @@ function Test-AnyPathChanged {
 
     foreach ($File in $ChangedFiles) {
         foreach ($Prefix in $Prefixes) {
-            if ($File -eq $Prefix -or $File.StartsWith($Prefix)) {
+            if (
+                $File -eq $Prefix -or
+                $File.StartsWith(
+                    $Prefix,
+                    [System.StringComparison]::OrdinalIgnoreCase
+                )
+            ) {
                 return $true
             }
         }
@@ -210,315 +206,427 @@ function Test-AnyPathChanged {
     return $false
 }
 
-function Test-FileChangedBetween {
+function Test-ExactPathChanged {
     param(
-        [Parameter(Mandatory = $true)]
-        [string]$OldCommit,
-
-        [Parameter(Mandatory = $true)]
-        [string]$NewCommit,
+        [AllowEmptyCollection()]
+        [string[]]$ChangedFiles = @(),
 
         [Parameter(Mandatory = $true)]
         [string[]]$Paths
     )
 
-    if ($OldCommit -eq $NewCommit) {
-        return $false
-    }
-
-    $ChangedFiles = @(
-        Get-GitOutput -Arguments @(
-            'diff',
-            '--name-only',
-            $OldCommit,
-            $NewCommit
-        )
-    )
-
-    foreach ($Path in $Paths) {
-        if ($ChangedFiles -contains $Path) {
-            return $true
+    foreach ($File in $ChangedFiles) {
+        foreach ($Path in $Paths) {
+            if ($File -eq $Path) {
+                return $true
+            }
         }
     }
 
     return $false
 }
 
-function Test-AlembicAtHead {
+function Read-DeploymentState {
+    if (-not (Test-Path $DeploymentStatePath)) {
+        return $null
+    }
+
+    try {
+        $Raw = Get-Content `
+            -Path $DeploymentStatePath `
+            -Raw `
+            -Encoding UTF8
+
+        if ([string]::IsNullOrWhiteSpace($Raw)) {
+            throw 'El archivo esta vacio.'
+        }
+
+        $State = $Raw | ConvertFrom-Json
+
+        if (
+            -not $State.deployed_commit -or
+            [string]::IsNullOrWhiteSpace(
+                [string]$State.deployed_commit
+            )
+        ) {
+            throw 'deployed_commit no existe.'
+        }
+
+        return $State
+    }
+    catch {
+        throw (
+            "El deployment state es invalido: {0}. {1}" -f
+            $DeploymentStatePath,
+            $_.Exception.Message
+        )
+    }
+}
+
+function Write-DeploymentState {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Commit,
+
+        [string[]]$AlembicHeads = @()
+    )
+
+    if (-not (Test-Path $StateRoot)) {
+        New-Item `
+            -ItemType Directory `
+            -Path $StateRoot `
+            -Force |
+            Out-Null
+    }
+
+    $State = [ordered]@{
+        schema_version = 1
+        deployed_commit = $Commit
+        deployed_at = (
+            Get-Date
+        ).ToUniversalTime().ToString('o')
+        alembic_heads = @($AlembicHeads)
+        frontend_build_mode = 'tunnel'
+        frontend_api_host = $ExpectedPublicApiHost
+    }
+
+    $Json = $State | ConvertTo-Json -Depth 5
+
+    $TempPath = Join-Path `
+        $StateRoot `
+        ("production-deployment.{0}.tmp" -f [Guid]::NewGuid())
+
+    $BackupPath = Join-Path `
+        $StateRoot `
+        'production-deployment.previous.json'
+
+    $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+    try {
+        [System.IO.File]::WriteAllText(
+            $TempPath,
+            $Json,
+            $Utf8NoBom
+        )
+
+        if (Test-Path $DeploymentStatePath) {
+            [System.IO.File]::Replace(
+                $TempPath,
+                $DeploymentStatePath,
+                $BackupPath,
+                $true
+            )
+
+            if (Test-Path $BackupPath) {
+                Remove-Item `
+                    -Path $BackupPath `
+                    -Force
+            }
+        }
+        else {
+            Move-Item `
+                -Path $TempPath `
+                -Destination $DeploymentStatePath `
+                -Force
+        }
+    }
+    finally {
+        if (Test-Path $TempPath) {
+            Remove-Item `
+                -Path $TempPath `
+                -Force
+        }
+    }
+
+    Write-Ok "deployment state actualizado: $Commit"
+}
+
+function Get-AlembicRevisions {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('current', 'heads')]
+        [string]$Command
+    )
+
     Push-Location $BackendPath
 
     try {
-        $CurrentOutput = @(& $Python -m alembic current 2>&1)
-
-        if ($LASTEXITCODE -ne 0) {
-            throw 'alembic current fallo.'
-        }
-
-        $HeadsOutput = @(& $Python -m alembic heads 2>&1)
-
-        if ($LASTEXITCODE -ne 0) {
-            throw 'alembic heads fallo.'
-        }
-
-        Write-Host ''
-        Write-Host 'Alembic current:'
-        $CurrentOutput | ForEach-Object { Write-Host $_ }
-
-        Write-Host ''
-        Write-Host 'Alembic heads:'
-        $HeadsOutput | ForEach-Object { Write-Host $_ }
-
-        $CurrentRevisions = @(
-            $CurrentOutput |
-                ForEach-Object {
-                    if ($_ -match '^([0-9a-f]+)\s') {
-                        $Matches[1]
-                    }
-                } |
-                Where-Object { $_ } |
-                Sort-Object -Unique
+        $Output = @(
+            & $Python -m alembic $Command 2>&1
         )
 
-        $HeadRevisions = @(
-            $HeadsOutput |
-                ForEach-Object {
-                    if ($_ -match '^([0-9a-f]+)\s') {
-                        $Matches[1]
-                    }
-                } |
-                Where-Object { $_ } |
-                Sort-Object -Unique
-        )
-
-        if ($HeadRevisions.Count -eq 0) {
-            throw 'No se pudo determinar el head de Alembic.'
-        }
-
-        if ($CurrentRevisions.Count -ne $HeadRevisions.Count) {
-            throw 'Alembic no quedo alineado con head.'
-        }
-
-        foreach ($HeadRevision in $HeadRevisions) {
-            if ($CurrentRevisions -notcontains $HeadRevision) {
-                throw "Alembic current no contiene head $HeadRevision."
+        if ($LASTEXITCODE -ne 0) {
+            $Output | ForEach-Object {
+                Write-Host $_
             }
+
+            throw "alembic $Command fallo."
         }
 
-        Write-Host 'Alembic esta alineado con head.'
+        $Revisions = @(
+            $Output |
+                ForEach-Object {
+                    $Line = [string]$_
+
+                    if (
+                        $Line -match '^\s*([0-9a-fA-F]+)(?:\s|\(|$)'
+                    ) {
+                        $Matches[1].ToLowerInvariant()
+                    }
+                } |
+                Where-Object { $_ } |
+                Sort-Object -Unique
+        )
+
+        return [pscustomobject]@{
+            Output = $Output
+            Revisions = $Revisions
+        }
     }
     finally {
         Pop-Location
     }
 }
 
-Write-Step 'MYC SYSTEM - ACTUALIZACION PRODUCCION'
+function Test-AlembicAligned {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Current,
 
-try {
-    # --------------------------------------------------
-    # 1. PREFLIGHT
-    # --------------------------------------------------
-
-    Write-Step '[1/12] Preflight'
-
-    if (-not (Test-Path $ProjectPath)) {
-        throw "No existe el repositorio: $ProjectPath"
-    }
-
-    if (-not (Test-Path $Python)) {
-        throw "No existe Python del venv: $Python"
-    }
-
-    if (-not (Test-Path $Requirements)) {
-        throw "No existe requirements.txt raiz: $Requirements"
-    }
-
-    Set-Location $ProjectPath
-
-    $Branch = (
-        Get-GitOutput -Arguments @('branch', '--show-current')
-    ).Trim()
-
-    if ($Branch -ne 'main') {
-        throw "Produccion debe actualizarse desde main. Branch actual: $Branch"
-    }
-
-    $Dirty = @(
-        Get-GitOutput -Arguments @('status', '--porcelain')
+        [Parameter(Mandatory = $true)]
+        $Heads
     )
 
-    if ($Dirty.Count -gt 0) {
-        Write-Host ''
-        Write-Host 'Cambios locales detectados:'
-        $Dirty | ForEach-Object { Write-Host $_ }
-
-        throw 'El worktree no esta limpio. No se actualizara produccion.'
+    if ($Heads.Revisions.Count -eq 0) {
+        throw 'No se pudo determinar Alembic heads.'
     }
 
-    $OldHead = (
-        Get-GitOutput -Arguments @('rev-parse', 'HEAD')
-    ).Trim()
-
-    Write-Host 'Branch: main'
-    Write-Host "HEAD actual: $OldHead"
-
-    # --------------------------------------------------
-    # 2. FETCH + FAST-FORWARD
-    # --------------------------------------------------
-
-    Write-Step '[2/12] Sincronizando Git'
-
-    Invoke-External `
-        -Executable 'git' `
-        -Arguments @('fetch', 'origin', '--prune') `
-        -WorkingDirectory $ProjectPath
-
-    $OriginMain = (
-        Get-GitOutput -Arguments @('rev-parse', 'origin/main')
-    ).Trim()
-
-    Write-Host "origin/main: $OriginMain"
-
-    & git merge-base --is-ancestor HEAD origin/main
-
-    if ($LASTEXITCODE -ne 0) {
-        throw 'HEAD local no es ancestro de origin/main. Se requiere revision manual.'
+    if (
+        $Current.Revisions.Count -ne
+        $Heads.Revisions.Count
+    ) {
+        return $false
     }
 
-    Invoke-External `
-        -Executable 'git' `
-        -Arguments @('pull', '--ff-only', 'origin', 'main') `
-        -WorkingDirectory $ProjectPath
+    foreach ($Head in $Heads.Revisions) {
+        if ($Current.Revisions -notcontains $Head) {
+            return $false
+        }
+    }
 
-    $NewHead = (
-        Get-GitOutput -Arguments @('rev-parse', 'HEAD')
-    ).Trim()
+    return $true
+}
 
-    Write-Host "HEAD nuevo: $NewHead"
+function Sync-AlembicToHead {
+    Write-Host 'Consultando estado real de Alembic...'
 
-    $ChangedFiles = @(
-        Get-ChangedFilesBetween `
-            -OldCommit $OldHead `
-            -NewCommit $NewHead
-    )
-
-    $BackendChanged = Test-AnyPathChanged `
-        -ChangedFiles $ChangedFiles `
-        -Prefixes @(
-            'backend/',
-            'requirements.txt'
-        )
-
-    $FrontendChanged = Test-AnyPathChanged `
-        -ChangedFiles $ChangedFiles `
-        -Prefixes @(
-            'frontend/'
-        )
-
-    $BrokerChanged = Test-AnyPathChanged `
-        -ChangedFiles $ChangedFiles `
-        -Prefixes @(
-            'deploy/windows/developer-broker/'
-        )
+    $Current = Get-AlembicRevisions -Command 'current'
+    $Heads = Get-AlembicRevisions -Command 'heads'
 
     Write-Host ''
-    Write-Host 'Alcance detectado:'
-    Write-Host "Backend          : $BackendChanged"
-    Write-Host "Frontend         : $FrontendChanged"
-    Write-Host "Developer Broker : $BrokerChanged"
+    Write-Host 'Alembic current:'
 
-    # --------------------------------------------------
-    # 3. DEPENDENCIAS BACKEND
-    # --------------------------------------------------
-
-    Write-Step '[3/12] Dependencias backend'
-
-    $RequirementsChanged = Test-FileChangedBetween `
-        -OldCommit $OldHead `
-        -NewCommit $NewHead `
-        -Paths @('requirements.txt')
-
-    if (-not $BackendChanged) {
-        Write-Host 'Sin cambios backend. Se omite sincronizacion de dependencias.'
+    $Current.Output | ForEach-Object {
+        Write-Host $_
     }
-    elseif ($RequirementsChanged) {
-        Write-Host 'requirements.txt cambio. Instalando dependencias...'
+
+    Write-Host ''
+    Write-Host 'Alembic heads:'
+
+    $Heads.Output | ForEach-Object {
+        Write-Host $_
+    }
+
+    $WasMigrated = $false
+
+    if (
+        -not (
+            Test-AlembicAligned `
+                -Current $Current `
+                -Heads $Heads
+        )
+    ) {
+        Write-Warn (
+            'Alembic no esta en head. ' +
+            'Ejecutando upgrade head...'
+        )
 
         Invoke-External `
             -Executable $Python `
             -Arguments @(
                 '-m',
-                'pip',
-                'install',
-                '-r',
-                $Requirements
+                'alembic',
+                'upgrade',
+                'head'
             ) `
-            -WorkingDirectory $ProjectPath
-    }
-    else {
-        Write-Host 'Backend cambio, pero requirements.txt no. Se conserva el venv actual.'
-    }
-
-    # --------------------------------------------------
-    # 4. ALEMBIC
-    # --------------------------------------------------
-
-    Write-Step '[4/12] Migraciones Alembic'
-
-    if ($BackendChanged) {
-        Invoke-External `
-            -Executable $Python `
-            -Arguments @('-m', 'alembic', 'upgrade', 'head') `
             -WorkingDirectory $BackendPath
 
-        Test-AlembicAtHead
-    }
-    else {
-        Write-Host 'Sin cambios backend. Alembic omitido.'
-    }
+        $WasMigrated = $true
 
-    # --------------------------------------------------
-    # 5. DEPENDENCIAS FRONTEND
-    # --------------------------------------------------
+        $Current = Get-AlembicRevisions -Command 'current'
+        $Heads = Get-AlembicRevisions -Command 'heads'
 
-    Write-Step '[5/12] Dependencias frontend'
-
-    $FrontendDepsChanged = Test-FileChangedBetween `
-        -OldCommit $OldHead `
-        -NewCommit $NewHead `
-        -Paths @(
-            'frontend/package.json',
-            'frontend/package-lock.json'
-        )
-
-    if (-not $FrontendChanged) {
-        Write-Host 'Sin cambios frontend. Dependencias frontend omitidas.'
-    }
-    elseif ($FrontendDepsChanged) {
-        Write-Host 'Dependencias frontend cambiaron. Ejecutando npm ci...'
-
-        Invoke-External `
-            -Executable 'npm.cmd' `
-            -Arguments @('ci') `
-            -WorkingDirectory $FrontendPath
-    }
-    else {
-        Write-Host 'Frontend cambio, pero dependencias no.'
+        if (
+            -not (
+                Test-AlembicAligned `
+                    -Current $Current `
+                    -Heads $Heads
+            )
+        ) {
+            throw (
+                'Alembic sigue desalineado despues de ' +
+                'upgrade head.'
+            )
+        }
     }
 
-    # --------------------------------------------------
-    # 6. BUILD FRONTEND STAGING
-    # --------------------------------------------------
+    Write-Ok 'Alembic alineado con head.'
 
-    Write-Step '[6/12] Build frontend'
-
-    if (-not $FrontendChanged) {
-        Write-Host 'Sin cambios frontend. Build omitido.'
+    return [pscustomobject]@{
+        Migrated = $WasMigrated
+        Current = @($Current.Revisions)
+        Heads = @($Heads.Revisions)
     }
-    else {
-        if (Test-Path $FrontendNextDist) {
-            Remove-Item $FrontendNextDist -Recurse -Force
+}
+
+function Get-FrontendTextFiles {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DistPath
+    )
+
+    if (-not (Test-Path $DistPath)) {
+        return @()
+    }
+
+    return @(
+        Get-ChildItem `
+            -Path $DistPath `
+            -Recurse `
+            -File `
+            -ErrorAction Stop |
+            Where-Object {
+                $_.Extension -in @(
+                    '.js',
+                    '.mjs',
+                    '.cjs',
+                    '.html',
+                    '.css',
+                    '.json',
+                    '.map'
+                )
+            }
+    )
+}
+
+function Test-FrontendBundle {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DistPath,
+
+        [switch]$ThrowOnFailure
+    )
+
+    if (-not (Test-Path $DistPath)) {
+        if ($ThrowOnFailure) {
+            throw "No existe frontend dist: $DistPath"
         }
 
+        return $false
+    }
+
+    $Files = Get-FrontendTextFiles `
+        -DistPath $DistPath
+
+    if ($Files.Count -eq 0) {
+        if ($ThrowOnFailure) {
+            throw (
+                'El build frontend no contiene assets de ' +
+                'texto verificables.'
+            )
+        }
+
+        return $false
+    }
+
+    $ForbiddenPatterns = @(
+        '127\.0\.0\.1:8000',
+        'localhost:8000'
+    )
+
+    foreach ($File in $Files) {
+        $Content = Get-Content `
+            -Path $File.FullName `
+            -Raw `
+            -ErrorAction Stop
+
+        foreach ($Pattern in $ForbiddenPatterns) {
+            if ($Content -match $Pattern) {
+                if ($ThrowOnFailure) {
+                    throw (
+                        'El bundle frontend contiene una API ' +
+                        'localhost y no es apto para produccion. ' +
+                        "Archivo: $($File.FullName)"
+                    )
+                }
+
+                return $false
+            }
+        }
+    }
+
+    $ExpectedPattern = [regex]::Escape(
+        $ExpectedPublicApiHost
+    )
+
+    $PublicApiFound = $false
+
+    foreach ($File in $Files) {
+        $Content = Get-Content `
+            -Path $File.FullName `
+            -Raw `
+            -ErrorAction Stop
+
+        if ($Content -match $ExpectedPattern) {
+            $PublicApiFound = $true
+            break
+        }
+    }
+
+    if (-not $PublicApiFound) {
+        if ($ThrowOnFailure) {
+            throw (
+                'El bundle frontend no contiene la API publica ' +
+                "esperada: $ExpectedPublicApiHost"
+            )
+        }
+
+        return $false
+    }
+
+    return $true
+}
+
+function Build-FrontendProduction {
+    Write-Host (
+        'Construyendo frontend en modo tunnel/produccion...'
+    )
+
+    if (Test-Path $FrontendNextDist) {
+        Remove-Item `
+            -Path $FrontendNextDist `
+            -Recurse `
+            -Force
+    }
+
+    if (Test-Path $FrontendPreviousDist) {
+        Remove-Item `
+            -Path $FrontendPreviousDist `
+            -Recurse `
+            -Force
+    }
+
+    try {
         Invoke-External `
             -Executable 'npm.cmd' `
             -Arguments @(
@@ -532,273 +640,798 @@ try {
             -WorkingDirectory $FrontendPath
 
         if (-not (Test-Path $FrontendNextDist)) {
-            throw "El build termino pero no existe $FrontendNextDist."
+            throw (
+                'npm run build:tunnel termino sin crear ' +
+                'dist.__next.'
+            )
         }
 
-        $IndexPath = Join-Path $FrontendNextDist 'index.html'
+        $null = Test-FrontendBundle `
+            -DistPath $FrontendNextDist `
+            -ThrowOnFailure
 
-        if (-not (Test-Path $IndexPath)) {
-            throw 'Build invalido: no existe index.html.'
+        Write-Ok (
+            'bundle frontend candidato validado: ' +
+            'API publica correcta y sin localhost.'
+        )
+
+        if (Test-Path $FrontendDist) {
+            Move-Item `
+                -Path $FrontendDist `
+                -Destination $FrontendPreviousDist
         }
-    }
-
-    # --------------------------------------------------
-    # 7. VALIDAR BUILD
-    # --------------------------------------------------
-
-    Write-Step '[7/12] Validando build frontend'
-
-    if (-not $FrontendChanged) {
-        Write-Host 'Sin cambios frontend. Validacion de build omitida.'
-    }
-    else {
-
-    $InvalidReferences = Get-ChildItem $FrontendNextDist -Recurse -File |
-        Select-String `
-            -Pattern '127\.0\.0\.1:8000|localhost:8000' `
-            -ErrorAction SilentlyContinue
-
-    if ($InvalidReferences) {
-        throw 'BUILD INVALIDO: contiene referencias a localhost:8000.'
-    }
-
-    $PublicApiReference = Get-ChildItem $FrontendNextDist -Recurse -File |
-        Select-String `
-            -Pattern 'api-erp\.mycmetrology\.com\.mx' `
-            -ErrorAction SilentlyContinue
-
-    if (-not $PublicApiReference) {
-        throw 'BUILD INVALIDO: no se encontro api-erp.mycmetrology.com.mx.'
-    }
-
-        Write-Host 'Build de produccion validado.'
-    }
-
-    # --------------------------------------------------
-    # 8. PUBLICAR FRONTEND
-    # --------------------------------------------------
-
-    Write-Step '[8/12] Publicando frontend'
-
-    if (-not $FrontendChanged) {
-        Write-Host 'Sin cambios frontend. Publicacion y reinicio omitidos.'
-    }
-    else {
-        Stop-Service -Name $FrontendService -Force
-    Wait-ServiceState `
-        -Name $FrontendService `
-        -ExpectedStatus 'Stopped'
-
-    if (Test-Path $FrontendPreviousDist) {
-        Remove-Item $FrontendPreviousDist -Recurse -Force
-    }
-
-    if (Test-Path $FrontendDist) {
-        Move-Item `
-            -Path $FrontendDist `
-            -Destination $FrontendPreviousDist
-    }
-
-    try {
-        Move-Item `
-            -Path $FrontendNextDist `
-            -Destination $FrontendDist
-
-        Start-Service -Name $FrontendService
-
-        Wait-ServiceState `
-            -Name $FrontendService `
-            -ExpectedStatus 'Running'
-
-        Wait-HttpSuccess -Url $LocalFrontendHealth
-    }
-    catch {
-        Write-Host ''
-        Write-Host 'Fallo la publicacion del frontend. Intentando rollback...'
 
         try {
-            Stop-Service `
-                -Name $FrontendService `
-                -Force `
-                -ErrorAction SilentlyContinue
-
-            if (Test-Path $FrontendDist) {
-                Remove-Item $FrontendDist -Recurse -Force
-            }
-
-            if (Test-Path $FrontendPreviousDist) {
+            Move-Item `
+                -Path $FrontendNextDist `
+                -Destination $FrontendDist
+        }
+        catch {
+            if (
+                -not (Test-Path $FrontendDist) -and
+                (Test-Path $FrontendPreviousDist)
+            ) {
                 Move-Item `
                     -Path $FrontendPreviousDist `
                     -Destination $FrontendDist
             }
 
-            Start-Service -Name $FrontendService
-
-            Wait-ServiceState `
-                -Name $FrontendService `
-                -ExpectedStatus 'Running'
+            throw
         }
-        catch {
-            Write-Host 'ADVERTENCIA: el rollback del frontend tambien fallo.'
+
+        Write-Ok (
+            'nuevo frontend publicado en dist; ' +
+            'rollback temporal preservado.'
+        )
+    }
+    catch {
+        if (Test-Path $FrontendNextDist) {
+            Remove-Item `
+                -Path $FrontendNextDist `
+                -Recurse `
+                -Force
         }
 
         throw
     }
+}
 
-        if (Test-Path $FrontendPreviousDist) {
-            Remove-Item $FrontendPreviousDist -Recurse -Force
+function Test-ServiceInstalled {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    return (
+        $null -ne (
+            Get-Service `
+                -Name $Name `
+                -ErrorAction SilentlyContinue
+        )
+    )
+}
+
+function Wait-ServiceState {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Running', 'Stopped')]
+        [string]$ExpectedStatus,
+
+        [int]$TimeoutSeconds = 30
+    )
+
+    $Deadline = (
+        Get-Date
+    ).AddSeconds($TimeoutSeconds)
+
+    do {
+        $Service = Get-Service `
+            -Name $Name `
+            -ErrorAction Stop
+
+        if (
+            $Service.Status.ToString() -eq
+            $ExpectedStatus
+        ) {
+            return
+        }
+
+        Start-Sleep -Seconds 1
+    }
+    while ((Get-Date) -lt $Deadline)
+
+    throw (
+        "El servicio '$Name' no alcanzo '$ExpectedStatus' " +
+        "en $TimeoutSeconds segundos."
+    )
+}
+
+function Restart-MYCService {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    if (-not (Test-ServiceInstalled -Name $Name)) {
+        throw "El servicio '$Name' no esta instalado."
+    }
+
+    Write-Host "Reiniciando $Name..."
+
+    Restart-Service `
+        -Name $Name `
+        -Force `
+        -ErrorAction Stop
+
+    Wait-ServiceState `
+        -Name $Name `
+        -ExpectedStatus 'Running'
+
+    Write-Ok "$Name -> Running"
+}
+
+function Assert-ServiceRunning {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    $Service = Get-Service `
+        -Name $Name `
+        -ErrorAction Stop
+
+    if ($Service.Status -ne 'Running') {
+        throw (
+            "El servicio '$Name' no esta Running. " +
+            "Estado: $($Service.Status)"
+        )
+    }
+
+    Write-Ok "$Name -> Running"
+}
+
+function Wait-HttpSuccess {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Url,
+
+        [int]$Attempts = 15,
+
+        [int]$DelaySeconds = 2
+    )
+
+    $LastError = $null
+
+    for (
+        $Attempt = 1;
+        $Attempt -le $Attempts;
+        $Attempt++
+    ) {
+        try {
+            $Response = Invoke-WebRequest `
+                -Uri $Url `
+                -UseBasicParsing `
+                -TimeoutSec 10
+
+            if (
+                $Response.StatusCode -ge 200 -and
+                $Response.StatusCode -lt 400
+            ) {
+                Write-Ok (
+                    "$Url -> HTTP $($Response.StatusCode)"
+                )
+                return
+            }
+
+            $LastError = (
+                "HTTP $($Response.StatusCode)"
+            )
+        }
+        catch {
+            $LastError = $_.Exception.Message
+        }
+
+        if ($Attempt -lt $Attempts) {
+            Start-Sleep -Seconds $DelaySeconds
         }
     }
 
-    # --------------------------------------------------
-    # 9. REINICIAR BACKEND
-    # --------------------------------------------------
+    throw (
+        "Health check fallo para '$Url'. " +
+        "Ultimo error: $LastError"
+    )
+}
+
+Write-Step 'MYC SYSTEM - ACTUALIZACION PRODUCCION'
+
+try {
+    Write-Step '[1/12] Preflight'
+
+    if (-not (Test-Path $ProjectPath)) {
+        throw "No existe el repositorio: $ProjectPath"
+    }
+
+    if (-not (Test-Path $BackendPath)) {
+        throw "No existe backend: $BackendPath"
+    }
+
+    if (-not (Test-Path $FrontendPath)) {
+        throw "No existe frontend: $FrontendPath"
+    }
+
+    if (-not (Test-Path $Python)) {
+        throw "No existe Python del venv: $Python"
+    }
+
+    if (-not (Test-Path $FrontendPackageJson)) {
+        throw (
+            'No existe frontend/package.json: ' +
+            $FrontendPackageJson
+        )
+    }
+
+    Set-Location $ProjectPath
+
+    $Branch = (
+        Get-GitOutput -Arguments @(
+            'branch',
+            '--show-current'
+        )
+    ).Trim()
+
+    if ($Branch -ne 'main') {
+        throw (
+            'Produccion debe actualizarse desde main. ' +
+            "Branch actual: $Branch"
+        )
+    }
+
+    $Dirty = @(
+        Get-GitOutput -Arguments @(
+            'status',
+            '--porcelain'
+        )
+    )
+
+    if ($Dirty.Count -gt 0) {
+        Write-Host ''
+        Write-Host 'Cambios locales detectados:'
+
+        $Dirty | ForEach-Object {
+            Write-Host $_
+        }
+
+        throw (
+            'El worktree no esta limpio. ' +
+            'No se actualizara produccion.'
+        )
+    }
+
+    $HeadBeforeFetch = (
+        Get-GitOutput -Arguments @(
+            'rev-parse',
+            'HEAD'
+        )
+    ).Trim()
+
+    Write-Host 'Branch: main'
+    Write-Host "HEAD actual: $HeadBeforeFetch"
+
+    $DeploymentState = Read-DeploymentState
+    $Bootstrap = ($null -eq $DeploymentState)
+
+    if ($Bootstrap) {
+        Write-Warn (
+            'No existe deployment state. ' +
+            'Se ejecutara bootstrap/reconciliacion.'
+        )
+
+        $LastDeployedCommit = $null
+    }
+    else {
+        $LastDeployedCommit = (
+            [string]$DeploymentState.deployed_commit
+        ).Trim()
+
+        Write-Host (
+            'Ultimo commit desplegado: ' +
+            $LastDeployedCommit
+        )
+    }
+
+    Write-Step '[2/12] Sincronizando Git'
+
+    Invoke-External `
+        -Executable 'git' `
+        -Arguments @(
+            'fetch',
+            'origin',
+            '--prune'
+        ) `
+        -WorkingDirectory $ProjectPath
+
+    $OriginMain = (
+        Get-GitOutput -Arguments @(
+            'rev-parse',
+            'origin/main'
+        )
+    ).Trim()
+
+    Write-Host "origin/main: $OriginMain"
+
+    & git merge-base --is-ancestor HEAD origin/main
+
+    if ($LASTEXITCODE -ne 0) {
+        throw (
+            'HEAD local no es ancestro de origin/main. ' +
+            'Se requiere revision manual.'
+        )
+    }
+
+    Invoke-External `
+        -Executable 'git' `
+        -Arguments @(
+            'pull',
+            '--ff-only',
+            'origin',
+            'main'
+        ) `
+        -WorkingDirectory $ProjectPath
+
+    $NewHead = (
+        Get-GitOutput -Arguments @(
+            'rev-parse',
+            'HEAD'
+        )
+    ).Trim()
+
+    Write-Host "HEAD nuevo: $NewHead"
+
+    $ChangedFiles = @()
+
+    if (-not $Bootstrap) {
+        if (
+            -not (
+                Test-GitCommitExists `
+                    -Commit $LastDeployedCommit
+            )
+        ) {
+            throw (
+                'El deployed_commit registrado no existe en ' +
+                "el repositorio local: $LastDeployedCommit"
+            )
+        }
+
+        if (
+            -not (
+                Test-GitAncestor `
+                    -Ancestor $LastDeployedCommit `
+                    -Descendant $NewHead
+            )
+        ) {
+            throw (
+                'El deployed_commit no es ancestro del HEAD ' +
+                'actual. Se requiere revision manual.'
+            )
+        }
+
+        $ChangedFiles = @(
+            Get-ChangedFilesBetween `
+                -OldCommit $LastDeployedCommit `
+                -NewCommit $NewHead
+        )
+    }
+
+    $BackendChanged = (
+        $Bootstrap -or
+        (
+            Test-AnyPathChanged `
+                -ChangedFiles $ChangedFiles `
+                -Prefixes @(
+                    'backend/',
+                    'requirements.txt'
+                )
+        )
+    )
+
+    $FrontendChanged = (
+        $Bootstrap -or
+        (
+            Test-AnyPathChanged `
+                -ChangedFiles $ChangedFiles `
+                -Prefixes @(
+                    'frontend/'
+                )
+        )
+    )
+
+    $DeveloperBrokerChanged = (
+        $Bootstrap -or
+        (
+            Test-AnyPathChanged `
+                -ChangedFiles $ChangedFiles `
+                -Prefixes @(
+                    'backend/app/developer_broker/',
+                    'deploy/windows/'
+                )
+        )
+    )
+
+    $BackendRequirementsChanged = (
+        -not $Bootstrap -and
+        (
+            Test-ExactPathChanged `
+                -ChangedFiles $ChangedFiles `
+                -Paths @(
+                    'requirements.txt'
+                )
+        )
+    )
+
+    $FrontendDependenciesChanged = (
+        -not $Bootstrap -and
+        (
+            Test-ExactPathChanged `
+                -ChangedFiles $ChangedFiles `
+                -Paths @(
+                    'frontend/package.json',
+                    'frontend/package-lock.json'
+                )
+        )
+    )
+
+    Write-Host ''
+    Write-Host 'Alcance desde ultimo deployment:'
+    Write-Host "Bootstrap        : $Bootstrap"
+    Write-Host "Backend          : $BackendChanged"
+    Write-Host "Frontend         : $FrontendChanged"
+    Write-Host "Developer Broker : $DeveloperBrokerChanged"
+
+    if (
+        -not $Bootstrap -and
+        $ChangedFiles.Count -eq 0
+    ) {
+        Write-Host (
+            'Git no tiene cambios pendientes desde ' +
+            'el ultimo deployment.'
+        )
+    }
+
+    Write-Step '[3/12] Dependencias backend'
+
+    if ($BackendRequirementsChanged) {
+        if (-not (Test-Path $Requirements)) {
+            throw (
+                'requirements.txt cambio pero no existe: ' +
+                $Requirements
+            )
+        }
+
+        Invoke-External `
+            -Executable $Python `
+            -Arguments @(
+                '-m',
+                'pip',
+                'install',
+                '-r',
+                $Requirements
+            ) `
+            -WorkingDirectory $ProjectPath
+    }
+    else {
+        Write-Host (
+            'requirements.txt sin cambios. ' +
+            'No se reinstalan dependencias backend.'
+        )
+    }
+
+    Invoke-External `
+        -Executable $Python `
+        -Arguments @(
+            '-m',
+            'pip',
+            'check'
+        ) `
+        -WorkingDirectory $ProjectPath
+
+    Write-Step '[4/12] Migraciones Alembic'
+
+    $AlembicResult = Sync-AlembicToHead
+
+    $BackendNeedsRestart = (
+        $BackendChanged -or
+        $AlembicResult.Migrated
+    )
+
+    Write-Step '[5/12] Dependencias frontend'
+
+    $NeedFrontendDependencies = $false
+
+    if (-not (Test-Path $FrontendNodeModules)) {
+        $NeedFrontendDependencies = $true
+    }
+
+    if ($FrontendDependenciesChanged) {
+        $NeedFrontendDependencies = $true
+    }
+
+    if ($NeedFrontendDependencies) {
+        if (Test-Path $FrontendPackageLock) {
+            Invoke-External `
+                -Executable 'npm.cmd' `
+                -Arguments @(
+                    'ci'
+                ) `
+                -WorkingDirectory $FrontendPath
+        }
+        else {
+            Invoke-External `
+                -Executable 'npm.cmd' `
+                -Arguments @(
+                    'install'
+                ) `
+                -WorkingDirectory $FrontendPath
+        }
+    }
+    else {
+        Write-Host (
+            'Dependencias frontend sin cambios y ' +
+            'node_modules disponible.'
+        )
+    }
+
+    Write-Step '[6/12] Evaluando build frontend'
+
+    $ExistingFrontendValid = (
+        Test-FrontendBundle `
+            -DistPath $FrontendDist
+    )
+
+    if ($ExistingFrontendValid) {
+        Write-Ok (
+            'dist actual usa API publica y no contiene localhost.'
+        )
+    }
+    else {
+        Write-Warn (
+            'dist inexistente o invalido. ' +
+            'Se forzara build:tunnel.'
+        )
+    }
+
+    $FrontendNeedsBuild = (
+        $FrontendChanged -or
+        -not $ExistingFrontendValid
+    )
+
+    Write-Host (
+        "Frontend requiere build: $FrontendNeedsBuild"
+    )
+
+    Write-Step '[7/12] Build y validacion frontend'
+
+    if ($FrontendNeedsBuild) {
+        Build-FrontendProduction
+    }
+    else {
+        $null = Test-FrontendBundle `
+            -DistPath $FrontendDist `
+            -ThrowOnFailure
+
+        Write-Host (
+            'Build existente valido; no se reconstruye.'
+        )
+    }
+
+    Write-Step '[8/12] Publicando frontend'
+
+    if ($FrontendNeedsBuild) {
+        Restart-MYCService `
+            -Name $FrontendService
+    }
+    else {
+        Write-Host (
+            'Frontend no requirio build; reinicio omitido.'
+        )
+    }
 
     Write-Step '[9/12] Reiniciando backend'
 
-    if ($BackendChanged) {
-        Restart-Service -Name $BackendService -Force
-
-        Wait-ServiceState `
-            -Name $BackendService `
-            -ExpectedStatus 'Running'
-
-        Wait-HttpSuccess -Url $LocalBackendHealth
+    if ($BackendNeedsRestart) {
+        Restart-MYCService `
+            -Name $BackendService
     }
     else {
-        Write-Host 'Sin cambios backend. Reinicio omitido.'
+        Write-Host (
+            'Backend sin cambios ni migraciones; ' +
+            'reinicio omitido.'
+        )
     }
-
-    # --------------------------------------------------
-    # 10. DEVELOPER BROKER
-    # --------------------------------------------------
 
     Write-Step '[10/12] Developer Broker'
 
-    $BrokerService = Get-Service `
-        -Name $DeveloperBrokerService `
-        -ErrorAction SilentlyContinue
-
-    if ($BrokerService -and $BrokerChanged) {
-        Write-Host 'MYCDeveloperBroker esta instalado y cambio su deployment. Reiniciando...'
-
-        Restart-Service -Name $DeveloperBrokerService -Force
-
-        Wait-ServiceState `
-            -Name $DeveloperBrokerService `
-            -ExpectedStatus 'Running'
-
-        $BrokerTest = Join-Path `
-            $ProjectPath `
-            'deploy\windows\developer-broker\Test-MYCDeveloperBroker.ps1'
-
-        if (Test-Path $BrokerTest) {
-            Write-Host 'Ejecutando validacion read-only del Developer Broker...'
-
-            & powershell.exe `
-                -NoProfile `
-                -ExecutionPolicy Bypass `
-                -File $BrokerTest `
-                -RepoRoot $ProjectPath
-
-            if ($LASTEXITCODE -ne 0) {
-                throw 'La validacion de MYCDeveloperBroker fallo.'
-            }
+    if (
+        Test-ServiceInstalled `
+            -Name $DeveloperBrokerService
+    ) {
+        if ($DeveloperBrokerChanged) {
+            Restart-MYCService `
+                -Name $DeveloperBrokerService
+        }
+        else {
+            Assert-ServiceRunning `
+                -Name $DeveloperBrokerService
         }
     }
-    elseif ($BrokerService) {
-        Write-Host 'MYCDeveloperBroker esta instalado, pero no cambio. Reinicio omitido.'
-    }
     else {
-        Write-Host 'MYCDeveloperBroker no esta instalado. No se instala automaticamente.'
+        Write-Host (
+            'MYCDeveloperBroker no esta instalado. ' +
+            'No se instala automaticamente.'
+        )
     }
-
-    # --------------------------------------------------
-    # 11. INFRA + HEALTH PUBLICO
-    # --------------------------------------------------
 
     Write-Step '[11/12] Validacion infraestructura'
 
-    Assert-ServiceRunning -Name $BackendService
-    Assert-ServiceRunning -Name $FrontendService
-    Assert-ServiceRunning -Name $CloudflaredService
-    Assert-ServiceRunning -Name $WireGuardService
+    Assert-ServiceRunning `
+        -Name $BackendService
+
+    Assert-ServiceRunning `
+        -Name $FrontendService
+
+    Assert-ServiceRunning `
+        -Name $CloudflaredService
+
+    Assert-ServiceRunning `
+        -Name $WireGuardService
+
+    Write-Host ''
+    Write-Host 'Health checks locales...'
+
+    Wait-HttpSuccess `
+        -Url $LocalBackendHealth
+
+    Wait-HttpSuccess `
+        -Url $LocalFrontendHealth
 
     Write-Host ''
     Write-Host 'Health checks publicos...'
 
-    Wait-HttpSuccess -Url $PublicBackendHealth
-    Wait-HttpSuccess -Url $PublicFrontendHealth
+    Wait-HttpSuccess `
+        -Url $PublicBackendHealth
 
-    # --------------------------------------------------
-    # 12. VALIDACION FINAL
-    # --------------------------------------------------
+    Wait-HttpSuccess `
+        -Url $PublicFrontendHealth
 
     Write-Step '[12/12] Validacion final'
 
-    Invoke-External `
-        -Executable 'git' `
-        -Arguments @('fetch', 'origin', '--prune') `
-        -WorkingDirectory $ProjectPath
+    $FinalCurrent = Get-AlembicRevisions `
+        -Command 'current'
 
-    $FinalHead = (
-        Get-GitOutput -Arguments @('rev-parse', 'HEAD')
-    ).Trim()
+    $FinalHeads = Get-AlembicRevisions `
+        -Command 'heads'
 
-    $FinalOrigin = (
-        Get-GitOutput -Arguments @('rev-parse', 'origin/main')
-    ).Trim()
-
-    if ($FinalHead -ne $FinalOrigin) {
-        throw 'La actualizacion termino pero HEAD != origin/main.'
+    if (
+        -not (
+            Test-AlembicAligned `
+                -Current $FinalCurrent `
+                -Heads $FinalHeads
+        )
+    ) {
+        throw (
+            'Alembic dejo de estar alineado antes ' +
+            'de cerrar el deployment.'
+        )
     }
 
-    $FinalDirty = @(
-        Get-GitOutput -Arguments @('status', '--porcelain')
-    )
+    $null = Test-FrontendBundle `
+        -DistPath $FrontendDist `
+        -ThrowOnFailure
 
-    if ($FinalDirty.Count -gt 0) {
-        Write-Host ''
-        Write-Host 'ADVERTENCIA: el worktree termino con cambios locales:'
-        $FinalDirty | ForEach-Object { Write-Host $_ }
+    Write-DeploymentState `
+        -Commit $NewHead `
+        -AlembicHeads $FinalHeads.Revisions
+
+    if (Test-Path $FrontendPreviousDist) {
+        try {
+            Remove-Item `
+                -Path $FrontendPreviousDist `
+                -Recurse `
+                -Force
+
+            Write-Ok (
+                'rollback temporal del frontend eliminado.'
+            )
+        }
+        catch {
+            Write-Warn (
+                'El deployment termino correctamente, pero ' +
+                'no se pudo eliminar dist.__previous. ' +
+                $_.Exception.Message
+            )
+        }
     }
 
-    Write-Host ''
-    Write-Host '========================================'
-    Write-Host '        ACTUALIZACION COMPLETADA'
-    Write-Host '========================================'
-    Write-Host ''
-    Write-Host "Commit anterior : $OldHead"
-    Write-Host "Commit actual   : $FinalHead"
-    Write-Host ''
-    Write-Host 'Backend          : Running'
-    Write-Host 'Frontend         : Running'
-    Write-Host 'Cloudflared      : Running'
-    Write-Host 'WireGuard        : Running'
+    Write-Step 'ACTUALIZACION COMPLETADA'
 
-    if ($BrokerService) {
-        Write-Host 'DeveloperBroker  : Running'
+    Write-Host ''
+
+    if ($Bootstrap) {
+        Write-Host (
+            'Deployment previo : bootstrap / desconocido'
+        )
     }
     else {
-        Write-Host 'DeveloperBroker  : No instalado'
+        Write-Host (
+            "Deployment previo : $LastDeployedCommit"
+        )
+    }
+
+    Write-Host "Commit actual     : $NewHead"
+
+    Write-Host (
+        'Alembic           : ' +
+        ($FinalHeads.Revisions -join ', ')
+    )
+
+    Write-Host 'Frontend mode     : tunnel'
+
+    Write-Host (
+        "Frontend API      : $ExpectedPublicApiHost"
+    )
+
+    Write-Host ''
+    Write-Host "$BackendService -> Running"
+    Write-Host "$FrontendService -> Running"
+    Write-Host "$CloudflaredService -> Running"
+    Write-Host "$WireGuardService -> Running"
+
+    if (
+        Test-ServiceInstalled `
+            -Name $DeveloperBrokerService
+    ) {
+        Write-Host (
+            "$DeveloperBrokerService -> Running"
+        )
+    }
+    else {
+        Write-Host (
+            "$DeveloperBrokerService -> No instalado"
+        )
     }
 
     Write-Host ''
     Write-Host 'API publica      : OK'
     Write-Host 'Frontend publico : OK'
     Write-Host ''
+    Write-Host (
+        "Deployment state : $DeploymentStatePath"
+    )
 
     exit 0
 }
 catch {
     Write-Host ''
-    Write-Host '========================================'
-    Write-Host '          ERROR EN ACTUALIZACION'
-    Write-Host '========================================'
-    Write-Host ''
-    Write-Host $_.Exception.Message
+    Write-Step 'ERROR EN ACTUALIZACION'
+
+    Write-Host `
+        $_.Exception.Message `
+        -ForegroundColor Red
+
     Write-Host ''
     Write-Host 'La actualizacion fue detenida.'
+    Write-Host (
+        'El deployment state NO fue avanzado.'
+    )
+
     Write-Host ''
+    Write-Host (
+        'Si el repositorio ya fue actualizado, la siguiente ' +
+        'ejecucion retomara el deployment desde el ultimo ' +
+        'commit registrado como desplegado.'
+    )
+
     exit 1
 }
