@@ -9085,3 +9085,32 @@ textarea {
   overflow-wrap: anywhere;
   white-space: normal;
 }
+/* Ejecución técnica MYC Mobile (vista administrativa READ-ONLY del ETS). */
+.ets-mobile-execution-modal { max-width: min(1100px, 96vw); }
+.ets-mobile-execution { display: grid; gap: 12px; }
+.ets-mobile-execution__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ets-mobile-execution__header > div:first-child { display: grid; gap: 2px; }
+.ets-mobile-readonly { display: grid; gap: 12px; }
+.ets-mobile-readonly__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px 16px;
+  margin: 0;
+}
+.ets-mobile-readonly__grid dt { font-size: 0.78rem; opacity: 0.7; }
+.ets-mobile-readonly__grid dd { margin: 0; white-space: pre-wrap; }
+.ets-mobile-readonly__table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.ets-mobile-readonly__table th,
+.ets-mobile-readonly__table td { padding: 4px 8px; border-bottom: 1px solid rgba(127, 127, 127, 0.25); text-align: left; }
+.ets-mobile-readonly__revisions { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.ets-mobile-readonly__revisions li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.ets-mobile-capture__state { font-weight: 700; letter-spacing: 0.04em; }
+.ets-mobile-capture__state.is-ready { color: #1a7f37; }
+.ets-mobile-capture__state.is-blocked { color: #b42318; }
+.ets-mobile-capture__blockers { display: grid; gap: 4px; margin: 0; padding-left: 18px; }

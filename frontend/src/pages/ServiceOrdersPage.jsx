@@ -113,6 +113,8 @@ import {
 import FieldSheetLayout from '../components/field-sheets/FieldSheetLayout.jsx';
 import ServiceOrderSignatureMorph from '../components/signatures/ServiceOrderSignatureMorph.jsx';
 import EtsBillingTab from '../components/ets-billing/EtsBillingTab.jsx';
+import { EtsMobileExecutionDialog } from '../components/ets-mobile/EtsMobileExecutionPanel.jsx';
+import EtsMobileCapturePanel from '../components/ets-mobile/EtsMobileCapturePanel.jsx';
 import '../components/service-order-exceptions.css';
 
 function safeNumber(value) {
@@ -326,6 +328,8 @@ function ServiceOrdersPage({ user = null }) {
   // Proyección de la ejecución técnica LAB (bridge ETS ↔ raíz LAB); sólo se
   // consulta para ETS de calibración MYC Mobile y nunca permite editarlo aquí.
   const [mobileLabLink, setMobileLabLink] = useState({ status: 'none', link: null });
+  const [mobileLinkVersion, setMobileLinkVersion] = useState(0);
+  const [isMobileExecutionOpen, setIsMobileExecutionOpen] = useState(false);
   const mobileLinkOrderId = selectedOrder?.calibration_flow_managed_by_mobile ? selectedOrder.id : null;
 
   useEffect(() => {
@@ -343,7 +347,7 @@ function ServiceOrdersPage({ user = null }) {
         if (active) setMobileLabLink({ status: 'error', link: null });
       });
     return () => { active = false; };
-  }, [mobileLinkOrderId]);
+  }, [mobileLinkOrderId, mobileLinkVersion]);
 
   const {
     hasSale: selectedOrderHasSale,
@@ -3337,6 +3341,9 @@ function closeTechnicalSubEts() {
                           {describeMobileExecution(mobileLabLink).detail ? (
                             <small>{describeMobileExecution(mobileLabLink).detail}</small>
                           ) : null}
+                          <button className="table-button" onClick={() => setIsMobileExecutionOpen(true)} type="button">
+                            {mobileLabLink.status === 'linked' ? 'Abrir ejecución técnica' : 'Vincular servicio MYC Mobile'}
+                          </button>
                         </article>
                       ) : (
                         <button
@@ -3864,7 +3871,11 @@ function closeTechnicalSubEts() {
               </section>
             ) : null}
 
-            {activeTab === 'capture' ? (
+            {activeTab === 'capture' && selectedOrderManagedByMobile ? (
+              <EtsMobileCapturePanel serviceOrderFolio={selectedOrder.folio} serviceOrderId={selectedOrder.id} />
+            ) : null}
+
+            {activeTab === 'capture' && !selectedOrderManagedByMobile ? (
               <section className="quotation-section">
                 <div className="quotation-section__title">
                   <div>
@@ -4013,6 +4024,7 @@ function closeTechnicalSubEts() {
                     <article className="glass-card-mini">
                       <strong>Ejecución técnica MYC Mobile</strong>
                       <span>La OT, las hojas de campo y las firmas técnicas viven en MYC Mobile.</span>
+                      <button className="table-button" onClick={() => setIsMobileExecutionOpen(true)} type="button">Abrir</button>
                     </article>
                   ) : (
                     <>
@@ -5066,6 +5078,16 @@ function closeTechnicalSubEts() {
             ) : null}
           </section>
         </div>
+      ) : null}
+
+      {isMobileExecutionOpen && selectedOrder && selectedOrderManagedByMobile ? (
+        <EtsMobileExecutionDialog
+          onClose={() => setIsMobileExecutionOpen(false)}
+          onLinkChanged={() => setMobileLinkVersion((version) => version + 1)}
+          serviceOrderFolio={selectedOrder.folio}
+          serviceOrderId={selectedOrder.id}
+          user={user}
+        />
       ) : null}
 
       {isWorkOrdersModalOpen && selectedOrder && (

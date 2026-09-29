@@ -1205,6 +1205,66 @@ export async function getServiceOrderLabLink(serviceOrderId) {
   return request(`/service-orders/${serviceOrderId}/lab-link`);
 }
 
+// Vínculo ETS ↔ servicio MYC Mobile: ServiceOrderLabLink es la única autoridad.
+export async function searchServiceOrderLabCandidates(serviceOrderId, q = '') {
+  return request(`/service-orders/${serviceOrderId}/lab-candidates${buildQuery({ q, limit: 20 })}`);
+}
+
+export async function linkServiceOrderLab(serviceOrderId, workOrderId) {
+  return request(`/service-orders/${serviceOrderId}/lab-link`, {
+    method: 'POST',
+    body: JSON.stringify({ work_order_id: workOrderId }),
+  });
+}
+
+export async function replaceServiceOrderLab(serviceOrderId, workOrderId, reason) {
+  return request(`/service-orders/${serviceOrderId}/lab-link/replace`, {
+    method: 'POST',
+    body: JSON.stringify({ work_order_id: workOrderId, reason }),
+  });
+}
+
+export async function unlinkServiceOrderLab(serviceOrderId, reason) {
+  return request(`/service-orders/${serviceOrderId}/lab-link/unlink`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
+// Proyección READ-ONLY de la ejecución técnica MYC Mobile (sin escritura técnica ERP).
+export async function getServiceOrderMobileExecution(serviceOrderId) {
+  return request(`/service-orders/${serviceOrderId}/mobile-execution`);
+}
+
+export async function getServiceOrderMobileFieldSheet(serviceOrderId, equipmentId) {
+  return request(`/service-orders/${serviceOrderId}/mobile-execution/equipment/${equipmentId}/field-sheet`);
+}
+
+export async function downloadServiceOrderMobileFieldSheetPdf(serviceOrderId, fieldSheetId) {
+  return downloadRequest(`/service-orders/${serviceOrderId}/mobile-execution/field-sheets/${fieldSheetId}/pdf`);
+}
+
+// Acciones administrativas: el ERP gobierna, MYC Mobile corrige.
+export async function requestServiceOrderMobileCorrection(serviceOrderId, equipmentId, payload) {
+  return request(`/service-orders/${serviceOrderId}/mobile-execution/equipment/${equipmentId}/request-correction`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function cancelServiceOrderMobileWorkOrder(serviceOrderId, workOrderId, reason) {
+  return request(`/service-orders/${serviceOrderId}/mobile-execution/work-orders/${workOrderId}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export async function restoreServiceOrderMobileWorkOrder(serviceOrderId, workOrderId) {
+  return request(`/service-orders/${serviceOrderId}/mobile-execution/work-orders/${workOrderId}/restore`, {
+    method: 'POST',
+  });
+}
+
 export function getWorkOrderPdfUrl(serviceOrderId) {
   return `${API_URL}/service-orders/${serviceOrderId}/work-order-pdf`;
 }
