@@ -184,6 +184,41 @@ def test_candidates_search_by_quotation_ets_folio_and_client(ctx, term, expected
     assert [row["service_order_id"] for row in rows] == [ctx["orders"]["mobile_2"]]
 
 
+def test_many_newer_mixed_ets_do_not_hide_a_valid_candidate(ctx):
+    """The calibration-only filter lives in SQL: LIMIT is exact, no over-fetch."""
+    with ctx["factory"]() as db:
+        client = db.scalar(select(Client).where(Client.commercial_name == "MetroInd"))
+        user = db.get(User, ctx["commercial"])
+        valid = _ets(db, client, user, "LOTE-VALIDO-0001").id
+        # Created afterwards => ordered first (created_at/id desc), 5 > 4 × limit(1).
+        # They pass every structural filter except calibration-only: NULL number,
+        # no ServiceWorkOrder, accepted quotation, but a non-calibration item.
+        for index in range(5):
+            mixed = _ets(db, client, user, f"LOTE-MIXTO-{index:04d}", ("calibration", "general_service"))
+            mixed = db.get(ServiceOrder, mixed.id)
+            mixed.work_order_number = None
+            for work_order in list(mixed.work_orders):
+                db.delete(work_order)
+        db.commit()
+    response = ctx["http"].get(
+        f"{BASE}/erp-calibration-candidates", params={"q": "lote-", "limit": 1}, headers=ctx["headers"],
+    )
+    assert response.status_code == 200, response.text
+    assert [row["service_order_id"] for row in response.json()] == [valid]
+
+
+def test_inactive_non_calibration_item_keeps_ets_as_candidate(ctx):
+    with ctx["factory"]() as db:
+        order = db.get(ServiceOrder, ctx["orders"]["mixed"])
+        for item in order.items:
+            if item.operational_category != "calibration":
+                item.is_active = False
+        db.commit()
+    rows = ctx["http"].get(f"{BASE}/erp-calibration-candidates", params={"q": "0003"}, headers=ctx["headers"]).json()
+    # Still has productive OT (created as mixed), so it is NOT a Mobile ETS.
+    assert rows == []
+
+
 def test_candidates_require_two_characters_bounded_limit_and_literal_wildcards(ctx):
     short = ctx["http"].get(f"{BASE}/erp-calibration-candidates", params={"q": "c"}, headers=ctx["headers"])
     assert short.status_code == 422

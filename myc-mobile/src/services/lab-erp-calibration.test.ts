@@ -6,6 +6,7 @@ import {
   buildErpCandidateQuery,
   canAttachErpLink,
   describeErpCandidate,
+  erpClientMismatchWarning,
   shouldSearchErpCandidates,
   withErpLink,
   type ErpCalibrationCandidate,
@@ -80,4 +81,16 @@ test('los 409 estructurados del vínculo conservan mensaje y code', async () => 
   } as Response);
   assert.equal(detail.code, 'SERVICE_ORDER_ALREADY_LINKED_TO_LAB');
   assert.equal(detail.message, 'El ETS ya está vinculado a otra OT MYC Mobile.');
+});
+
+test('advertencia no bloqueante cuando el cliente LAB difiere del cliente ERP', () => {
+  assert.equal(erpClientMismatchWarning('MetroInd', null), null);
+  assert.equal(erpClientMismatchWarning('', candidate), null);
+  // Mayúsculas, acentos y espacios no son discrepancia.
+  assert.equal(erpClientMismatchWarning('  metroind ', candidate), null);
+  assert.equal(erpClientMismatchWarning('Métroínd', candidate), null);
+  const warning = erpClientMismatchWarning('Otra Empresa SA', candidate);
+  assert.match(warning ?? '', /Otra Empresa SA/);
+  assert.match(warning ?? '', /MetroInd/);
+  assert.match(warning ?? '', /no se cambiará automáticamente/);
 });

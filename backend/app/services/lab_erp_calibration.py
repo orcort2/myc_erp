@@ -12,14 +12,14 @@ own root, a group links only its root and additional OT inherit it through
 """
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.client import Client
 from app.models.lab_work_order import LabWorkOrder
 from app.models.quotation import Quotation
-from app.models.service_order import ServiceOrder
+from app.models.service_order import ServiceOrder, ServiceOrderItem, ServiceWorkOrder
 from app.models.service_order_lab_link import ServiceOrderLabLink
 from app.models.user import User
 from app.schemas.lab_work_order import (
@@ -58,7 +58,16 @@ def _client_name(client: Client | None) -> str:
 
 
 def _eligible_query():
-    """Structural candidate filter; calibration-only is checked on the loaded items."""
+    """Candidates resolved entirely in SQL, mirroring the technical-flow policy.
+
+    Calibration-only = at least one active item and no active item whose
+    operational_category is not ``calibration`` (NULL counts as not calibration).
+    Filtering in SQL keeps the LIMIT exact: mixed ETS never hide valid ones.
+    """
+    active_items = select(ServiceOrderItem.id).where(
+        ServiceOrderItem.service_order_id == ServiceOrder.id,
+        ServiceOrderItem.is_active.is_(True),
+    )
     return (
         select(ServiceOrder)
         .join(Quotation, Quotation.id == ServiceOrder.quotation_id)
@@ -68,6 +77,14 @@ def _eligible_query():
             ServiceOrder.work_order_number.is_(None),
             Quotation.is_active.is_(True),
             Quotation.status == "accepted",
+            exists(active_items),
+            ~exists(active_items.where(or_(
+                ServiceOrderItem.operational_category.is_(None),
+                ServiceOrderItem.operational_category != CALIBRATION_CATEGORY,
+            ))),
+            ~exists(select(ServiceWorkOrder.id).where(
+                ServiceWorkOrder.service_order_id == ServiceOrder.id,
+            )),
         )
         .options(
             selectinload(ServiceOrder.items),
@@ -103,13 +120,13 @@ def search_erp_calibration_candidates(
             )
         )
         .order_by(ServiceOrder.created_at.desc(), ServiceOrder.id.desc())
-        # Mixed ETS are discarded after loading items; over-fetch a bounded page.
-        .limit(limit * 4)
+        .limit(limit)
     )
+    # The SQL filter is authoritative; the policy check is a consistency guard.
     orders = [
         order for order in db.scalars(query).unique()
         if is_mobile_calibration_service_order(order)
-    ][:limit]
+    ]
     if not orders:
         return []
     active_links = {

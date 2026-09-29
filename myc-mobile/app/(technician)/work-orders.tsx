@@ -1717,7 +1717,7 @@ export default function WorkOrdersScreen() {
                         Asocia esta OT a un ETS de calibración con cotización aceptada. Es independiente de
                         {' '}“Orden de compra / cotización”. Sólo se define al crear; los cambios posteriores son administrativos en el ERP.
                       </Text>
-                      <ErpCalibrationLinkField onChange={setErpLink} request={request} selection={erpLink} />
+                      <ErpCalibrationLinkField labClientName={general.client_name} onChange={setErpLink} request={request} selection={erpLink} />
                     </FormSection>
                   )}
                   {groupMode === 'request' ? (

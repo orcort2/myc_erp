@@ -6,6 +6,7 @@ import { colors, radius, spacing } from '@/src/design/tokens';
 import {
   buildErpCandidateQuery,
   describeErpCandidate,
+  erpClientMismatchWarning,
   ERP_CANDIDATE_DEBOUNCE_MS,
   ERP_CANDIDATES_PATH,
   shouldSearchErpCandidates,
@@ -18,6 +19,8 @@ type Props = {
   request: Request;
   selection: ErpCalibrationCandidate | null;
   onChange(selection: ErpCalibrationCandidate | null): void;
+  /** client_name actual del formulario LAB; sólo se compara para advertir. */
+  labClientName: string;
 };
 
 /**
@@ -26,7 +29,7 @@ type Props = {
  * de crear la OT. No sustituye ni toca "Orden de compra / cotización"
  * (texto documental); la selección sólo viaja como `service_order_id`.
  */
-export function ErpCalibrationLinkField({ request, selection, onChange }: Props) {
+export function ErpCalibrationLinkField({ request, selection, onChange, labClientName }: Props) {
   const [term, setTerm] = useState('');
   const [results, setResults] = useState<ErpCalibrationCandidate[]>([]);
   const [resultsTerm, setResultsTerm] = useState('');
@@ -61,11 +64,13 @@ export function ErpCalibrationLinkField({ request, selection, onChange }: Props)
 
   if (selection) {
     const summary = describeErpCandidate(selection);
+    const warning = erpClientMismatchWarning(labClientName, selection);
     return (
       <View style={styles.selected}>
         <Text style={styles.selectedTitle}>{summary.quotation}</Text>
         <Text style={styles.meta}>{summary.serviceOrder}</Text>
-        <Text style={styles.meta}>{summary.client}</Text>
+        <Text style={styles.clientLine}>Cliente ERP: {summary.client}</Text>
+        {warning ? <AlertBanner tone="warning">{warning}</AlertBanner> : null}
         <Pressable
           accessibilityLabel="Quitar vínculo ERP"
           accessibilityRole="button"
@@ -139,6 +144,7 @@ const styles = StyleSheet.create({
   meta: { color: '#637280', fontSize: 12 },
   selected: { backgroundColor: '#eaf3fa', borderColor: '#7aa9cf', borderRadius: 10, borderWidth: 1, gap: 4, marginBottom: 16, padding: 11 },
   selectedTitle: { color: '#142b3a', fontWeight: '800' },
+  clientLine: { color: '#142b3a', fontSize: 13, fontWeight: '700' },
   clearAction: { alignSelf: 'flex-start', justifyContent: 'center', minHeight: 44 },
   clearText: { color: '#0067a8', fontWeight: '700' },
 });

@@ -10,6 +10,10 @@
 
 ## ETS ↔ LAB Fase 2 — calibración ejecutada en MYC Mobile (2026-09-29)
 
+- Cierre de auditoría sobre `b375fb6`: Resumen web Mobile sin métricas ni accesos ERP
+  a equipos/hojas y guard de navegación; capacidades web sólo con partidas activas;
+  candidatos Mobile filtrados por calibración exclusiva en SQL (LIMIT exacto);
+  advertencia no bloqueante de cliente ERP ≠ cliente LAB en Mobile.
 - Preflight: worktree limpio, `feat/mobile-calibration-authority-2026` = origin =
   `8b6da02` (contiene `39ed4bc` y `3a7648b`), divergencia con `origin/main` 0/0.
   Sin rama/worktree nuevos, push, merge ni deploy.

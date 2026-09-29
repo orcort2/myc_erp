@@ -40,7 +40,10 @@ limpiable antes de crear). Viaja como `service_order_id` sólo en esas dos creac
 nunca en la solicitud externa de grupo ni en el PATCH de una OT existente (422 por
 `extra="forbid"`). “Orden de compra / cotización” (`purchase_order`) sigue siendo texto
 documental. Sin selección, la creación es la legacy exacta. Con selección, creación y
-vínculo a la raíz son una sola transacción. Contrato:
+vínculo a la raíz son una sola transacción. Se muestra el cliente ERP del ETS elegido y,
+si difiere del `client_name` de la OT, una advertencia no bloqueante; nunca se sobrescribe
+`client_name` ni se relaciona `LabClient` con el cliente ERP (validación fuerte en la fase
+de ingestión documental). Contrato:
 [ETS_LAB_TECHNICAL_BRIDGE.md](ETS_LAB_TECHNICAL_BRIDGE.md#fase-2--ets-de-calibración-ejecutado-en-myc-mobile-2026-09-29).
 
 ## Grupos anticipados (Bloque 2, 2026-08-26)

@@ -33,7 +33,7 @@ function deferred<T>() {
   return { promise, resolve: resolveValue, reject: rejectValue };
 }
 
-function mount() {
+function mount(labClientName = 'MetroInd') {
   const slots: any[] = [];
   let cursor = 0;
   let pending: { index: number; fn: () => unknown }[] = [];
@@ -90,7 +90,8 @@ function mount() {
     for (let pass = 0; pass < 10; pass++) {
       cursor = 0; pending = []; dirty = false;
       tree = exports.ErpCalibrationLinkField({
-        request, selection, onChange: (value: Candidate | null) => { selection = value; changes.push(value); },
+        request, selection, labClientName,
+        onChange: (value: Candidate | null) => { selection = value; changes.push(value); },
       });
       for (const effect of pending) {
         slots[effect.index].cleanup?.();
@@ -195,7 +196,34 @@ test('error y vacío son estados explícitos', async () => {
 test('work-orders: el campo es interno, separado de purchase_order y sólo al crear', () => {
   assert.match(workOrders, /\{user\.actor_type === 'internal' && canAttachErpLink\(groupMode, !!workOrder\) && \(/);
   assert.match(workOrders, /<FormSection title="Vincular con cotización ERP \(opcional\)">/);
+  assert.match(workOrders, /<ErpCalibrationLinkField labClientName=\{general\.client_name\} onChange=\{setErpLink\}/);
   assert.match(workOrders, /<Field label="Orden de compra \/ cotización" value=\{general\.purchase_order\}/);
   assert.match(workOrders, /body: JSON\.stringify\(withErpLink\(\{[\s\S]*?\}, erpLink, groupMode, !!workOrder\)\)/);
   assert.match(workOrders, /setGeneral\(emptyGeneral\(\)\);\n\s*setErpLink\(null\);/);
+});
+
+async function selectFirst(view: ReturnType<typeof mount>) {
+  view.type('cot');
+  mock.timers.tick(300);
+  view.render();
+  view.calls[0].reply.resolve([candidate(41)]);
+  await view.settle();
+  view.rows()[0].props.onPress();
+  view.render();
+}
+
+test('con selección muestra el cliente ERP; si difiere del LAB advierte sin bloquear ni sobrescribir', async () => {
+  const same = mount('MetroInd');
+  await selectFirst(same);
+  assert.ok(same.texts().includes('Cliente ERP: MetroInd'));
+  assert.equal(same.nodes().some((node) => node.type === 'AlertBanner'), false);
+
+  const different = mount('Laboratorio Norte');
+  await selectFirst(different);
+  const banner = different.nodes().find((node) => node.type === 'AlertBanner');
+  assert.equal(banner?.props.tone, 'warning');
+  assert.match(String(banner?.props.children), /Laboratorio Norte[\s\S]*MetroInd/);
+  // No bloquea: la selección sigue vigente y puede limpiarse.
+  assert.equal(different.changes.at(-1)?.service_order_id, 41);
+  assert.ok(different.nodes().some((node) => node.props.accessibilityLabel === 'Quitar vínculo ERP'));
 });

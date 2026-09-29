@@ -73,3 +73,27 @@ export function describeErpCandidate(candidate: ErpCalibrationCandidate): {
       : `Ya vinculada a OT ${candidate.active_lab_root_folio ?? candidate.active_lab_root_id ?? ''}`.trim(),
   };
 }
+
+function normalizeClientName(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Advertencia NO bloqueante: el cliente capturado en la OT LAB difiere del
+ * cliente del ETS elegido. No hay FK ni sobrescritura de client_name; la
+ * validación fuerte cliente/equipo/documento corresponde a la fase de
+ * ingestión documental.
+ */
+export function erpClientMismatchWarning(
+  labClientName: string,
+  selection: ErpCalibrationCandidate | null,
+): string | null {
+  if (!selection || !labClientName.trim()) return null;
+  if (normalizeClientName(labClientName) === normalizeClientName(selection.client_name)) return null;
+  return `El cliente de esta OT (“${labClientName.trim()}”) es distinto al del ETS seleccionado (“${selection.client_name}”). Revísalo antes de crear; no se cambiará automáticamente.`;
+}

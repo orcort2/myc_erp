@@ -236,6 +236,14 @@ de cotización, folio ETS o nombre comercial/legal del cliente (mínimo 2, lími
 sólo devuelve ETS activos, abiertos, con cotización activa `accepted` y calibración
 exclusiva Mobile. No expone importes. Un ETS ya vinculado se devuelve con
 `active_lab_root_id/folio` y `available=false`. `purchase_order` no es identificador.
+El filtro de calibración exclusiva (al menos una partida activa y ninguna activa con
+categoría distinta o nula) y la ausencia de `ServiceWorkOrder` se resuelven en SQL, de
+modo que el `LIMIT` es exacto y ETS no elegibles nunca ocultan candidatos válidos.
+
+El cliente del ETS no se relaciona con `LabClient` ni con `client_name` de LAB: no hay FK
+ni comparación bloqueante ni sobrescritura. Mobile muestra el cliente ERP junto al
+vínculo y advierte (sin bloquear) si difiere del cliente capturado en la OT. La
+validación fuerte cliente/equipo/documento corresponde a la fase de ingestión documental.
 
 `POST /lab-work-orders` y `POST /lab-work-orders/groups` aceptan `service_order_id`
 **opcional** mediante schemas internos (`LabWorkOrderInternalCreate`,
@@ -259,8 +267,12 @@ proyección `group_work_order_count`.
 Para `calibration_flow_managed_by_mobile`, la página ETS conserva Resumen, Captura, Calidad,
 Certificados, Facturación, Documentos, Actividad e Historial; no ofrece Equipos, Hojas de
 Campo, firma técnica ni PDF/listado de OT ERP. Resumen muestra “Ejecución técnica MYC
-Mobile” (folio raíz, OT del grupo y estado) o “Esperando OT MYC Mobile”. Históricos y
-mixtos conservan la UI.
+Mobile” (folio raíz, OT del grupo y estado) o “Esperando OT MYC Mobile”, junto con
+equipos esperados, Captura, Calidad, certificados, facturación y accesos a actividad/
+documentos; no muestra métricas ERP de equipos u hojas. `openTabFromSummary` rechaza
+cualquier pestaña no visible y un efecto devuelve a Resumen si quedara activa una pestaña
+inexistente en un ETS Mobile. Las capacidades web se calculan sólo con partidas activas,
+igual que `is_calibration_only`. Históricos y mixtos conservan la UI.
 
 Fuera de alcance: paquete técnico LAB desde ETS, ingestión XLSX, cambios a Certificate,
 Calidad/autenticación LAB, verticales Mobile distintas de calibración, sincronización de

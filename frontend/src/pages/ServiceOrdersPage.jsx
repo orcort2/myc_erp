@@ -105,7 +105,9 @@ import { exceptionActionLabel } from '../utils/exceptionAuthority.js';
 import { canDeleteWorkOrder } from '../utils/workOrderDeletion.js';
 import {
   buildServiceOrderTabs,
+  canOpenServiceOrderTab,
   describeMobileExecution,
+  getServiceOrderCapabilities,
   getWorkOrderLabel,
 } from '../utils/serviceOrderTechnicalFlow.js';
 import FieldSheetLayout from '../components/field-sheets/FieldSheetLayout.jsx';
@@ -116,57 +118,6 @@ import '../components/service-order-exceptions.css';
 function safeNumber(value) {
   return Number.isFinite(Number(value)) ? Number(value) : 0;
 }
-
-function getServiceOrderCapabilities(order) {
-  const items = Array.isArray(order?.items) ? order.items : [];
-
-  const hasRepair = items.some(
-    (item) => item.operational_category === 'repair'
-  );
-
-  const hasSale = items.some(
-    (item) => item.operational_category === 'sale'
-  );
-
-  const hasMaintenance = items.some(
-    (item) => item.operational_category === 'maintenance'
-  );
-
-  const hasDirectCalibration = items.some(
-    (item) => item.operational_category === 'calibration'
-  );
-
-  const hasVerification = items.some(
-    (item) => item.operational_category === 'verification'
-  );
-
-  const hasEmbeddedCalibration = items.some((item) => {
-    if (item.operational_category !== 'sale') {
-      return false;
-    }
-
-    const saleConfiguration =
-      item.service_snapshot?.sale_configuration_snapshot;
-
-    return Boolean(
-      saleConfiguration?.included_calibration_catalog_item_id ||
-      saleConfiguration?.included_calibration_snapshot
-    );
-  });
-
-  return {
-    hasSale,
-    hasMaintenance,
-    hasRepair,
-    hasDirectCalibration,
-    hasVerification,
-    hasEmbeddedCalibration,
-    // Proyección backend (política técnica 2026): ETS nuevo sólo de
-    // calibración ejecutado en MYC Mobile; sin OT/equipos/hojas ERP.
-    managedByMobileCalibration: Boolean(order?.calibration_flow_managed_by_mobile),
-  };
-}
-
 
 const operationalCategoryLabels = {
   calibration: 'Calibración',
@@ -423,6 +374,17 @@ function ServiceOrdersPage({ user = null }) {
   const visibleEtsTabs = technicalSubEtsEquipment
     ? technicalSubEtsTabs
     : selectedOrderTabs;
+
+  // Cualquier otra ruta que deje activa una pestaña inexistente en un ETS de
+  // calibración MYC Mobile vuelve a Resumen. Históricos/mixtos sin cambios.
+  useEffect(() => {
+    if (
+      selectedOrderManagedByMobile &&
+      !canOpenServiceOrderTab(visibleEtsTabs, activeTab)
+    ) {
+      setActiveTab('info');
+    }
+  }, [selectedOrderManagedByMobile, visibleEtsTabs, activeTab]);
 
 
 
@@ -1481,6 +1443,11 @@ function closeTechnicalSubEts() {
   }
 
   function openTabFromSummary(tab, options = {}) {
+    // Nunca activar una pestaña que no existe para este ETS (defensivo, no
+    // sólo ocultando botones): un ETS MYC Mobile no abre equipment/field-sheet.
+    if (!canOpenServiceOrderTab(visibleEtsTabs, tab)) {
+      return;
+    }
     if (options.workOrder) {
       setSelectedWorkOrderContext(workOrderContextFromWorkOrder(options.workOrder));
     } else if (options.workOrderId || options.workOrderNumber) {
@@ -3443,22 +3410,31 @@ function closeTechnicalSubEts() {
                         Fecha servicio
                         <input onChange={(event) => updateOrderForm('serviceDate', event.target.value)} type="date" value={orderForm.serviceDate} />
                       </label>
-                      <article>
-                        <span>Total de equipos</span>
-                        <strong>{safeNumber(selectedOrder.total_equipment || selectedEquipment.length)}</strong>
-                      </article>
-                      <article>
-                        <span>Equipos completados</span>
-                        <strong>{safeNumber(selectedOrderMetrics.completedEquipment)}</strong>
-                      </article>
-                      <button className="ets-summary-card" onClick={() => openTabFromSummary('field-sheet')} type="button">
-                        <span>Hojas creadas</span>
-                        <strong>{safeNumber(selectedOrderMetrics.fieldSheetsCount)}</strong>
-                      </button>
-                      <article>
-                        <span>Hojas completadas</span>
-                        <strong>{safeNumber(selectedOrderMetrics.fieldSheetsDone)}</strong>
-                      </article>
+                      {!selectedOrderManagedByMobile ? (
+                        <>
+                          <article>
+                            <span>Total de equipos</span>
+                            <strong>{safeNumber(selectedOrder.total_equipment || selectedEquipment.length)}</strong>
+                          </article>
+                          <article>
+                            <span>Equipos completados</span>
+                            <strong>{safeNumber(selectedOrderMetrics.completedEquipment)}</strong>
+                          </article>
+                          <button className="ets-summary-card" onClick={() => openTabFromSummary('field-sheet')} type="button">
+                            <span>Hojas creadas</span>
+                            <strong>{safeNumber(selectedOrderMetrics.fieldSheetsCount)}</strong>
+                          </button>
+                          <article>
+                            <span>Hojas completadas</span>
+                            <strong>{safeNumber(selectedOrderMetrics.fieldSheetsDone)}</strong>
+                          </article>
+                        </>
+                      ) : (
+                        <button className="ets-summary-card" onClick={() => openTabFromSummary('notes')} type="button">
+                          <span>Actividad del expediente</span>
+                          <strong>Ver actividad</strong>
+                        </button>
+                      )}
                       <button className="ets-summary-card" onClick={() => openTabFromSummary('certificates')} type="button">
                         <span>Certificados esperados</span>
                         <strong>{safeNumber(selectedOrderMetrics.certificatesExpected)}</strong>
@@ -3620,12 +3596,16 @@ function closeTechnicalSubEts() {
                             <button className="table-button table-button--primary" onClick={() => openTabFromSummary('equipment', { workOrder })} type="button">
                               Abrir
                             </button>
-                            <button className="table-button" onClick={() => openTabFromSummary('field-sheet', { workOrder })} type="button">
-                              Hojas
-                            </button>
-                            <button className="table-button" onClick={() => openTabFromSummary('certificates', { workOrder })} type="button">
-                              Certificados
-                            </button>
+                            {canOpenServiceOrderTab(visibleEtsTabs, 'field-sheet') ? (
+                              <button className="table-button" onClick={() => openTabFromSummary('field-sheet', { workOrder })} type="button">
+                                Hojas
+                              </button>
+                            ) : null}
+                            {canOpenServiceOrderTab(visibleEtsTabs, 'certificates') ? (
+                              <button className="table-button" onClick={() => openTabFromSummary('certificates', { workOrder })} type="button">
+                                Certificados
+                              </button>
+                            ) : null}
                           </div>
                         </article>
                       );
@@ -5173,7 +5153,7 @@ function closeTechnicalSubEts() {
                           ['equipment', 'Equipos'],
                           ['field-sheet', 'Hojas'],
                           ['certificates', 'Certificados'],
-                        ].map(([tab, label]) => (
+                        ].filter(([tab]) => canOpenServiceOrderTab(visibleEtsTabs, tab)).map(([tab, label]) => (
                           <button
                             className="table-button"
                             key={tab}
