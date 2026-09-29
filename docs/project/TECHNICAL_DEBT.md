@@ -166,3 +166,18 @@ Una deuda se elimina sólo cuando la condición deja de existir y la validación
   esperaba 6400/6401 y recibió 6404/6405 tras la corrida anterior. Corregir fixtures,
   aislamiento de logging y provisión del recurso en un trabajo separado. Evidencia
   y conteos: [corte operativo](../BACKUP_ESTADO_ACTUAL.md).
+
+## Deuda agregada ETS ↔ LAB Fase 2 (2026-09-29)
+
+- TD-065 (P1): el selector Mobile de cotización ERP, la creación vinculada y el shell web
+  del ETS de calibración tienen regresión automatizada (backend, Mobile, frontend) pero no
+  validación visual autenticada ni física (iOS/Android). Ejecutar: selección/limpieza,
+  OT individual y grupo directo vinculados, 409 visibles, Resumen con vínculo/espera y
+  ausencia de Equipos/Hojas/firma/PDF OT en web.
+- TD-066 (P1): Captura LAB no existe todavía. En un ETS de calibración MYC Mobile la etapa
+  Captura del ERP sigue calculándose con certificados/hojas ERP y no avanzará hasta la fase
+  documental (Certificate `equipment_id XOR lab_equipment_id`, folio LAB, sin reservar otro).
+- TD-067 (P2): durante una corrida full del backend en macOS (Python 3.14) el proceso
+  terminó una vez por un fallo nativo de fontconfig/pango (WeasyPrint) en un hilo de GC;
+  la repetición completó sin incidentes. Aislar/reintentar si reaparece; no es regresión
+  funcional de esta fase.

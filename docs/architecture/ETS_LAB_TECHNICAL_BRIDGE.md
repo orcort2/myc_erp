@@ -1,8 +1,8 @@
-> Estado: VIGENTE — Fase 1 implementada, en revisión
+> Estado: VIGENTE — Fase 1 implementada; Fase 2 (calibración MYC Mobile) en revisión
 >
-> Corte: 2026-09-28
+> Corte: 2026-09-29
 >
-> Autoridad: contrato acotado del vínculo histórico ERP ETS ↔ LAB
+> Autoridad: contrato acotado del vínculo ERP ETS ↔ LAB
 
 # Vínculo histórico ETS ↔ LAB — Fase 1
 
@@ -187,3 +187,81 @@ Una cancelación/cierre posterior en LAB no sincroniza ni cierra el vínculo ERP
 La Fase 1 preserva la referencia; no cambia la autoridad técnica ni introduce
 una máquina de estados compartida. El despliegue deberá aplicar la migración
 antes de habilitar estas rutas. No se realizó despliegue ni integración visual.
+
+## Fase 2 — ETS de calibración ejecutado en MYC Mobile (2026-09-29)
+
+### Regla estructural
+
+Durante 2026, un ETS **nuevo** cuya composición activa (`ServiceOrderItem.operational_category`,
+nunca nombres ni textos) es exclusivamente `calibration` se ejecuta técnicamente en
+LAB/MYC Mobile. `create_service_order` y la reconstrucción excepcional deciden la
+estrategia con `assign_productive_work_orders` después de congelar partidas:
+
+- calibración exclusiva → `work_order_number = NULL`, `work_orders = []`, sin consumir la
+  secuencia institucional OT;
+- cualquier otra composición, incluida la **mixta** o sin partidas → flujo actual idéntico.
+
+No existe `execution_mode`, selector ni fuente técnica persistida.
+`backend/app/services/service_order_technical_flow.py` es la única política: reconoce el ETS
+Mobile por la realidad estructural (calibración exclusiva + número NULL + sin
+`ServiceWorkOrder`). Los ETS históricos siempre traen número (la columna era NOT NULL) y
+no se reinterpretan. `ServiceOrderRead.calibration_flow_managed_by_mobile` es sólo una
+proyección de lectura de esa política.
+
+`service_orders.work_order_number` es `INT UNIQUE NULLABLE` (migración `e8f1a3c5d7b9` sobre
+`d7e9a1c3b5f0`), sin backfill ni renumeración; nunca 0/-1/sentinel. El downgrade se niega
+mientras existan ETS con número NULL.
+
+### Frontera técnica (HTTP 409 `CALIBRATION_TECHNICAL_FLOW_MANAGED_BY_MOBILE`)
+
+La política se aplica en servicios, no en routers: alta de `Equipment` productivo,
+`FieldSheet` productiva (defensivo; depende de Equipment), firmas técnicas ETS (PATCH de
+campos de firma y confirmación de ciclo), `Certificate` productivo que reservaría folio
+propio, equipo adicional por Resoluciones (código de error equivalente) y PDF de OT ERP
+(`/work-order-pdf`, `/work-orders-pdf`). No se bloquean lecturas históricas, Captura,
+Calidad, Facturación, pagos, auditoría ni Activity. La reconstrucción física de un ETS se
+bloquea mientras exista cualquier `ServiceOrderLabLink` (FK RESTRICT).
+
+Compatibilidad con la fase documental siguiente: no se crean `Equipment` falsos. El futuro
+`Certificate` LAB seguirá `equipment_id XOR lab_equipment_id` (como `FieldSheet`), con
+`service_order_id` = ETS, `lab_equipment_id`, la `FieldSheet` LAB real y el folio ya
+reservado por LAB, sin reservar otro.
+
+### Selección desde MYC Mobile y creación atómica
+
+`GET /api/mobile/v1/technician/lab-work-orders/erp-calibration-candidates?q=&limit=` es de
+solo lectura, en el namespace Mobile (`MobileSecurityContext`, actor `internal`, permisos
+Mobile existentes `work_orders.create`/`lab_work_orders.use`). Busca en servidor por folio
+de cotización, folio ETS o nombre comercial/legal del cliente (mínimo 2, límite 20–25) y
+sólo devuelve ETS activos, abiertos, con cotización activa `accepted` y calibración
+exclusiva Mobile. No expone importes. Un ETS ya vinculado se devuelve con
+`active_lab_root_id/folio` y `available=false`. `purchase_order` no es identificador.
+
+`POST /lab-work-orders` y `POST /lab-work-orders/groups` aceptan `service_order_id`
+**opcional** mediante schemas internos (`LabWorkOrderInternalCreate`,
+`LabWorkOrderInternalGroupCreate`); el contrato externo `LabWorkOrderGroupCreate` y el flujo
+de solicitud/aprobación no cambian. Sin `service_order_id` la creación legacy es idéntica.
+Con él (`app/services/lab_erp_calibration.py`): bloquear ETS (antes de asignar folios) →
+revalidar candidato y ausencia de vínculo → crear OT o grupo → `link_lab_root_in_transaction`
+a la raíz (auditoría `origin=mobile_lab_creation`) → un solo commit. Cualquier fallo
+revierte OT, grupo, vínculo, auditorías y secuencia LAB. Conflictos: 409
+`SERVICE_ORDER_ALREADY_LINKED_TO_LAB` o `SERVICE_ORDER_NOT_MOBILE_CALIBRATION_CANDIDATE`.
+
+`link_lab_root_in_transaction` es el núcleo sin commit compartido; los wrappers
+`POST lab-link`, `replace` y `unlink` conservan contratos y la política `create`+`update`.
+El Técnico sólo vincula al crear; reemplazar/desvincular sigue siendo administrativo en el
+ERP. Una OT individual es su propia raíz; un grupo vincula sólo su raíz; las OT adicionales
+heredan por `root_work_order_id` sin crear filas. `ServiceOrderLabLinkRead` agrega la
+proyección `group_work_order_count`.
+
+### Web
+
+Para `calibration_flow_managed_by_mobile`, la página ETS conserva Resumen, Captura, Calidad,
+Certificados, Facturación, Documentos, Actividad e Historial; no ofrece Equipos, Hojas de
+Campo, firma técnica ni PDF/listado de OT ERP. Resumen muestra “Ejecución técnica MYC
+Mobile” (folio raíz, OT del grupo y estado) o “Esperando OT MYC Mobile”. Históricos y
+mixtos conservan la UI.
+
+Fuera de alcance: paquete técnico LAB desde ETS, ingestión XLSX, cambios a Certificate,
+Calidad/autenticación LAB, verticales Mobile distintas de calibración, sincronización de
+estados, migración LabEquipment→Equipment y cualquier backfill.

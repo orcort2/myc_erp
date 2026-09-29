@@ -10,6 +10,22 @@
 
 # Reglas de negocio vigentes
 
+## ETS de calibración ejecutado en MYC Mobile (2026-09-29)
+
+- Un ETS **nuevo** cuyas partidas activas son todas `calibration`
+  (`ServiceOrderItem.operational_category`) no consume folio OT ERP:
+  `work_order_number` NULL (intencional) y sin `ServiceWorkOrder`.
+- Mixto (cualquier otra categoría activa), vacío u otras categorías: flujo OT actual.
+  Los ETS históricos con número no se reinterpretan; no hay backfill.
+- Para ese ETS el ERP rechaza (409 `CALIBRATION_TECHNICAL_FLOW_MANAGED_BY_MOBILE`)
+  Equipment/FieldSheet productivos, firmas técnicas ERP, Certificate con folio propio y
+  PDF OT ERP. Captura, Calidad, Certificados, Facturación y pagos no se bloquean.
+- El vínculo ERP es opcional para LAB: sin ETS la creación legacy no cambia.
+  `purchase_order` sigue siendo documental.
+- Creación + vínculo es atómica. El Técnico sólo vincula al crear OT individual o grupo
+  directo; replace/unlink siguen siendo administrativos (`create`+`update`) en el ERP.
+- La solicitud externa de grupo no cambia ni exige ETS. [Contrato](../architecture/ETS_LAB_TECHNICAL_BRIDGE.md#fase-2--ets-de-calibración-ejecutado-en-myc-mobile-2026-09-29)
+
 ## Vínculo histórico ETS ↔ LAB — Fase 1 (2026-09-28)
 
 El ERP sólo consulta y administra la asociación histórica; LAB es autoridad

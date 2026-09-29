@@ -32,6 +32,17 @@ término buscado) es la misma de `LabClientSelector`; Back de Android cancela
 el alta antes de cerrar el modal. El cliente documental del equipo conserva
 el selector inline.
 
+## Vínculo opcional con ETS de calibración ERP (2026-09-29)
+
+Al crear una OT individual o un grupo directo, staff MYC puede elegir en Datos generales
+“Vincular con cotización ERP (opcional)” (búsqueda server-side con debounce, un solo ETS,
+limpiable antes de crear). Viaja como `service_order_id` sólo en esas dos creaciones;
+nunca en la solicitud externa de grupo ni en el PATCH de una OT existente (422 por
+`extra="forbid"`). “Orden de compra / cotización” (`purchase_order`) sigue siendo texto
+documental. Sin selección, la creación es la legacy exacta. Con selección, creación y
+vínculo a la raíz son una sola transacción. Contrato:
+[ETS_LAB_TECHNICAL_BRIDGE.md](ETS_LAB_TECHNICAL_BRIDGE.md#fase-2--ets-de-calibración-ejecutado-en-myc-mobile-2026-09-29).
+
 ## Grupos anticipados (Bloque 2, 2026-08-26)
 
 Un grupo anticipado reutiliza `root_work_order_id`; no introduce otra identidad para firma, Tickets o PDF. `_allocate_folio_block` toma una sola vez el lock institucional y reserva N folios consecutivos únicamente dentro de la transacción que crea las N filas. Una solicitud externa `pending`/`in_review` no toca el secuenciador. La aprobación bloquea la solicitud, materializa el grupo, guarda `root_work_order_id` y cambia a `approved` antes del commit; un retry devuelve ese grupo.

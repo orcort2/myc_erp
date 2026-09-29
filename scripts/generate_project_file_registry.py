@@ -660,6 +660,27 @@ MOBILE_REFETCH_CLIENT_PICKER_FILES = {
 }
 FORCE_RECLASSIFY.update(MOBILE_REFETCH_CLIENT_PICKER_FILES)
 
+# 2026-09-29: ETS ↔ LAB Fase 2 — calibración ejecutada en MYC Mobile.
+ETS_LAB_PHASE2_FILES = {
+    'backend/app/services/service_order_technical_flow.py': ('Política técnica ETS 2026', 'Reconoce estructuralmente el ETS nuevo sólo de calibración ejecutado en MYC Mobile (calibración exclusiva, work_order_number NULL, sin ServiceWorkOrder) y emite el 409 CALIBRATION_TECHNICAL_FLOW_MANAGED_BY_MOBILE.', 'FastAPI HTTPException y ServiceOrder', 'Servicios ETS, equipos, hojas, certificados, PDFs OT y Resoluciones', 'Crítico'),
+    'backend/app/services/lab_erp_calibration.py': ('Vínculo Mobile LAB ↔ ETS calibración', 'Busca candidatos ERP (solo lectura) y crea OT individual o grupo directo LAB con vínculo a la raíz en una sola transacción, con rollback total de OT, vínculo, auditoría y folio LAB.', 'Servicios LAB y bridge ETS↔LAB, política técnica, SQLAlchemy', 'Router Mobile LAB y pruebas', 'Crítico'),
+    'backend/migrations/versions/e8f1a3c5d7b9_nullable_service_order_work_order_number.py': ('Migración work_order_number nullable', 'Hace service_orders.work_order_number INT UNIQUE NULLABLE sin backfill; el downgrade se niega mientras existan ETS con número NULL.', 'Alembic y revisión d7e9a1c3b5f0', 'Despliegue y validación de base', 'Crítico'),
+    'backend/tests/test_service_order_mobile_calibration.py': ('Regresión ETS calibración MYC Mobile', 'Prueba cero OT/folios en calibración exclusiva, reintento idempotente, históricos/mixtos/otras categorías intactos y 409 estructurados de equipo, PDF, firmas, certificado, equipo adicional y bloqueo de reconstrucción con vínculo.', 'pytest, SQLite, servicios ETS', 'Gate backend', 'Crítico'),
+    'backend/tests/test_lab_erp_calibration_bridge.py': ('Regresión creación Mobile vinculada', 'Prueba candidatos Mobile, fronteras de token, legacy sin ETS, OT/grupo + vínculo atómicos, rollback por conflicto/auditoría/commit, herencia de OT adicional, contrato externo intacto y carrera PostgreSQL real.', 'pytest, SQLite, PostgreSQL opcional', 'Gate backend', 'Crítico'),
+    'myc-mobile/src/services/lab-erp-calibration.ts': ('Política Mobile del vínculo ERP', 'Define búsqueda (mínimo 2, debounce 300 ms, límite 20) y adjunta service_order_id sólo en OT individual o grupo directo nuevos; nunca en solicitud externa ni edición.', 'TypeScript puro', 'work-orders.tsx y ErpCalibrationLinkField', 'Alto'),
+    'myc-mobile/src/services/lab-erp-calibration.test.ts': ('Regresión política vínculo ERP Mobile', 'Prueba búsqueda, payload legacy/individual/grupo/solicitud externa/edición, purchase_order documental, resumen y 409 estructurados.', 'node:test', 'Gate Mobile', 'Alto'),
+    'myc-mobile/src/components/lab/ErpCalibrationLinkField.tsx': ('Selector Mobile de cotización ERP', 'Busca ETS de calibración en servidor con debounce, muestra Cotización/ETS/Cliente, deshabilita los ya vinculados y permite elegir uno o limpiar antes de crear.', 'React Native, primitives y política lab-erp-calibration', 'work-orders.tsx', 'Alto'),
+    'myc-mobile/src/components/lab/ErpCalibrationLinkField.wiring.test.ts': ('Regresión del selector ERP Mobile', 'Ejecuta el componente real con hooks simulados: estado opcional, debounce, selección/limpieza, error y vacío; cablea work-orders sin mezclar purchase_order.', 'node:test, TypeScript, mock timers', 'Gate Mobile', 'Alto'),
+    'frontend/src/utils/serviceOrderTechnicalFlow.js': ('Presentación web del flujo técnico ETS', 'Compone pestañas del ETS, etiqueta OT sin valores ficticios y describe la ejecución MYC Mobile a partir de la proyección backend.', 'JavaScript puro', 'ServiceOrdersPage', 'Alto'),
+    'frontend/src/utils/serviceOrderTechnicalFlow.test.js': ('Regresión shell web calibración Mobile', 'Prueba pestañas Mobile/histórico/mixto, etiqueta OT nula, estado del vínculo y cableado de firma/PDF/bridge en la página.', 'node:test', 'Gate frontend', 'Alto'),
+    'backend/app/services/service_orders.py': ('Servicio agregado ETS', 'Crea ETS/partidas desde snapshots y decide la estrategia OT tras congelar partidas: calibración exclusiva sin OT ERP (MYC Mobile), resto con OT; bloquea Verificación legacy sin Master, firmas técnicas en ETS Mobile y admite persistencia coordinada con Cotizaciones.', 'Cotizaciones, ServiceOrder, expansor, verticales y política técnica', 'Routers, frontend y pruebas', 'Crítico'),
+    'backend/app/services/service_order_lab_links.py': ('Lifecycle del vínculo ETS ↔ LAB', 'Resuelve raíz, vincula/reemplaza/desvincula/revincula transaccionalmente con locks y auditoría; expone el núcleo sin commit link_lab_root_in_transaction para la creación Mobile; consulta historial y candidatos sin mutar LAB.', 'SQLAlchemy, modelos ETS/LAB, schemas y write_audit_log', 'Router ERP, creación Mobile y pruebas de invariantes/concurrencia', 'Crítico'),
+    'backend/app/routers/lab_work_orders.py': ('API OT LAB', 'Expone cierre/firma grupal o individual, cambio de modalidad, preview/distribución de folios certificado pendientes y DELETE administrativo con permisos/scope Mobile, sin reutilizar rutas productivas. Añade q opcional por folio OR cliente, candidatos ERP de calibración de solo lectura y service_order_id opcional en creación interna individual/grupo directo.', 'FastAPI, auth, schemas, servicio LAB y vínculo ERP', 'MYC Mobile y pruebas LAB', 'Crítico'),
+    'backend/app/models/service_order.py': ('Agregado ETS y snapshots', 'Conserva operational_category/configuración por partida, snapshot fuente, work_order_number nullable (NULL en calibración MYC Mobile), OT, firmas, excepciones, colección histórica lab_links y proyección calibration_flow_managed_by_mobile.', 'SQLAlchemy, cotizaciones, identidad operativa, órdenes de trabajo, excepciones ETS y política técnica', 'Servicios ETS, equipos, certificados, Facturación y auditoría', 'Crítico'),
+    'frontend/src/pages/ServiceOrdersPage.jsx': ('Workbench ETS institucional', 'Identifica categorías, separa métricas Calibración/Verificación, advierte legacy sin Master, sólo solicita partida con ambigüedad y presenta el shell de calibración MYC Mobile (sin Equipos/Hojas/firma/PDF OT ERP, Resumen con vínculo LAB).', 'React, APIs ETS/Control Documental/bridge LAB, ServiceOrderItem y componentes verticales', 'Usuarios operativos del ETS', 'Crítico'),
+}
+FORCE_RECLASSIFY.update(ETS_LAB_PHASE2_FILES)
+
 
 def words(path: Path) -> str:
     stem = path.stem.replace("_", " ").replace("-", " ")
@@ -728,6 +749,8 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     }
     if value in ets_lab_files:
         return ets_lab_files[value]
+    if value in ETS_LAB_PHASE2_FILES:
+        return ETS_LAB_PHASE2_FILES[value]
     if value in MOBILE_REFETCH_CLIENT_PICKER_FILES:
         return MOBILE_REFETCH_CLIENT_PICKER_FILES[value]
     if value in MOBILE_SESSION_FILES:

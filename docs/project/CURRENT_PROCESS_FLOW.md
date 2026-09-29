@@ -10,6 +10,14 @@
 
 # Flujo operativo actual
 
+## ETS de calibración con ejecución MYC Mobile (2026-09-29)
+
+`cotización aceptada (sólo calibración) → ETS sin OT ERP (work_order_number NULL,
+work_orders []) → MYC Mobile: crear OT o grupo directo eligiendo opcionalmente la
+cotización ERP → OT/grupo + vínculo a la raíz en una transacción → ejecución técnica LAB
+→ ERP retoma en Captura/Calidad/Certificados/Facturación`. Sin selección, MYC Mobile crea
+OT/grupo LAB sin vínculo (legacy). ETS mixtos siguen el flujo OT ERP actual. [Contrato](../architecture/ETS_LAB_TECHNICAL_BRIDGE.md#fase-2--ets-de-calibración-ejecutado-en-myc-mobile-2026-09-29)
+
 ## Asociación ERP ETS ↔ LAB (2026-09-28)
 
 `ETS editable → buscar grupo LAB existente → link → replace con motivo o unlink

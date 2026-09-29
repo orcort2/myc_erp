@@ -10,6 +10,16 @@
 
 # Alcance actual del ERP MYC
 
+## ETS ↔ LAB — Fase 2: calibración MYC Mobile (2026-09-29, en revisión)
+
+Incluye: ETS nuevo sólo de calibración sin OT ERP, frontera técnica 409 en backend,
+selector Mobile de ETS de calibración con cotización aceptada, creación + vínculo atómico
+(OT individual o grupo directo) y shell web del ETS. Excluye ETS mixtos (conservan el flujo
+actual), solicitud externa, paquete técnico LAB desde ETS, ingestión XLSX, Certificate/
+Calidad/autenticación LAB, mantenimiento/reparación/venta/verificación Mobile, Drive,
+WhatsApp, migración LabEquipment→Equipment, sincronización de estados, `execution_mode`
+y backfill. [Contrato](../architecture/ETS_LAB_TECHNICAL_BRIDGE.md#fase-2--ets-de-calibración-ejecutado-en-myc-mobile-2026-09-29)
+
 ## ETS ↔ LAB — alcance Fase 1 (2026-09-28)
 
 Se agrega al ERP la gestión histórica de la referencia de un ETS a una raíz LAB,

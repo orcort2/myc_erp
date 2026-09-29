@@ -10,6 +10,20 @@
 
 # Registro de decisiones vigentes
 
+## Decisión ETS ↔ LAB Fase 2 — calibración ejecutada en MYC Mobile (2026-09-29)
+
+Se adopta la realidad estructural como autoridad, sin `execution_mode` ni selector: ETS
+nuevo sólo de calibración ⇒ `work_order_number` NULL y sin `ServiceWorkOrder`. La columna
+pasa a nullable (`e8f1a3c5d7b9`) en lugar de usar un folio ficticio. Una sola política de
+dominio (`service_order_technical_flow`) protege en servicios los puntos que crearían
+realidad técnica ERP; la web sólo consume su proyección. Los ETS mixtos quedan fuera hasta
+que sus categorías tengan ejecución Mobile. El vínculo sigue siendo `ServiceOrderLabLink`
+a la raíz; la creación Mobile usa un núcleo transaccional compartido sin commit y schemas
+internos para no ampliar el contrato externo. El candidato se consulta por un endpoint
+Mobile de solo lectura, no por `/api/service-orders`, para respetar las fronteras de token.
+Consecuencia asumida: un servicio compuesto cuyas hojas operativas son todas calibración
+también se ejecuta en MYC Mobile. [Contrato](../architecture/ETS_LAB_TECHNICAL_BRIDGE.md#fase-2--ets-de-calibración-ejecutado-en-myc-mobile-2026-09-29)
+
 ## Decisión ETS ↔ LAB Fase 1 (2026-09-28)
 
 Por alcance explícito se permite una referencia histórica del ERP a LAB, como

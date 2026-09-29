@@ -4,9 +4,38 @@
 >
 > Autoridad: Media; no sustituye los documentos canónicos de project/
 >
-> Corte: corrección acotada PDF de Cotizaciones sobre `39ed4bc`, rama `feat/ets-lab-technical-bridge`; cambios sin commit ni push, pendientes de revisión.
+> Corte: ETS ↔ LAB Fase 2 (calibración MYC Mobile) sobre `8b6da02`, rama `feat/mobile-calibration-authority-2026`; commits locales sin push, merge ni deploy, pendientes de revisión.
 
 # Estado operativo actual del ERP MYC
+
+## ETS ↔ LAB Fase 2 — calibración ejecutada en MYC Mobile (2026-09-29)
+
+- Preflight: worktree limpio, `feat/mobile-calibration-authority-2026` = origin =
+  `8b6da02` (contiene `39ed4bc` y `3a7648b`), divergencia con `origin/main` 0/0.
+  Sin rama/worktree nuevos, push, merge ni deploy.
+- ETS nuevo sólo de calibración: `work_order_number` NULL, sin `ServiceWorkOrder`,
+  sin consumir la secuencia OT. Mixtos/otras categorías/históricos sin cambios.
+  Frontera 409 `CALIBRATION_TECHNICAL_FLOW_MANAGED_BY_MOBILE` en backend. Selector Mobile
+  de ETS de calibración (solo lectura) y creación OT/grupo directo + vínculo en una
+  transacción; externos sin cambios. Shell web del ETS con Resumen “Ejecución técnica
+  MYC Mobile”. [Contrato](architecture/ETS_LAB_TECHNICAL_BRIDGE.md#fase-2--ets-de-calibración-ejecutado-en-myc-mobile-2026-09-29).
+- Migración `e8f1a3c5d7b9` sobre `d7e9a1c3b5f0`, único head. PostgreSQL 16 aislado
+  (`tmp/mobile-calibration-validation`, puerto 55441): upgrade desde vacío,
+  downgrade, upgrade; el downgrade se niega con ETS de número NULL (verificado) y dos
+  NULL coexisten bajo el índice único. `alembic check`: sólo la diferencia preexistente
+  TD-063. La BD compartida no se utilizó ni migró.
+- `backup_erp_myc_antes_prueba.sql` (ignorado por Git) generado desde la BD **aislada**
+  de validación en `e8f1a3c5d7b9`; no contiene datos operativos ni sustituye un respaldo
+  de la base compartida.
+- Backend (BD aislada): focalizado bridge Fase 1 + Fase 2 + ETS Mobile **146 passed**,
+  0 skipped (incluye concurrencia PostgreSQL real). Full final: **2051 passed,
+  10 failed, 19 skipped, 12 errors**; todos los fallos/errores existen en la línea base
+  exacta de `8b6da02` (11 failed, 12 errors, mismo entorno); ninguno nuevo. Dos pruebas
+  que asumían OT en calibración exclusiva se adaptaron a la regla (compuesto de
+  calibración y autoasignación en ETS histórico).
+- Mobile: 859/859, `tsc` y lint limpios. Frontend: `node --test` 83 passed, 1 failed
+  preexistente (`notificationNavigation`), build correcto.
+- Pendiente: validación visual/física (TD-065) y Captura LAB (TD-066).
 
 ## PDF de Cotizaciones — 2026-09-29
 
