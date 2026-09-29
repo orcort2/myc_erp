@@ -25,7 +25,7 @@ def test_every_http_operation_has_an_explicit_access_classification():
     # DEV-0 adds GET/POST/DELETE /mobile/v1/developer/session.
     # DEV-1A adds GET /mobile/v1/developer/broker/health.
     # ETS/LAB Phase 1 adds six ERP link/history/candidate operations.
-    assert len(operations) == 547
+    assert len(operations) == 550
     assert all(classify_operation(item.method, item.path, item.tags) for item in operations)
 
 

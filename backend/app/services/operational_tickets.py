@@ -844,12 +844,18 @@ def _reopen_closed_cohort(
 
 def reopen_work_order_directly(
     db: Session, work_order_id: int, user: User, *, signature_policy: str, reason: str,
+    equipment_id: int | None = None,
 ) -> LabWorkOrderRead:
     """Reapertura administrativa directa: el actor YA posee
     work_orders.reopen + la política correspondiente, así que ejecuta la
     reapertura en una sola llamada -- no crea ni pasa por un ticket
     artificial (misma autoridad, mismo núcleo _reopen_closed_cohort que ya
-    usa el ticket mediado, sólo sin ticket ni segunda aprobación)."""
+    usa el ticket mediado, sólo sin ticket ni segunda aprobación).
+
+    ``equipment_id`` (opcional, igual que el ticket reopen_work_order) abre
+    además la revisión N+1 editable de la hoja completed de ese equipo;
+    N queda histórica intacta. Mobile no lo envía (reapertura de OT completa);
+    el ERP lo usa para "Enviar a corrección en MYC Mobile"."""
     required_permission = (
         "work_orders.reopen_preserve_signatures"
         if signature_policy == "preserve"
@@ -859,10 +865,18 @@ def reopen_work_order_directly(
         user, required_permission
     ):
         raise HTTPException(status_code=403, detail="REOPEN_NOT_AUTHORIZED")
-    work_order, _cohort, _retired = _reopen_closed_cohort(
+    work_order, _cohort, retired = _reopen_closed_cohort(
         db, work_order_id, user,
-        signature_policy=signature_policy, equipment_id=None, reopen_ticket_id=None,
+        signature_policy=signature_policy, equipment_id=equipment_id, reopen_ticket_id=None,
     )
+    new_values = {
+        "status": "draft",
+        "signature_policy": signature_policy,
+        "reason": reason.strip(),
+    }
+    if equipment_id is not None:
+        new_values["equipment_id"] = equipment_id
+        new_values.update(retired or {})
     write_audit_log(
         db,
         action="lab_work_order.reopened_directly",
@@ -870,11 +884,7 @@ def reopen_work_order_directly(
         entity_id=work_order.id,
         user_id=user.id,
         previous_values={"status": "completed_or_partially_closed"},
-        new_values={
-            "status": "draft",
-            "signature_policy": signature_policy,
-            "reason": reason.strip(),
-        },
+        new_values=new_values,
     )
     _notify_work_order_owner(
         db, work_order, user,

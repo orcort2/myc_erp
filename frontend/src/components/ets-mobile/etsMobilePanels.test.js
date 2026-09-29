@@ -30,7 +30,7 @@ test('ETS Mobile: proyección grupo → OT → equipo con identidad, folio y est
 });
 
 test('un admin ERP NO puede modificar resultados técnicos: el detalle de hoja no tiene inputs', () => {
-  const detail = slice(panel, 'function FieldSheetDetail(', '\nexport default function');
+  const detail = slice(panel, 'function FieldSheetDetail(', '\n// "Enviar a corrección en MYC Mobile"');
   assert.doesNotMatch(detail, /<input|<textarea|<select|contentEditable/);
   assert.doesNotMatch(detail, /onChange=/);
   assert.match(detail, /data-readonly="true"/);
@@ -52,4 +52,18 @@ test('Captura Mobile: LISTA/BLOQUEADA, bloqueos y descarga PDF sólo cuando est�
   assert.doesNotMatch(capture, /uploadCaptureFiles|type="file"|\.xlsx/);
   assert.match(page, /activeTab === 'capture' && selectedOrderManagedByMobile \? \(\s*<EtsMobileCapturePanel/);
   assert.match(page, /activeTab === 'capture' && !selectedOrderManagedByMobile \? \(/);
+});
+
+test('acciones administrativas sólo según permisos; enviar a corrección exige motivo', () => {
+  assert.match(panel, /permissions\.canRequestCorrection && correctionModeFor\(workOrder, equipment\)/);
+  assert.match(panel, /permissions\.canCancelWorkOrders \? \(/);
+  const dialog = slice(panel, 'function CorrectionDialog(', '\nexport default function');
+  assert.match(dialog, /if \(!reason\.trim\(\)\) \{\s*setError\('El motivo es obligatorio\.'\)/);
+  assert.match(dialog, /disabled=\{busy \|\| !reason\.trim\(\)\}/);
+  assert.match(dialog, /requestServiceOrderMobileCorrection\(serviceOrderId, target\.equipment\.id/);
+  // El único texto editable es el motivo y la política de firmas: nunca valores técnicos.
+  assert.equal((dialog.match(/<textarea/g) || []).length, 1);
+  assert.equal((dialog.match(/<select/g) || []).length, 1);
+  assert.doesNotMatch(dialog, /<input/);
+  assert.match(dialog, /exclusivamente en MYC Mobile/);
 });

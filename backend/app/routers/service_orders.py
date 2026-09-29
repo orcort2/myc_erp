@@ -16,6 +16,8 @@ from app.schemas.service_order_lab_link import (
 )
 from app.schemas.certificate import CertificateBatchActionRead, CertificateBulkUploadRead
 from app.schemas.service_order_mobile_execution import (
+    MobileExecutionCancellation,
+    MobileExecutionCorrectionRequest,
     MobileExecutionFieldSheetDetail,
     MobileExecutionProjection,
 )
@@ -90,6 +92,11 @@ from app.services.capture_packages import (
 from app.services.certificates import (
     bulk_upload_certificate_pdfs,
     release_authenticated_certificates_for_service_order,
+)
+from app.services.service_order_mobile_administration import (
+    cancel_mobile_work_order,
+    request_mobile_correction,
+    restore_mobile_work_order,
 )
 from app.services.service_order_mobile_execution import (
     get_mobile_execution_field_sheet,
@@ -1062,3 +1069,51 @@ def get_service_order_mobile_execution_field_sheet_pdf(
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
 
+
+# Acciones administrativas ERP sobre MYC Mobile: wrappers explícitos sobre los
+# MISMOS servicios de dominio LAB (ver service_order_mobile_administration.py).
+# Nunca editan valores técnicos; el dominio vuelve a verificar su autoridad.
+
+
+@router.post(
+    "/{service_order_id}/mobile-execution/equipment/{equipment_id}/request-correction",
+    response_model=MobileExecutionProjection,
+    dependencies=[Depends(require_permission("service_orders.read"))],
+)
+def post_service_order_mobile_correction(
+    service_order_id: int,
+    equipment_id: int,
+    payload: MobileExecutionCorrectionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("work_orders.reopen")),
+):
+    return request_mobile_correction(db, service_order_id, equipment_id, payload, current_user)
+
+
+@router.post(
+    "/{service_order_id}/mobile-execution/work-orders/{work_order_id}/cancel",
+    response_model=MobileExecutionProjection,
+    dependencies=[Depends(require_permission("service_orders.read"))],
+)
+def post_service_order_mobile_work_order_cancel(
+    service_order_id: int,
+    work_order_id: int,
+    payload: MobileExecutionCancellation,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("lab_work_orders.cancel")),
+):
+    return cancel_mobile_work_order(db, service_order_id, work_order_id, payload.reason, current_user)
+
+
+@router.post(
+    "/{service_order_id}/mobile-execution/work-orders/{work_order_id}/restore",
+    response_model=MobileExecutionProjection,
+    dependencies=[Depends(require_permission("service_orders.read"))],
+)
+def post_service_order_mobile_work_order_restore(
+    service_order_id: int,
+    work_order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("lab_work_orders.cancel")),
+):
+    return restore_mobile_work_order(db, service_order_id, work_order_id, current_user)
