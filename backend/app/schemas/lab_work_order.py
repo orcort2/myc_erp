@@ -29,6 +29,43 @@ class LabWorkOrderGroupCreate(LabWorkOrderCreate):
     quantity: int = Field(ge=1, le=50)
 
 
+# Creación interna MYC Mobile (staff): vínculo ERP OPCIONAL con un ETS de
+# calibración. No se agrega a LabWorkOrderCreate/LabWorkOrderGroupCreate porque
+# éstos también son el contrato de la solicitud externa de grupo, que no cambia.
+# purchase_order sigue siendo texto documental; service_order_id no lo sustituye.
+class LabWorkOrderInternalCreate(LabWorkOrderCreate):
+    service_order_id: int | None = Field(default=None, gt=0)
+
+
+class LabWorkOrderInternalGroupCreate(LabWorkOrderGroupCreate):
+    service_order_id: int | None = Field(default=None, gt=0)
+
+
+class LabErpCalibrationItemSummary(BaseModel):
+    service_name: str
+    quantity: int
+
+
+class LabErpCalibrationCandidateRead(BaseModel):
+    """ETS de calibración (MYC Mobile) seleccionable al crear una OT LAB.
+
+    Sin importes comerciales: sólo identidad para elegir el vínculo.
+    """
+
+    service_order_id: int
+    service_order_folio: str
+    quotation_id: int
+    quotation_folio: str
+    client_id: int
+    client_name: str
+    calibration_item_count: int
+    calibration_quantity: int
+    calibration_items: list[LabErpCalibrationItemSummary]
+    active_lab_root_id: int | None = None
+    active_lab_root_folio: int | None = None
+    available: bool
+
+
 class LabWorkOrderGroupRequestRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

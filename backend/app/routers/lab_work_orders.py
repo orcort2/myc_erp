@@ -25,9 +25,12 @@ from app.schemas.lab_work_order import (
     LabFieldSheetCreate,
     LabFieldSheetDirectReopenWrite,
     LabSignatureGroupWrite,
+    LabErpCalibrationCandidateRead,
     LabWorkOrderCreate,
     LabWorkOrderGroupCreate,
     LabWorkOrderGroupDecision,
+    LabWorkOrderInternalCreate,
+    LabWorkOrderInternalGroupCreate,
     LabWorkOrderGroupRequestRead,
     LabWorkOrderListItem,
     LabWorkOrderRead,
@@ -76,6 +79,11 @@ from app.services.lab_work_orders import (
     update_work_order,
     update_reception_date,
     void_equipment_entry,
+)
+from app.services.lab_erp_calibration import (
+    create_linked_work_order,
+    create_linked_work_order_group,
+    search_erp_calibration_candidates,
 )
 from app.services.field_sheet_pdfs import generate_field_sheet_pdf
 from app.services.field_sheet_templates import list_field_sheet_templates
@@ -145,7 +153,7 @@ def get_mobile_group_requests(
 
 @router.post("/groups", response_model=LabWorkOrderRead, status_code=201)
 def create_mobile_staff_group(
-    payload: LabWorkOrderGroupCreate,
+    payload: LabWorkOrderInternalGroupCreate,
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(
         require_mobile_permission("lab_work_order_groups.create")
@@ -156,7 +164,11 @@ def create_mobile_staff_group(
             status_code=403,
             detail="La creación directa de grupos está reservada a staff MYC",
         )
-    return create_work_order_group(db, payload, context.user, operator_client_id=None)
+    base = LabWorkOrderGroupCreate(**payload.model_dump(exclude={"service_order_id"}))
+    if payload.service_order_id is None:
+        # Legacy exacto: grupo LAB sin vínculo ERP.
+        return create_work_order_group(db, base, context.user, operator_client_id=None)
+    return create_linked_work_order_group(db, base, payload.service_order_id, context.user)
 
 
 @router.get("/group-requests/review", response_model=list[LabWorkOrderGroupRequestRead])
@@ -259,9 +271,30 @@ def reject_staff_group_request(
     return reject_group_request(db, request_id, user, payload.reason)
 
 
+@router.get(
+    "/erp-calibration-candidates",
+    response_model=list[LabErpCalibrationCandidateRead],
+)
+def get_erp_calibration_candidates(
+    q: str = Query(min_length=2, max_length=80),
+    limit: int = Query(default=20, ge=1, le=25),
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("work_orders.create", "lab_work_orders.use")
+    ),
+) -> list[LabErpCalibrationCandidateRead]:
+    """Read-only ERP calibration ETS selectable while creating a LAB order."""
+    if context.actor_type != "internal":
+        raise HTTPException(
+            status_code=403,
+            detail="La vinculación con cotizaciones ERP es exclusiva de staff MYC",
+        )
+    return search_erp_calibration_candidates(db, q, limit=limit)
+
+
 @router.post("", response_model=LabWorkOrderRead, status_code=201)
 def create_lab_work_order(
-    payload: LabWorkOrderCreate,
+    payload: LabWorkOrderInternalCreate,
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(
         require_mobile_permission("work_orders.create", "lab_work_orders.use")
@@ -272,12 +305,16 @@ def create_lab_work_order(
             status_code=403,
             detail="Los actores externos deben solicitar un grupo de OT",
         )
-    return create_work_order(
-        db,
-        payload,
-        context.user,
-        operator_client_id=context.client_id,
-    )
+    base = LabWorkOrderCreate(**payload.model_dump(exclude={"service_order_id"}))
+    if payload.service_order_id is None:
+        # Legacy exacto: OT LAB sin vínculo ERP.
+        return create_work_order(
+            db,
+            base,
+            context.user,
+            operator_client_id=context.client_id,
+        )
+    return create_linked_work_order(db, base, payload.service_order_id, context.user)
 
 
 @router.get("", response_model=list[LabWorkOrderListItem])

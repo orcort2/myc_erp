@@ -506,6 +506,21 @@ def create_work_order(
     *,
     operator_client_id: int | None = None,
 ) -> LabWorkOrderRead:
+    work_order = _create_work_order_row(
+        db, payload, user, operator_client_id=operator_client_id
+    )
+    commit_and_dispatch_notifications(db)
+    return _read(db, _get(db, work_order.id))
+
+
+def _create_work_order_row(
+    db: Session,
+    payload: LabWorkOrderCreate,
+    user: User,
+    *,
+    operator_client_id: int | None = None,
+) -> LabWorkOrder:
+    """Create one LAB order as its own root; caller owns the commit."""
     values = payload.model_dump()
     lab_client_id = values.get("lab_client_id")
     if lab_client_id is not None:
@@ -543,8 +558,7 @@ def create_work_order(
         user_id=user.id,
         new_values={"folio": work_order.folio, "root_work_order_id": work_order.id},
     )
-    commit_and_dispatch_notifications(db)
-    return _read(db, _get(db, work_order.id))
+    return work_order
 
 
 def _materialize_group(

@@ -129,7 +129,10 @@ export async function readApiErrorDetail(response: Response): Promise<ApiErrorDe
       const missingFields = Array.isArray(body.detail.missing_fields)
         ? body.detail.missing_fields.map((item: unknown) => String(item))
         : null;
-      return { message: humanizeErrorMessage(body.detail.message), missingFields, code: null, items: null, fieldErrors: [] };
+      // Un detail estructurado puede traer message + code (p. ej. 409 del
+      // vínculo ERP de calibración): se muestra el mensaje y se conserva el code.
+      const code = body.detail.code ? String(body.detail.code) : null;
+      return { message: humanizeErrorMessage(body.detail.message), missingFields, code, items: null, fieldErrors: [] };
     }
     if (body.detail?.code) {
       const items = Array.isArray(body.detail.items) ? body.detail.items : null;

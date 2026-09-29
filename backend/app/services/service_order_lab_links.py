@@ -16,6 +16,21 @@ from app.services.audit_logs import write_audit_log
 from app.services.service_orders import TERMINAL_STATUSES
 
 
+def link_integrity_conflict(exc: IntegrityError) -> HTTPException | None:
+    """Translate only active-link uniqueness races; never mask other DB failures."""
+    constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+    sqlite_message = str(exc.orig)
+    if constraint in {
+        "uq_service_order_lab_link_active_ets",
+        "uq_service_order_lab_link_active_root",
+    } or any(
+        f"UNIQUE constraint failed: service_order_lab_links.{column}" in sqlite_message
+        for column in ("service_order_id", "lab_root_work_order_id")
+    ):
+        return HTTPException(409, "El ETS o grupo LAB ya tiene un vínculo activo")
+    return None
+
+
 @contextmanager
 def _mutation(db: Session, user_id: int):
     """Own one request transaction, including audit; never leave partial replacement."""
@@ -26,17 +41,9 @@ def _mutation(db: Session, user_id: int):
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        # Only uniqueness races are conflicts; do not mask unrelated DB failures.
-        constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
-        sqlite_message = str(exc.orig)
-        if constraint in {
-            "uq_service_order_lab_link_active_ets",
-            "uq_service_order_lab_link_active_root",
-        } or any(
-            f"UNIQUE constraint failed: service_order_lab_links.{column}" in sqlite_message
-            for column in ("service_order_id", "lab_root_work_order_id")
-        ):
-            raise HTTPException(409, "El ETS o grupo LAB ya tiene un vínculo activo") from exc
+        conflict = link_integrity_conflict(exc)
+        if conflict is not None:
+            raise conflict from exc
         raise
     except Exception:
         db.rollback()
@@ -146,6 +153,36 @@ def _close(link: ServiceOrderLabLink, status: str, reason: str, user_id: int):
     link.unlink_reason = reason
 
 
+def link_lab_root_in_transaction(
+    db: Session, service_order_id: int, root: LabWorkOrder, *, user_id: int,
+    origin: str | None = None,
+) -> ServiceOrderLabLink:
+    """Link core shared by the ERP bridge and MYC Mobile creation. NEVER commits.
+
+    Locks the ETS, validates availability, creates the active link and writes
+    the audit event inside the caller's transaction. ``root`` must already be a
+    resolved (and, for concurrent callers, locked) LAB root.
+    """
+    if user_id is None:
+        raise ValueError("Los vínculos LAB requieren un actor")
+    _service_order(db, service_order_id, lock=True)
+    link = _active(db, service_order_id)
+    if link is not None:
+        if link.lab_root_work_order_id != root.id:
+            raise HTTPException(409, "El ETS ya tiene un vínculo activo; use replace")
+        return link
+    _ensure_available(db, root.id, service_order_id)
+    link = _new_link(db, service_order_id, root.id, user_id)
+    new_values = _snapshot(link, root.folio)
+    if origin is not None:
+        new_values["origin"] = origin
+    write_audit_log(
+        db, action="service_order.lab_group_linked", entity="service_orders",
+        entity_id=service_order_id, user_id=user_id, new_values=new_values,
+    )
+    return link
+
+
 def link_lab_group(
     db: Session, service_order_id: int, work_order_id: int, *, user_id: int,
 ) -> ServiceOrderLabLink:
@@ -154,18 +191,7 @@ def link_lab_group(
         # the final guard for callers without locks (including SQLite tests).
         _service_order(db, service_order_id, lock=True)
         root = resolve_lab_root_work_order(db, work_order_id, lock=True)
-        link = _active(db, service_order_id)
-        if link is not None:
-            if link.lab_root_work_order_id != root.id:
-                raise HTTPException(409, "El ETS ya tiene un vínculo activo; use replace")
-        else:
-            _ensure_available(db, root.id, service_order_id)
-            link = _new_link(db, service_order_id, root.id, user_id)
-            write_audit_log(
-                db, action="service_order.lab_group_linked", entity="service_orders",
-                entity_id=service_order_id, user_id=user_id,
-                new_values=_snapshot(link, root.folio),
-            )
+        link = link_lab_root_in_transaction(db, service_order_id, root, user_id=user_id)
     return link
 
 

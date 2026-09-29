@@ -30,6 +30,12 @@ import { LabEquipmentForm } from '@/src/components/lab/LabEquipmentForm';
 import { LabDeliveryFlow } from '@/src/components/lab/LabDeliveryFlow';
 import { LabPartialDeliveryRequest } from '@/src/components/lab/LabPartialDeliveryRequest';
 import { LabWorkOrderClientField } from '@/src/components/lab/LabWorkOrderClientField';
+import { ErpCalibrationLinkField } from '@/src/components/lab/ErpCalibrationLinkField';
+import {
+  canAttachErpLink,
+  withErpLink,
+  type ErpCalibrationCandidate,
+} from '@/src/services/lab-erp-calibration';
 import {
   ActionRow,
   ActionTile,
@@ -260,6 +266,8 @@ export default function WorkOrdersScreen() {
   const [equipmentByEquipmentBlockers, setEquipmentByEquipmentBlockers] = useState<EquipmentByEquipmentBlocker[] | null>(null);
   const [step, setStep] = useState<Step>('general');
   const [general, setGeneral] = useState<GeneralData>(emptyGeneral);
+  // Vínculo ERP opcional (ETS de calibración); sólo se envía al crear.
+  const [erpLink, setErpLink] = useState<ErpCalibrationCandidate | null>(null);
   const [workOrder, setWorkOrder] = useState<LabWorkOrder | null>(null);
   const [receptionOrders, setReceptionOrders] = useState<LabWorkOrder[]>([]);
   const [equipmentEditor, setEquipmentEditor] = useState<LabEquipment | 'new' | null>(null);
@@ -535,6 +543,7 @@ export default function WorkOrdersScreen() {
     setWorkflowMode('group');
     setEquipmentByEquipmentBlockers(null);
     setGeneral(emptyGeneral());
+    setErpLink(null);
     setWorkOrder(null);
     setStep('general');
     setSignatureFlowState(null);
@@ -895,7 +904,7 @@ export default function WorkOrdersScreen() {
         : '/mobile/v1/technician/lab-work-orders';
       const detail = await request<LabWorkOrder>(path, {
         method: workOrder ? 'PATCH' : 'POST',
-        body: JSON.stringify({
+        body: JSON.stringify(withErpLink({
           ...general,
           contact_name: general.contact_name || null,
           contact_phone: general.contact_phone || null,
@@ -907,7 +916,7 @@ export default function WorkOrdersScreen() {
           notes: general.notes || null,
           ...(workOrder ? { expected_edit_version: workOrder.edit_version } : { workflow_mode: workflowMode }),
           ...(groupMode !== 'none' ? { quantity: Number(groupQuantity) } : {}),
-        }),
+        }, erpLink, groupMode, !!workOrder)),
       });
       if (groupMode === 'request') {
         Alert.alert('Solicitud enviada', 'Los folios se asignarán únicamente cuando un administrador la apruebe.');
@@ -916,6 +925,7 @@ export default function WorkOrdersScreen() {
         return;
       }
       setWorkOrder(detail);
+      setErpLink(null);
       setStep('capture');
       if (groupMode === 'direct') {
         Alert.alert('Grupo creado', `Se materializaron ${detail.related_work_orders.length} OT con folios consecutivos.`);
@@ -1701,6 +1711,15 @@ export default function WorkOrdersScreen() {
                     <Field label="Orden de compra / cotización" value={general.purchase_order} onChangeText={(value) => setGeneral({ ...general, purchase_order: value })} />
                     <Field label="Observaciones" multiline value={general.notes} onChangeText={(value) => setGeneral({ ...general, notes: value })} />
                   </FormSection>
+                  {user.actor_type === 'internal' && canAttachErpLink(groupMode, !!workOrder) && (
+                    <FormSection title="Vincular con cotización ERP (opcional)">
+                      <Text style={styles.fieldHint}>
+                        Asocia esta OT a un ETS de calibración con cotización aceptada. Es independiente de
+                        {' '}“Orden de compra / cotización”. Sólo se define al crear; los cambios posteriores son administrativos en el ERP.
+                      </Text>
+                      <ErpCalibrationLinkField onChange={setErpLink} request={request} selection={erpLink} />
+                    </FormSection>
+                  )}
                   {groupMode === 'request' ? (
                     <AdministrativeButton
                       disabled={
