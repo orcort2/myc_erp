@@ -11,11 +11,16 @@ test('Cotizaciones no crea ETS manualmente y ofrece abrir el ETS materializado',
   assert.match(source, />\s*Ver ETS\s*</);
 });
 
-test('Verificación muestra y exige su Master genérico fuera del bloque de Calibración', () => {
-  assert.match(source, /Master genérico de Verificación/);
-  assert.match(source, /required=\{productForm\.operationalCategory === 'verification'\}/);
-  assert.match(source, /Este Master se incluye inicialmente en el paquete de Captura/);
-  assert.match(source, /Verificación no puede operar sin un Master genérico válido/);
+test('Catálogo 2026: Calibración y Verificación se dan de alta sin selector de Master', () => {
+  assert.doesNotMatch(source, /Master genérico de Verificación/);
+  assert.doesNotMatch(source, /Plantilla esperada de certificado/);
+  assert.doesNotMatch(source, /Selecciona el Master genérico de Verificación antes de guardar/);
+  assert.doesNotMatch(source, /expectedCertificateMasterId/);
+  assert.doesNotMatch(source, /certificateMasters/);
+  // El catálogo ya no consulta Masters para un selector inexistente.
+  assert.doesNotMatch(source, /document_type: 'certificate_master'/);
+  // Legacy: el payload omite el campo para no borrar valores históricos al editar.
+  assert.doesNotMatch(source, /expected_certificate_master_id:/);
 });
 
 test('Escape respeta ConfirmDialog y cierra primero el modal activo', () => {

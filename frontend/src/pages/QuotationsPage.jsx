@@ -39,7 +39,6 @@ import {
   listLinkedCompanies,
   listQuotationSnapshots,
   listCatalogItems,
-  listControlledDocuments,
   listClients,
   listQuotations,
   restoreQuotationSnapshot,
@@ -151,7 +150,6 @@ function mapCatalogItemFromApi(item) {
     ),
     linkedCompanyId: item.linked_company_id ? String(item.linked_company_id) : '',
     linkedCertificatePrefix: item.linked_certificate_prefix ?? '',
-    expectedCertificateMasterId: item.expected_certificate_master_id ? String(item.expected_certificate_master_id) : '',
     requiresIndividualIdentification: Boolean(item.requires_individual_identification),
     saleBrand: item.sale_brand ?? '',
     saleModel: item.sale_model ?? '',
@@ -222,7 +220,8 @@ function mapCatalogPayloadFromForm(form) {
     service_type: form.category === 'Calibracion' ? form.serviceType : null,
     linked_company_id: form.serviceType === 'linked' ? Number(form.linkedCompanyId) || null : null,
     linked_certificate_prefix: form.serviceType === 'linked' ? form.linkedCertificatePrefix.trim().toUpperCase() || null : null,
-    expected_certificate_master_id: ['calibration', 'verification'].includes(operationalCategory) ? Number(form.expectedCertificateMasterId) || null : null,
+    // expected_certificate_master_id es LEGACY (ciclo 2026): el catálogo ya no
+    // selecciona Master. Se omite del payload para no borrar valores históricos.
     requires_individual_identification: operationalCategory === 'sale' ? Boolean(form.requiresIndividualIdentification) : false,
     sale_brand: operationalCategory === 'sale' ? form.saleBrand.trim() || null : null,
     sale_model: operationalCategory === 'sale' ? form.saleModel.trim() || null : null,
@@ -458,7 +457,6 @@ function QuotationsPage({ user = null }) {
   const [catalogItems, setCatalogItems] = useState([]);
   const [linkedCompanies, setLinkedCompanies] = useState([]);
   const [activeServicePickerId, setActiveServicePickerId] = useState(null);
-  const [certificateMasters, setCertificateMasters] = useState([]);
   const [productForm, setProductForm] = useState(emptyProductForm);
   const [templateForm, setTemplateForm] = useState(defaultQuotationTemplate);
   const [editingProductId, setEditingProductId] = useState(null);
@@ -558,12 +556,11 @@ function QuotationsPage({ user = null }) {
     setError('');
     setIsLoading(true);
     try {
-      const [quotationResult, clientResult, catalogResult, templateResult, mastersResult, linkedCompaniesResult] = await Promise.allSettled([
+      const [quotationResult, clientResult, catalogResult, templateResult, linkedCompaniesResult] = await Promise.allSettled([
         listQuotations(),
         listClients(),
         listCatalogItems({ is_active: true }),
         getQuotationTemplate(),
-        listControlledDocuments({ document_type: 'certificate_master', status: 'active' }),
         listLinkedCompanies()
       ]);
       if (quotationResult.status === 'rejected') {
@@ -575,7 +572,6 @@ function QuotationsPage({ user = null }) {
       if (catalogResult.status === 'rejected') {
         throw catalogResult.reason;
       }
-      setCertificateMasters(mastersResult.status === 'fulfilled' ? mastersResult.value : []);
       setLinkedCompanies(linkedCompaniesResult.status === 'fulfilled' ? linkedCompaniesResult.value : []);
       const quotationItems = quotationResult.value;
       const clientItems = clientResult.value;
@@ -1113,7 +1109,6 @@ function QuotationsPage({ user = null }) {
         linkedCompanyId: item.linkedCompanyId || '',
         linkedCompanyName: '',
         linkedCertificatePrefix: item.linkedCertificatePrefix || '',
-        expectedCertificateMasterId: item.expectedCertificateMasterId || '',
         requiresIndividualIdentification: Boolean(item.requiresIndividualIdentification),
         saleBrand: item.saleBrand || '',
         saleModel: item.saleModel || '',
@@ -1184,10 +1179,6 @@ function QuotationsPage({ user = null }) {
     }
     if (productForm.category === 'Calibracion' && !productForm.serviceType) {
       setError('Selecciona el tipo de servicio.');
-      return;
-    }
-    if (productForm.operationalCategory === 'verification' && !productForm.expectedCertificateMasterId) {
-      setError('Selecciona el Master genérico de Verificación antes de guardar.');
       return;
     }
     const linkedServiceError = validateLinkedServiceFields(productForm);
@@ -3510,41 +3501,6 @@ function QuotationsPage({ user = null }) {
                         ) : null}
 
                       </>
-                    ) : null}
-
-                    {['calibration', 'verification'].includes(productForm.operationalCategory) ? (
-                      <label className="catalog-form-field--wide">
-                        {productForm.operationalCategory === 'verification'
-                          ? 'Master genérico de Verificación'
-                          : 'Plantilla esperada de certificado'}
-
-                        <select
-                          onChange={(event) => updateProductForm(
-                            'expectedCertificateMasterId',
-                            event.target.value,
-                          )}
-                          required={productForm.operationalCategory === 'verification'}
-                          value={productForm.expectedCertificateMasterId || ''}
-                        >
-                          <option value="">Sin asignar</option>
-                          {certificateMasters.map((master) => (
-                            <option key={master.id} value={master.id}>
-                              {master.code} · {master.name} · Rev. {master.current_revision || '-'}
-                            </option>
-                          ))}
-                        </select>
-                        {productForm.operationalCategory === 'verification' ? (
-                          <small>
-                            Este Master se incluye inicialmente en el paquete de Captura. El archivo técnico real podrá sustituirlo durante el retorno del ZIP.
-                          </small>
-                        ) : null}
-                        {productForm.operationalCategory === 'verification'
-                          && !productForm.expectedCertificateMasterId ? (
-                            <span className="form-error">
-                              Verificación no puede operar sin un Master genérico válido.
-                            </span>
-                          ) : null}
-                      </label>
                     ) : null}
 
                     {/* ALCANCE PARA CATEGORÍAS QUE REALMENTE LO USAN */}

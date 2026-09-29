@@ -787,25 +787,6 @@ def create_service_order(
             quotation,
         )
 
-        incomplete_verification = next(
-            (
-                item
-                for item in service_order.items
-                if item.operational_category == "verification"
-                and item.expected_certificate_master_id is None
-            ),
-            None,
-        )
-        if incomplete_verification is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    "La cotización contiene una partida histórica de Verificación "
-                    "sin Master genérico. Corrige el concepto y sustituye explícitamente "
-                    "la partida antes de materializar el ETS."
-                ),
-            )
-
     elif payload.items:
         direct_items: list[ServiceOrderItem] = []
 

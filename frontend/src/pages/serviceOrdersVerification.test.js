@@ -47,8 +47,7 @@ test('el encabezado identifica categorías y las métricas separan Verificación
   assert.match(source, /sourceItem\?\.operational_category !== 'calibration'/);
 });
 
-test('un ETS legacy sin Master muestra advertencia antes de Captura', () => {
-  assert.match(source, /selectedOrderHasIncompleteVerificationMaster/);
-  assert.match(source, /ETS histórico contiene Verificación sin Master genérico/);
-  assert.match(source, /antes de iniciar Captura/);
+test('Verificación sin Master genérico ya no es un ETS inválido (Master de catálogo LEGACY)', () => {
+  assert.doesNotMatch(source, /selectedOrderHasIncompleteVerificationMaster/);
+  assert.doesNotMatch(source, /ETS histórico contiene Verificación sin Master genérico/);
 });

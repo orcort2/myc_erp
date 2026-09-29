@@ -150,6 +150,11 @@ def eligibility_for_equipment(db: Session, equipment: Equipment) -> EligibleItem
         return EligibleItem(equipment, field_sheet, certificate, "Falta identificación")
     if operational_category == "calibration" and not field_sheet.next_calibration_date:
         return EligibleItem(equipment, field_sheet, certificate, "Falta fecha de próxima calibración")
+    if operational_category == "verification" and not equipment.certificate_master_document_id:
+        # Catálogo 2026: Verificación ya no exige Master genérico. Sin Master
+        # inicial el paquete lleva sólo la Hoja de Campo; Captura aporta su
+        # Master y la carga lo identifica por fingerprint registrado.
+        return EligibleItem(equipment, field_sheet, certificate)
     if not equipment.certificate_master_document_id:
         return EligibleItem(equipment, field_sheet, certificate, "Falta plantilla esperada de certificado")
     if not equipment.certificate_master_version_id or not equipment.certificate_template_path_snapshot:
@@ -186,18 +191,21 @@ def package_summary(db: Session, service_order_id: int) -> dict:
             "ready_total": sum(group["ready"] for group in groups)}
 
 
-def _render_pair(db: Session, item: EligibleItem) -> tuple[str, bytes, str, bytes]:
+def _render_pair(db: Session, item: EligibleItem) -> tuple[str, bytes, str | None, bytes | None]:
     assert item.field_sheet and item.certificate
     equipment_base_name(item.certificate, item.field_sheet)
     pdf, _ = generate_field_sheet_pdf(db, item.field_sheet.id)
+    folio = _certificate_folder(item.certificate)
+    pdf_name = f"Hoja_Campo_{folio}.pdf"
+    if not item.equipment.certificate_template_path_snapshot:
+        # Verificación sin Master genérico inicial: sólo PDF (ver elegibilidad).
+        return pdf_name, pdf, None, None
     template = resolve_storage_path(item.equipment.certificate_template_path_snapshot)
     assert template is not None
     extension = template.suffix.lower()
     if extension not in EXCEL_EXTENSIONS:
         raise HTTPException(status_code=422, detail="La plantilla snapshot no tiene una extensión Excel aceptada")
     excel = template.read_bytes()
-    folio = _certificate_folder(item.certificate)
-    pdf_name = f"Hoja_Campo_{folio}.pdf"
     excel_name = _master_delivery_name(item.certificate, extension)
     return pdf_name, pdf, excel_name, excel
 
@@ -227,11 +235,14 @@ def work_order_package(db: Session, service_order_id: int, work_order_id: int) -
     if len(ready) == 1:
         pdf_name, pdf, excel_name, excel = _render_pair(db, ready[0])
         boundary = "MYC-CAPTURE-PACKAGE"
-        body = b"".join([
+        parts = [
             f"--{boundary}\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=\"{pdf_name}\"\r\n\r\n".encode(), pdf, b"\r\n",
-            f"--{boundary}\r\nContent-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\nContent-Disposition: attachment; filename=\"{excel_name}\"\r\n\r\n".encode(), excel, b"\r\n",
-            f"--{boundary}--\r\n".encode(),
-        ])
+        ]
+        if excel is not None:
+            parts += [
+                f"--{boundary}\r\nContent-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\nContent-Disposition: attachment; filename=\"{excel_name}\"\r\n\r\n".encode(), excel, b"\r\n",
+            ]
+        body = b"".join([*parts, f"--{boundary}--\r\n".encode()])
         return body, f"{folder}.multipart", f"multipart/mixed; boundary={boundary}"
     buffer = BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -239,7 +250,8 @@ def work_order_package(db: Session, service_order_id: int, work_order_id: int) -
             pdf_name, pdf, excel_name, excel = _render_pair(db, item)
             prefix = _package_member_prefix(order, work_order, item.certificate, include_ets=False)
             archive.writestr(f"{prefix}/{pdf_name}", pdf)
-            archive.writestr(f"{prefix}/{excel_name}", excel)
+            if excel is not None:
+                archive.writestr(f"{prefix}/{excel_name}", excel)
     return buffer.getvalue(), f"{folder}.zip", "application/zip"
 
 
@@ -257,7 +269,8 @@ def service_order_package(db: Session, service_order_id: int) -> tuple[bytes, st
                 pdf_name, pdf, excel_name, excel = _render_pair(db, item)
                 prefix = _package_member_prefix(order, work_order, item.certificate, include_ets=True)
                 archive.writestr(f"{prefix}/{pdf_name}", pdf)
-                archive.writestr(f"{prefix}/{excel_name}", excel)
+                if excel is not None:
+                    archive.writestr(f"{prefix}/{excel_name}", excel)
                 any_file = True
     if not any_file:
         raise HTTPException(status_code=409, detail="No hay equipos elegibles; consulta el resumen de bloqueos")
@@ -410,13 +423,13 @@ def _validation_issue_keys(validation: dict | None) -> tuple[list[str], list[str
 
 
 def _verification_requires_registered_master(certificate: Certificate) -> bool:
+    """Verificación sin Master final congelado se identifica por fingerprint
+    registrado, tenga o no Master genérico inicial (el catálogo 2026 ya no lo
+    exige)."""
     if certificate.certificate_type != "verification":
         return False
     context = dict(certificate.equipment.certificate_operational_context_snapshot or {})
-    return bool(
-        context.get("initial_certificate_master_document_id")
-        and not context.get("final_certificate_master_document_id")
-    )
+    return not context.get("final_certificate_master_document_id")
 
 
 def _verification_master_validation(certificate: Certificate) -> dict:

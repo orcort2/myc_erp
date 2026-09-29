@@ -234,7 +234,27 @@ def test_catalog_edit_preserves_explicit_operational_category(tmp_path, monkeypa
         engine.dispose()
 
 
-def test_new_verification_requires_valid_active_xlsx_master(tmp_path, monkeypatch):
+def test_new_calibration_and_verification_are_created_without_master():
+    """Catálogo 2026: el Master XLSX ya no es requisito operativo del alta."""
+    engine, db, _, _ = _context()
+    try:
+        for category, label, extra in (
+            ("calibration", "Calibracion", {"service_type": "traceable", "calibration_scope": "traceable"}),
+            ("verification", "Verificacion", {}),
+        ):
+            item = create_catalog_item(db, CatalogItemCreate(
+                item_type="service", service_kind="simple", commodity=category,
+                category=label, operational_category=category,
+                name=f"Alta sin Master {category}", origin_currency="MXN", **extra,
+            ))
+            assert item.expected_certificate_master_id is None
+            assert item.operational_category == category
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_explicitly_assigned_master_is_still_validated_for_api_compatibility(tmp_path, monkeypatch):
     engine, db, _, _ = _context()
     try:
         monkeypatch.setattr(
@@ -250,8 +270,6 @@ def test_new_verification_requires_valid_active_xlsx_master(tmp_path, monkeypatc
             name="Verificación institucional",
             origin_currency="MXN",
         )
-        with pytest.raises(HTTPException, match="requiere un Master genérico"):
-            create_catalog_item(db, CatalogItemCreate(**payload))
 
         valid_path = tmp_path / "valid.xlsx"
         valid_path.write_bytes(b"xlsx")
@@ -289,17 +307,52 @@ def test_new_verification_requires_valid_active_xlsx_master(tmp_path, monkeypatc
         engine.dispose()
 
 
-def test_legacy_verification_without_master_remains_readable_but_cannot_be_updated():
+def test_legacy_verification_without_master_is_now_editable():
     engine, db, _, _ = _context()
     try:
         legacy = _service("Verificación legacy", "Verificacion", "verification")
         db.add(legacy)
         db.commit()
         assert legacy.expected_certificate_master_id is None
-        with pytest.raises(HTTPException, match="requiere un Master genérico"):
-            update_catalog_item(db, legacy.id, CatalogItemUpdate(name="Edición legacy"))
-        db.rollback()
-        assert db.get(CatalogItem, legacy.id).name == "Verificación legacy"
+        updated = update_catalog_item(db, legacy.id, CatalogItemUpdate(name="Edición legacy"))
+        assert updated.name == "Edición legacy"
+        assert updated.expected_certificate_master_id is None
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_legacy_verification_with_invalid_master_updates_price_and_keeps_history(tmp_path, monkeypatch):
+    """Un Master legacy inactivo/caducado ya no bloquea editar el concepto
+    mientras el cambio no intente modificar ese Master; el valor histórico se
+    conserva y sigue legible."""
+    engine, db, _, _ = _context()
+    try:
+        monkeypatch.setattr(
+            "app.services.catalog_items.resolve_storage_path",
+            lambda value: Path(value) if value else None,
+        )
+        expired = _certificate_master(
+            db, tmp_path / "legacy.xlsx", code="MASTER-LEGACY",
+            expires_on=date.today() - timedelta(days=30), status="inactive",
+        )
+        legacy = _service("Verificación legacy Master", "Verificacion", "verification")
+        legacy.expected_certificate_master_id = expired.id
+        db.add(legacy)
+        db.commit()
+
+        updated = update_catalog_item(
+            db, legacy.id, CatalogItemUpdate(origin_price=Decimal("250.00"))
+        )
+        assert updated.final_price_mxn == Decimal("250.00")
+        assert updated.expected_certificate_master_id == expired.id
+        assert db.get(CatalogItem, legacy.id).expected_certificate_master_id == expired.id
+
+        with pytest.raises(HTTPException, match="activo"):
+            other = _certificate_master(db, tmp_path / "other.xlsx", code="MASTER-OTHER", status="inactive")
+            update_catalog_item(
+                db, legacy.id, CatalogItemUpdate(expected_certificate_master_id=other.id)
+            )
     finally:
         db.close()
         engine.dispose()

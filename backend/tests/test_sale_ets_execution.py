@@ -339,7 +339,7 @@ def test_accepting_non_sale_quote_also_materializes_ets(ctx):
     ]
 
 
-def test_acceptance_rolls_back_for_legacy_verification_without_master(ctx):
+def test_acceptance_materializes_verification_without_master(ctx):
     db, _, advisor, _, client = ctx
     verification = CatalogItem(
         item_type="service", service_kind="simple", commodity="verification",
@@ -364,11 +364,11 @@ def test_acceptance_rolls_back_for_legacy_verification_without_master(ctx):
     db.add(quote)
     db.commit()
 
-    with pytest.raises(HTTPException, match="partida histórica de Verificación"):
-        change_quotation_status(db, quote.id, "accepted", user_id=advisor.id)
-    db.rollback()
-    assert db.get(Quotation, quote.id).status == "waiting"
-    assert db.query(ServiceOrder).filter(ServiceOrder.quotation_id == quote.id).count() == 0
+    # Catálogo 2026: el Master ya no es requisito operativo para materializar.
+    accepted = change_quotation_status(db, quote.id, "accepted", user_id=advisor.id)
+    order = db.get(ServiceOrder, accepted.service_order_id)
+    assert [item.operational_category for item in order.items] == ["verification"]
+    assert order.items[0].expected_certificate_master_id is None
 
 
 def test_historical_sale_requires_explicit_snapshot_initialization(ctx):

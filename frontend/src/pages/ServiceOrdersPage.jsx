@@ -411,14 +411,6 @@ function ServiceOrdersPage({ user = null }) {
     [selectedOrder]
   );
 
-  const selectedOrderHasIncompleteVerificationMaster = useMemo(
-    () => (selectedOrder?.items || []).some(
-      (item) => item.operational_category === 'verification'
-        && !item.expected_certificate_master_id
-    ),
-    [selectedOrder]
-  );
-
   const selectedEquipmentFormItem = useMemo(
     () => metrologicalOrderItems.find(
       (item) => String(item.id) === String(equipmentForm.serviceOrderItemId)
@@ -3183,12 +3175,6 @@ function closeTechnicalSubEts() {
                 </button>
               ) : null}
             </div>
-
-            {selectedOrderHasIncompleteVerificationMaster ? (
-              <div className="form-error dashboard-error" role="alert">
-                Este ETS histórico contiene Verificación sin Master genérico. Corrige el concepto y sustituye explícitamente la partida antes de iniciar Captura.
-              </div>
-            ) : null}
 
             <div className="ets-modal-action-ribbon" aria-label="Acciones principales del ETS">
               {!selectedOrderManagedByMobile ? (

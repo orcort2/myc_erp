@@ -104,6 +104,29 @@ class CapturePackageTests(unittest.TestCase):
         self.assertEqual(excel, b"xlsx-test")
         self.assertEqual(equipment.certificate_template_filename_snapshot, "CERTIFICADO MASTER TEMPERATURA.xlsx")
 
+    def test_verification_without_generic_master_is_packaged_pdf_only(self):
+        """Catálogo 2026: Verificación sin Master genérico inicial sigue siendo
+        elegible; el paquete legacy lleva sólo la Hoja de Campo."""
+        equipment, field_sheet, certificate = build_case("completed", self.template_path)
+        certificate.certificate_type = "verification"
+        equipment.certificate_master_document_id = None
+        equipment.certificate_master_version_id = None
+        equipment.certificate_template_path_snapshot = None
+        equipment.certificate_operational_context_snapshot = {"initial_certificate_master_document_id": None}
+        field_sheet.calibration_date = date(2026, 9, 28)
+        field_sheet.next_calibration_date = None
+        equipment.service_order_item_id = 5
+        verification_item = SimpleNamespace(operational_category="verification")
+        original_get = self.db.get
+        self.db.get = lambda model, record_id: verification_item if record_id == 5 else original_get(model, record_id)
+        item = eligibility_for_equipment(self.db, equipment)
+        self.assertTrue(item.ready, item.reason)
+        with patch("app.services.capture_packages.generate_field_sheet_pdf", return_value=(b"pdf", "x.pdf")):
+            pdf_name, pdf, excel_name, excel = _render_pair(self.db, item)
+        self.assertEqual((pdf_name, pdf, excel_name, excel), ("Hoja_Campo_MYCA-07-2026-0001.pdf", b"pdf", None, None))
+        from app.services.capture_packages import _verification_requires_registered_master
+        self.assertTrue(_verification_requires_registered_master(certificate))
+
     def test_macos_auxiliary_files_are_ignored(self):
         for filename in ("._Master.xlsx", ".DS_Store", "__MACOSX/OT/Master.xlsx", "OT/__MACOSX/._Master.xlsx"):
             with self.subTest(filename=filename):

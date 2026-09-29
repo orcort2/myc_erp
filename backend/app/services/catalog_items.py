@@ -304,13 +304,23 @@ def _ensure_certificate_master(db: Session, document_id: int | None) -> None:
         raise HTTPException(status_code=422, detail="El Master de Certificado no tiene un archivo XLSX disponible")
 
 
-def _ensure_operational_certificate_master(db: Session, values: dict) -> None:
+def _ensure_operational_certificate_master(
+    db: Session,
+    values: dict,
+    *,
+    previous_document_id: int | None = None,
+) -> None:
+    """``expected_certificate_master_id`` es LEGACY (ciclo 2026).
+
+    Calibración y Verificación se dan de alta sin Master XLSX: el Master ya no
+    es requisito operativo del catálogo. Los valores históricos se conservan y
+    siguen legibles; sólo se valida un Master que el cambio intenta asignar
+    (compatibilidad API), nunca el valor legacy ya persistido, de modo que un
+    Master histórico inactivo o caducado no bloquea editar precio/nombre.
+    """
     document_id = values.get("expected_certificate_master_id")
-    if values.get("operational_category") == "verification" and document_id is None:
-        raise HTTPException(
-            status_code=422,
-            detail="Verificación requiere un Master genérico de Verificación activo",
-        )
+    if document_id is None or document_id == previous_document_id:
+        return
     _ensure_certificate_master(db, document_id)
 
 
@@ -678,7 +688,9 @@ def update_catalog_item(
     prepared = _prepare_values(merged, recalculate_price=should_recalculate)
     _ensure_linked_company(db, prepared)
     _ensure_included_calibration(db, prepared)
-    _ensure_operational_certificate_master(db, prepared)
+    _ensure_operational_certificate_master(
+        db, prepared, previous_document_id=item.expected_certificate_master_id
+    )
     if prepared["service_kind"] == "simple":
         effective_components = []
     elif components_provided:
