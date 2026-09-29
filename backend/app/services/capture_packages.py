@@ -2,6 +2,14 @@
 
 All selection is intentionally server-side: a browser never decides whether an
 instrument is eligible or which template/version it receives.
+
+Two strategies share the public contract (summary / package / upload):
+
+A. legacy/productive ERP (this module): ERP Equipment/FieldSheet/Certificate
+   plus the frozen Master XLSX snapshot. Unchanged in this phase.
+B. LAB-backed (``lab_capture_packages``): ETS executed in MYC Mobile; PDF-only
+   handoff of the frozen LAB Field Sheets, folio from LAB. XLSX ingestion for
+   this strategy is a later phase.
 """
 from __future__ import annotations
 
@@ -36,6 +44,7 @@ from app.services.master_template_fingerprints import detect_service_type
 from app.services.file_security import POLICIES, validate_content, validate_upload
 from app.services.equipment import freeze_selected_certificate_master
 from app.services.storage_service import resolve_storage_path, save_validated_content
+from app.services.service_order_technical_flow import is_mobile_calibration_service_order
 
 
 EXCEL_EXTENSIONS = {".xlsx", ".xlsm", ".xls"}
@@ -177,17 +186,36 @@ def eligibility_for_equipment(db: Session, equipment: Equipment) -> EligibleItem
     return EligibleItem(equipment, field_sheet, certificate)
 
 
+def _lab_backed(order: ServiceOrder) -> bool:
+    return is_mobile_calibration_service_order(order)
+
+
+def _reject_mobile_erp_work_order_package(order: ServiceOrder) -> None:
+    if _lab_backed(order):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "LAB_CAPTURE_USES_SERVICE_ORDER_PACKAGE",
+                "message": "Este ETS se ejecuta en MYC Mobile; descarga el paquete PDF del ETS",
+            },
+        )
+
+
 def package_summary(db: Session, service_order_id: int) -> dict:
     order = db.get(ServiceOrder, service_order_id)
     if order is None or not order.is_active:
         raise HTTPException(status_code=404, detail="ETS no encontrado")
+    if _lab_backed(order):
+        from app.services.lab_capture_packages import lab_package_summary
+
+        return lab_package_summary(db, order)
     groups = []
     for work_order in db.scalars(select(ServiceWorkOrder).where(ServiceWorkOrder.service_order_id == order.id, ServiceWorkOrder.is_active.is_(True)).order_by(ServiceWorkOrder.sequence)).all():
         items = _eligible_with_pdf(db, _load_equipment(db, service_order_id=order.id, work_order_id=work_order.id))
         groups.append({"work_order_id": work_order.id, "work_order_number": work_order.work_order_number,
                        "ready": sum(item.ready for item in items), "pending": sum(not item.ready for item in items),
                        "blocked": [{"equipment_id": item.equipment.id, "equipment_name": item.equipment.name, "reason": item.reason} for item in items if not item.ready]})
-    return {"service_order_id": order.id, "folio": order.folio, "work_orders": groups,
+    return {"source": "erp", "service_order_id": order.id, "folio": order.folio, "work_orders": groups,
             "ready_total": sum(group["ready"] for group in groups)}
 
 
@@ -226,6 +254,8 @@ def _eligible_with_pdf(db: Session, equipment: list[Equipment]) -> list[Eligible
 def work_order_package(db: Session, service_order_id: int, work_order_id: int) -> tuple[bytes, str, str]:
     order = db.get(ServiceOrder, service_order_id)
     work_order = db.get(ServiceWorkOrder, work_order_id)
+    if order is not None:
+        _reject_mobile_erp_work_order_package(order)
     if order is None or work_order is None or work_order.service_order_id != order.id:
         raise HTTPException(status_code=404, detail="ETS u Orden de Trabajo no encontrada")
     ready = [item for item in _eligible_with_pdf(db, _load_equipment(db, service_order_id=order.id, work_order_id=work_order.id)) if item.ready]
@@ -259,6 +289,10 @@ def service_order_package(db: Session, service_order_id: int) -> tuple[bytes, st
     order = db.get(ServiceOrder, service_order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="ETS no encontrado")
+    if _lab_backed(order):
+        from app.services.lab_capture_packages import lab_service_order_package
+
+        return lab_service_order_package(db, order)
     buffer = BytesIO()
     any_file = False
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -534,6 +568,16 @@ def upload_capture_files(
     order = db.get(ServiceOrder, service_order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="ETS no encontrado")
+    if _lab_backed(order):
+        # Fase siguiente: XLSX -> folio LAB -> Certificate LAB-backed. Hoy no
+        # se aceptan archivos para no asociarlos a una autoridad inexistente.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "LAB_CAPTURE_INGESTION_NOT_AVAILABLE",
+                "message": "La carga de XLSX de Captura para ETS MYC Mobile corresponde a una fase posterior",
+            },
+        )
     expected: dict[str, list[Certificate]] = {}
     active_certificates: list[Certificate] = []
     for item in _load_equipment(db, service_order_id=order.id):

@@ -2637,6 +2637,17 @@ def _missing_completed_sheets(members: list[LabWorkOrder]) -> list[dict]:
     ]
 
 
+def equipment_certificate_folio_resolved(equipment: LabWorkOrderEquipment) -> bool:
+    """Folio documental efectivamente resuelto: MYCA/MYCT reservado o
+    autorizado; Vinculado sólo autorizado. Única regla, compartida por el
+    cierre staff (_unresolved_folio_equipment) y la readiness de Captura LAB."""
+    if equipment.service_type in {"accredited", "traceable"}:
+        return equipment.folio_status in {"reserved", "authorized"}
+    if equipment.service_type == "linked":
+        return equipment.folio_status == "authorized"
+    return False
+
+
 def _unresolved_folio_equipment(members: list[LabWorkOrder]) -> list[dict]:
     """Fase 5: frontera de cierre autoritativa para folios. La captura
     externa (Fase 3, _ensure_capture_allowed) puede avanzar con un folio
@@ -2659,11 +2670,8 @@ def _unresolved_folio_equipment(members: list[LabWorkOrder]) -> list[dict]:
         for item in members
         for equipment in item.active_equipment
         if _requires_field_sheet_discipline(item)
-        if (
-            equipment.service_type in {"accredited", "traceable"}
-            and equipment.folio_status not in {"reserved", "authorized"}
-        )
-        or (equipment.service_type == "linked" and equipment.folio_status != "authorized")
+        if equipment.service_type in {"accredited", "traceable", "linked"}
+        and not equipment_certificate_folio_resolved(equipment)
     ]
 
 
