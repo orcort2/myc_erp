@@ -294,8 +294,13 @@ class ServiceOrderRead(ServiceOrderBase):
     # Compatibilidad temporal con la OT principal histórica.
     #
     # La estructura nueva de órdenes físicas se encuentra en
-    # work_orders.
-    work_order_number: int
+    # work_orders. NULL (y work_orders = []) en un ETS nuevo exclusivamente
+    # de calibración: su ejecución técnica corresponde a MYC Mobile.
+    work_order_number: int | None = None
+
+    # Proyección derivada de la política técnica backend; no es un modo
+    # persistido ni seleccionable.
+    calibration_flow_managed_by_mobile: bool = False
 
     advisor_name: str | None = None
 

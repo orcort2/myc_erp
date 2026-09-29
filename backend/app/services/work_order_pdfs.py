@@ -17,6 +17,10 @@ from app.models.client import Client
 from app.models.equipment import Equipment
 from app.models.service_order import ServiceOrder, ServiceWorkOrder
 from app.services.service_orders import get_service_order
+from app.services.service_order_technical_flow import (
+    is_mobile_calibration_service_order,
+    mobile_calibration_conflict,
+)
 
 
 APP_DIR = Path(__file__).resolve().parents[1]
@@ -188,12 +192,30 @@ def _render_html(
     )
 
 
+def _ensure_erp_work_order_pdf_available(service_order) -> None:
+    """An ETS without productive OT (calibration in MYC Mobile) has no ERP OT PDF."""
+    if is_mobile_calibration_service_order(service_order):
+        raise mobile_calibration_conflict(service_order.id, "work_order_pdf")
+    if service_order.work_order_number is None and not any(
+        item.is_active for item in service_order.work_orders
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "SERVICE_ORDER_WITHOUT_WORK_ORDER",
+                "message": "El ETS no tiene una Orden de Trabajo ERP para imprimir.",
+                "service_order_id": service_order.id,
+            },
+        )
+
+
 def generate_work_order_pdf(db, service_order_id: int) -> tuple[bytes, str]:
     """
     Compatibilidad legacy:
     genera el PDF de la OT principal del servicio.
     """
     service_order = get_service_order(db, service_order_id)
+    _ensure_erp_work_order_pdf_available(service_order)
 
     primary_work_order = None
     if service_order.work_orders:
@@ -266,6 +288,7 @@ def generate_service_order_work_orders_pdf(db, service_order_id: int) -> tuple[b
     El endpoint individual se conserva para no romper integraciones existentes.
     """
     service_order = get_service_order(db, service_order_id)
+    _ensure_erp_work_order_pdf_available(service_order)
     active_work_orders = sorted(
         [item for item in service_order.work_orders if item.is_active],
         key=lambda item: item.sequence,

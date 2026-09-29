@@ -49,7 +49,13 @@ def validate_certificate_pdf_match(certificate: Certificate, filename: str | Non
         ("serial_number", equipment.serial_number if equipment else None, 20),
         ("internal_id", equipment.internal_id if equipment else None, 15),
         ("equipment_name", equipment.name if equipment else None, 10),
-        ("work_order_number", str(service_order.work_order_number) if service_order else None, 10),
+        (
+            "work_order_number",
+            str(service_order.work_order_number)
+            if service_order and service_order.work_order_number is not None
+            else None,
+            10,
+        ),
     ]:
         check, value = _check(field, expected, haystack, weight)
         checks.append(check)

@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.models.service_order_lab_link import ServiceOrderLabLink
 from app.models.certificate import Certificate, CertificateCaptureFile
 from app.models.equipment import Equipment
 from app.models.invoice import Invoice
@@ -111,6 +112,17 @@ def can_physically_rebuild_service_order(
             ServiceWorkOrder,
             (ServiceWorkOrder.service_order_id == service_order.id)
             & (ServiceWorkOrder.status == "pending"),
+        ),
+    )
+    # Un vínculo LAB (activo o histórico) significa ejecución técnica en MYC
+    # Mobile y además impide borrar físicamente el ETS (FK RESTRICT).
+    add(
+        "lab_links",
+        "vínculos con OT MYC Mobile",
+        _count(
+            db,
+            ServiceOrderLabLink,
+            ServiceOrderLabLink.service_order_id == service_order.id,
         ),
     )
     add(

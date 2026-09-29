@@ -53,6 +53,10 @@ from app.services.audit_logs import write_audit_log
 from app.services.activity import publish_event
 from app.services.catalog_items import expand_catalog_item_for_operations
 from app.services.institutional_folios import next_work_order_number
+from app.services.service_order_technical_flow import (
+    ensure_productive_technical_flow_allowed,
+    is_calibration_only,
+)
 from app.services.storage_service import (
     count_active_references,
     resolve_storage_path,
@@ -225,6 +229,23 @@ def _service_order_source_snapshot(quotation: Quotation | None) -> dict | None:
 def _count_expected_equipment(items: list[ServiceOrderItem]) -> int:
     total = sum(int(item.quantity or 0) for item in items if item.is_active)
     return max(total, 1)
+
+
+def assign_productive_work_orders(db: Session, service_order: ServiceOrder) -> bool:
+    """Canonical OT strategy for a NEW ETS whose items are already flushed.
+
+    Calibration-only ETS are executed in LAB/MYC Mobile during this phase:
+    they reserve no institutional OT folio and create no ServiceWorkOrder.
+    Every other composition (including mixed ETS) keeps the productive flow:
+    primary legacy number first, then the normalized ServiceWorkOrder block.
+    Returns True when productive work orders were created.
+    """
+    if is_calibration_only(service_order.items):
+        service_order.work_order_number = None
+        return False
+    service_order.work_order_number = _next_work_order_number(db)
+    _build_work_orders_for_service_order(db, service_order)
+    return True
 
 
 def _build_work_orders_for_service_order(db: Session, service_order: ServiceOrder) -> None:
@@ -714,14 +735,14 @@ def create_service_order(
     # Cabecera ETS
     # ------------------------------------------------------------
 
-    primary_work_order_number = _next_work_order_number(db)
-
+    # El número de OT se decide después de congelar las partidas: un ETS
+    # nuevo exclusivamente de calibración no consume folio OT (MYC Mobile).
     service_order = ServiceOrder(
         folio=_next_service_order_folio(
             db,
             date.today(),
         ),
-        work_order_number=primary_work_order_number,
+        work_order_number=None,
         client_id=payload.client_id,
         quotation_id=payload.quotation_id,
         advisor_id=payload.advisor_id,
@@ -842,8 +863,11 @@ def create_service_order(
     # ------------------------------------------------------------
     # Órdenes de trabajo
     # ------------------------------------------------------------
+    #
+    # Calibración exclusiva → sin OT productiva (ejecución MYC Mobile).
+    # Cualquier otra composición, incluida la mixta → flujo actual.
 
-    _build_work_orders_for_service_order(
+    assign_productive_work_orders(
         db,
         service_order,
     )
@@ -947,6 +971,18 @@ def update_service_order(
         )
 
     updates = payload.model_dump(exclude_unset=True)
+    technical_signature_fields = {
+        "technician_signature_data_url",
+        "client_received_signature_data_url",
+        "client_acceptance_signature_data_url",
+        "technician_signed_name",
+        "client_received_signed_name",
+        "client_acceptance_signed_name",
+    }
+    if technical_signature_fields.intersection(updates):
+        ensure_productive_technical_flow_allowed(
+            db, service_order.id, action="service_order.technical_signature"
+        )
     signature_fields = [
         (
             "technician_signature_data_url",
@@ -1007,6 +1043,9 @@ def confirm_signature_cycle(
 ) -> ServiceOrder:
     user_id = _require_actor_id(user_id)
     service_order = get_service_order(db, service_order_id)
+    ensure_productive_technical_flow_allowed(
+        db, service_order.id, action="service_order.signature_cycle"
+    )
 
     required_signature_fields = {
         "technician_signature_data_url": service_order.technician_signature_data_url,

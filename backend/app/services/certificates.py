@@ -7,6 +7,10 @@ from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.services.service_order_technical_flow import (
+    is_mobile_calibration_service_order,
+    mobile_calibration_conflict,
+)
 from app.services.institutional_folios import build_certificate_folio
 from app.schemas.service_type import normalize_service_type
 from app.models.certificate import Certificate, CertificateCaptureFile, CertificatePdfVersion
@@ -118,6 +122,10 @@ def _validate_certificate_links(db: Session, payload: CertificateCreate) -> None
         raise HTTPException(status_code=404, detail="Orden de servicio no encontrada")
     if service_order.status in {"closed", "cancelled"}:
         raise HTTPException(status_code=409, detail="No se puede crear certificado para una orden cerrada o cancelada")
+    # Productive creation reserves an independent folio over a productive
+    # Equipment. A calibration ETS executed in MYC Mobile keeps the LAB folio.
+    if is_mobile_calibration_service_order(service_order):
+        raise mobile_calibration_conflict(service_order.id, "certificate.create")
 
     equipment = db.scalar(
         select(Equipment).where(
@@ -721,7 +729,14 @@ def return_to_technician(
 
 
 def _storage_dir(certificate: Certificate) -> Path:
-    key = str(certificate.service_order.work_order_number if certificate.service_order else certificate.service_order_id)
+    # ETS sin OT ERP (calibración MYC Mobile) usa el mismo respaldo por ID que
+    # ya existía; nunca una carpeta "None".
+    service_order = certificate.service_order
+    key = str(
+        service_order.work_order_number
+        if service_order is not None and service_order.work_order_number is not None
+        else certificate.service_order_id
+    )
     return Path("certificados") / key
 
 

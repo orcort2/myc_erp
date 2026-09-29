@@ -6,6 +6,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.services.service_order_technical_flow import ensure_productive_technical_flow_allowed
 from app.models.certificate import Certificate
 from app.models.equipment import Equipment
 from app.models.field_sheet import FieldSheet, FieldSheetResult, FieldSheetSignature
@@ -697,6 +698,11 @@ def create_field_sheet(
     db: Session, payload: FieldSheetCreate, *, user_id: int | None = None
 ) -> FieldSheet:
     equipment = _ensure_active_equipment(db, payload.equipment_id)
+    # Defensive: a Mobile calibration ETS never has productive Equipment, but a
+    # productive FieldSheet must never be created for it through any path.
+    ensure_productive_technical_flow_allowed(
+        db, equipment.service_order_id, action="field_sheet.create"
+    )
     _ensure_no_active_field_sheet(db, payload.equipment_id)
     service_order: ServiceOrder = equipment.service_order
     _ensure_calibration_procedure(db, payload.calibration_procedure_id)

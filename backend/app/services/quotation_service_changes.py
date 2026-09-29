@@ -33,8 +33,7 @@ from app.services.quotations import (
 )
 from app.services.service_order_rebuilds import can_physically_rebuild_service_order
 from app.services.service_orders import (
-    _build_work_orders_for_service_order,
-    _next_work_order_number,
+    assign_productive_work_orders,
     _service_order_source_snapshot,
     _service_order_items_from_quotation,
 )
@@ -751,7 +750,8 @@ def apply_change(
     order_folio = order.folio
     previous_order_id = order.id
     order_values = {
-        "work_order_number": _next_work_order_number(db),
+        # Decided after the rebuilt items are frozen (canonical OT strategy).
+        "work_order_number": None,
         "client_id": quotation.client_id,
         "quotation_id": quotation.id,
         "advisor_id": quotation.advisor_id,
@@ -787,7 +787,7 @@ def apply_change(
     new_order.items, expansion_log = _service_order_items_from_quotation(db, quotation)
     db.add(new_order)
     db.flush()
-    _build_work_orders_for_service_order(db, new_order)
+    assign_productive_work_orders(db, new_order)
     db.flush()
     initialize_sale_execution(db, new_order, user_id=user.id)
     db.flush()

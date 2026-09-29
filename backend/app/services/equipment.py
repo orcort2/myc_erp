@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.services.service_order_technical_flow import ensure_productive_technical_flow_allowed
 from app.models.certificate import Certificate, CertificateCaptureFile
 from app.models.controlled_document import ControlledDocument, ControlledDocumentVersion
 from app.models.equipment import Equipment
@@ -393,6 +394,9 @@ def create_equipment(
     db: Session, payload: EquipmentCreate, *, user_id: int | None = None
 ) -> Equipment:
     service_order = _ensure_active_service_order(db, payload.service_order_id)
+    ensure_productive_technical_flow_allowed(
+        db, service_order.id, action="equipment.create"
+    )
 
     data = payload.model_dump()
 

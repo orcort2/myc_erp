@@ -31,9 +31,15 @@ class ServiceOrder(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     # Legacy / compatibilidad:
     # Se conserva como OT principal para no romper pantallas, PDFs o datos previos.
     # La operación nueva usará ServiceWorkOrder.
-    work_order_number: Mapped[int] = mapped_column(
+    #
+    # NULL es intencional: un ETS nuevo exclusivamente de calibración se
+    # ejecuta en MYC Mobile y no consume folio OT ERP (ver
+    # app/services/service_order_technical_flow.py). Nunca usar 0/-1 ni un
+    # folio ficticio; los ETS históricos conservan su número.
+    work_order_number: Mapped[int | None] = mapped_column(
         unique=True,
         index=True,
+        nullable=True,
     )
 
     client_id: Mapped[int] = mapped_column(
@@ -233,6 +239,15 @@ class ServiceOrder(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         if self.technician is None:
             return None
         return self.technician.full_name or self.technician.email
+
+    @property
+    def calibration_flow_managed_by_mobile(self) -> bool:
+        """Read-only projection of the technical-flow policy (not persisted)."""
+        from app.services.service_order_technical_flow import (
+            is_mobile_calibration_service_order,
+        )
+
+        return is_mobile_calibration_service_order(self)
 
     @property
     def has_pending_signature_work_orders(self) -> bool:

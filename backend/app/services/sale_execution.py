@@ -107,6 +107,12 @@ def initialize_sale_execution(db: Session, order: ServiceOrder, *, user_id: int)
     existing = db.scalar(select(SaleOrderItem.id).where(SaleOrderItem.service_order_id == order.id))
     if existing is not None:
         return
+    # Sin partidas de Venta no hay nada que materializar (mismo criterio que
+    # Mantenimiento/Reparación); un ETS de calibración MYC Mobile no tiene OT.
+    if not any(
+        item.is_active and item.operational_category == "sale" for item in order.items
+    ):
+        return
     work_orders = sorted((item for item in order.work_orders if item.is_active), key=lambda item: item.sequence)
     if not work_orders:
         raise HTTPException(status_code=409, detail="El ETS requiere una OT para materializar Venta")

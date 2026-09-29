@@ -28,6 +28,7 @@ from app.models.user import User
 from app.schemas.certificate import CertificateCreate, CertificateUpdate
 from app.schemas.equipment import EquipmentCreate, EquipmentUpdate
 from app.schemas.service_order import ServiceOrderCreate, ServiceOrderItemCreate
+from app.services import service_orders
 from app.services.certificates import (
     ALLOWED_TRANSITIONS,
     create_certificate,
@@ -206,6 +207,13 @@ def test_calibration_only_ets_auto_assigns_its_frozen_item(db):
         ),
         user_id=actor.id,
     )
+    # 2026: un ETS NUEVO sólo de calibración se ejecuta en MYC Mobile (sin OT
+    # ni Equipment productivos). La autoasignación de partida sigue vigente
+    # para ETS históricos, que ya traían OT reservada antes de esta fase.
+    assert order.work_order_number is None and order.work_orders == []
+    order.work_order_number = 7900
+    service_orders._build_work_orders_for_service_order(db, order)
+    db.commit()
 
     equipment = create_equipment(
         db,

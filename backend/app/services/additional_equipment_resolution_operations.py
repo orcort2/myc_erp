@@ -8,6 +8,10 @@ from datetime import date, datetime, timezone
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
+from app.services.service_order_technical_flow import (
+    MOBILE_CALIBRATION_FLOW_CODE,
+    is_mobile_calibration_service_order,
+)
 from app.models.catalog_item import CatalogItem
 from app.models.certificate import Certificate
 from app.models.equipment import Equipment
@@ -108,6 +112,12 @@ def register_additional_equipment(
     if service_order.status != expected_service_order_status:
         raise AdditionalEquipmentOperationError(
             "revalidation_required", "El estado crítico del ETS cambió."
+        )
+    if is_mobile_calibration_service_order(service_order):
+        # Additional productive Equipment/OT would contradict the LAB authority.
+        raise AdditionalEquipmentOperationError(
+            MOBILE_CALIBRATION_FLOW_CODE,
+            "La ejecución técnica de este ETS de calibración corresponde a MYC Mobile.",
         )
     existing = db.scalar(
         select(Equipment).where(

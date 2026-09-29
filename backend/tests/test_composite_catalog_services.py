@@ -225,7 +225,11 @@ class CompositeCatalogServiceTests(unittest.TestCase):
                 "Calibración de Báscula": (2, scale.id, quotation.items[0].id),
             },
         )
-        self.assertEqual(len(service_order.work_orders), 2)
+        # 2026: las hojas operativas congeladas son exclusivamente calibración
+        # (autoridad: ServiceOrderItem.operational_category), así que el ETS
+        # nuevo se ejecuta en MYC Mobile: sin folio OT ni ServiceWorkOrder.
+        self.assertIsNone(service_order.work_order_number)
+        self.assertEqual(service_order.work_orders, [])
 
     def test_simple_quotation_item_preserves_existing_behavior(self):
         simple = self.create_simple_service("Servicio simple")
