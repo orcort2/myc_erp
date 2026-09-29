@@ -15,6 +15,10 @@ from app.schemas.service_order_lab_link import (
     ServiceOrderLabLinkUnlink,
 )
 from app.schemas.certificate import CertificateBatchActionRead, CertificateBulkUploadRead
+from app.schemas.service_order_mobile_execution import (
+    MobileExecutionFieldSheetDetail,
+    MobileExecutionProjection,
+)
 from app.schemas.service_order import (
     ServiceOrderCreate,
     ServiceOrderExceptionAuthorize,
@@ -86,6 +90,11 @@ from app.services.capture_packages import (
 from app.services.certificates import (
     bulk_upload_certificate_pdfs,
     release_authenticated_certificates_for_service_order,
+)
+from app.services.service_order_mobile_execution import (
+    get_mobile_execution_field_sheet,
+    get_mobile_execution_field_sheet_pdf,
+    get_mobile_execution_projection,
 )
 from app.services.service_order_lab_links import (
     get_active_lab_link,
@@ -1005,3 +1014,51 @@ def get_service_order_lab_candidates(
     current_user: User = Depends(require_permission("service_orders.read")),
 ):
     return search_lab_candidates(db, service_order_id, q, limit=limit)
+
+
+# ---------------------------------------------------------------------------
+# Ejecución técnica MYC Mobile (READ-ONLY). MYC Mobile es la única interfaz de
+# escritura técnica; el ERP consulta el grupo LAB vinculado sin copiarlo.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{service_order_id}/mobile-execution", response_model=MobileExecutionProjection)
+def get_service_order_mobile_execution(
+    service_order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.read")),
+):
+    return get_mobile_execution_projection(db, service_order_id)
+
+
+@router.get(
+    "/{service_order_id}/mobile-execution/equipment/{equipment_id}/field-sheet",
+    response_model=MobileExecutionFieldSheetDetail,
+    dependencies=[Depends(require_permission("service_orders.read"))],
+)
+def get_service_order_mobile_execution_field_sheet(
+    service_order_id: int,
+    equipment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("field_sheets.read")),
+):
+    return get_mobile_execution_field_sheet(db, service_order_id, equipment_id)
+
+
+@router.get(
+    "/{service_order_id}/mobile-execution/field-sheets/{field_sheet_id}/pdf",
+    dependencies=[Depends(require_permission("service_orders.read"))],
+)
+def get_service_order_mobile_execution_field_sheet_pdf(
+    service_order_id: int,
+    field_sheet_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("field_sheets.read")),
+) -> Response:
+    content, filename = get_mobile_execution_field_sheet_pdf(db, service_order_id, field_sheet_id)
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+

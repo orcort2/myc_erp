@@ -131,6 +131,19 @@ def _quotation_policy(method: str, path: str) -> AccessPolicy:
 
 
 def _service_order_policy(method: str, path: str) -> AccessPolicy:
+    if "/mobile-execution" in path:
+        # Proyección READ-ONLY de MYC Mobile: resumen con service_orders.read;
+        # hoja/PDF además exigen field_sheets.read (en el router). Las acciones
+        # administrativas exigen autoridad de dominio LAB adicional (servicio).
+        if method == "GET":
+            return _permission(
+                "field_sheets.read"
+                if "/field-sheet" in path
+                else "service_orders.read"
+            )
+        if path.endswith("/cancel") or path.endswith("/restore"):
+            return _permission("lab_work_orders.cancel", administrative=True)
+        return _permission("work_orders.reopen", administrative=True)
     if "/lab-link" in path or path.endswith("/lab-candidates"):
         # Structural ETS context: create is the central minimum; mutation
         # routes additionally require update. Existing role composition applies.
