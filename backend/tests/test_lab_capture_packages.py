@@ -92,10 +92,12 @@ def test_capture_package_is_pdf_only_with_lab_folio_and_has_no_side_effects(ctx)
     assert response.status_code == 200, response.text
     archive = zipfile.ZipFile(io.BytesIO(response.content))
     names = sorted(archive.namelist())
+    # Estructura plana: una carpeta por OT; sin carpeta ETS ni carpeta por folio.
     assert names == [
-        f"{order_folio}/OT-6438/MYCT-09-2026-64381/Hoja_Campo_MYCT-09-2026-64381.pdf",
-        f"{order_folio}/OT-6439/MYCT-09-2026-64391/Hoja_Campo_MYCT-09-2026-64391.pdf",
+        "OT-6438/Hoja_Campo_MYCT-09-2026-64381.pdf",
+        "OT-6439/Hoja_Campo_MYCT-09-2026-64391.pdf",
     ]
+    assert response.headers["content-disposition"] == f'attachment; filename="{order_folio}.zip"'
     assert all(name.endswith(".pdf") for name in names)  # sin XLSX/Master
     assert archive.read(names[0]) == expected  # PDF congelado, nunca regenerado
     with ctx["factory"]() as db:
@@ -111,3 +113,28 @@ def test_capture_upload_and_erp_work_order_package_are_rejected_for_mobile_ets(c
     )
     assert upload.status_code == 409
     assert upload.json()["detail"]["code"] == "LAB_CAPTURE_INGESTION_NOT_AVAILABLE"
+
+
+def test_capture_package_physical_case_single_ot_exact_namelist(ctx):
+    """Caso físico validado: una OT, un equipo MYCA."""
+    with ctx["factory"]() as db:
+        db.get(LabWorkOrder, ctx["child"]).status = "cancelled"  # grupo operativo = sólo OT-6438
+        equipment = db.get(LabWorkOrderEquipment, ctx["e1"])
+        equipment.service_type = "accredited"
+        equipment.certificate_folio = "MYCA-09-26-4721"
+        db.commit()
+    _link(ctx)
+    response = ctx["http"].get(_url(ctx, "/capture-package"), headers=ctx["headers"]["Captura"])
+    assert response.status_code == 200, response.text
+    assert zipfile.ZipFile(io.BytesIO(response.content)).namelist() == [
+        "OT-6438/Hoja_Campo_MYCA-09-26-4721.pdf",
+    ]
+
+
+def test_capture_package_sanitizes_certificate_folio_in_file_name(ctx):
+    with ctx["factory"]() as db:
+        db.get(LabWorkOrderEquipment, ctx["e1"]).certificate_folio = "MYCA/09:26*4721"
+        db.commit()
+    _link(ctx)
+    response = ctx["http"].get(_url(ctx, "/capture-package"), headers=ctx["headers"]["Captura"])
+    assert "OT-6438/Hoja_Campo_MYCA-09-26-4721.pdf" in zipfile.ZipFile(io.BytesIO(response.content)).namelist()

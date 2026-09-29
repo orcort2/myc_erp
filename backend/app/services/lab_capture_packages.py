@@ -9,7 +9,7 @@ ServiceOrder → ServiceOrderLabLink → grupo LAB → equipo activo → FieldSh
 vigente → ``final_pdf_path`` + ``final_pdf_sha256`` (nunca se regenera).
 
 ``LabWorkOrderEquipment.certificate_folio`` es la autoridad del folio: nombra
-la carpeta y el archivo y servirá para el futuro matching del XLSX.
+el archivo dentro de la carpeta de su OT y servirá para el futuro matching del XLSX.
 
 Todas las lecturas son sin efectos secundarios (sin flush/commit).
 """
@@ -164,7 +164,10 @@ def _folder(value: str) -> str:
 
 
 def lab_service_order_package(db: Session, order: ServiceOrder) -> tuple[bytes, str]:
-    """ZIP PDF-only: <ETS>/OT-<folio>/<certificate_folio>/Hoja_Campo_<folio>.pdf.
+    """ZIP PDF-only: OT-<folio OT>/Hoja_Campo_<certificate_folio>.pdf.
+
+    El ZIP ya se nombra con el folio ETS: no hay carpeta exterior del ETS ni
+    carpeta intermedia por folio de certificado (el folio va en el nombre).
 
     Todo-o-nada: sólo se entrega cuando la readiness LAB completa está lista;
     un grupo parcialmente incompleto sigue bloqueado."""
@@ -191,7 +194,5 @@ def lab_service_order_package(db: Session, order: ServiceOrder) -> tuple[bytes, 
                 if sha256(content).hexdigest() != sheet.final_pdf_sha256:
                     raise HTTPException(status_code=409, detail="El PDF final congelado no coincide con su SHA-256")
                 folio = _folder(equipment.certificate_folio)
-                archive.writestr(
-                    f"{ets}/OT-{work_order.folio}/{folio}/Hoja_Campo_{folio}.pdf", content,
-                )
+                archive.writestr(f"OT-{work_order.folio}/Hoja_Campo_{folio}.pdf", content)
     return buffer.getvalue(), f"{ets}.zip"
