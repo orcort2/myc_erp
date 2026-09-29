@@ -348,43 +348,83 @@ function Get-AlembicRevisions {
         [string]$Command
     )
 
-    Push-Location $BackendPath
+    $StartInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $StartInfo.FileName = $Python
+    $StartInfo.WorkingDirectory = $BackendPath
+    $StartInfo.UseShellExecute = $false
+    $StartInfo.CreateNoWindow = $true
+    $StartInfo.RedirectStandardOutput = $true
+    $StartInfo.RedirectStandardError = $true
+    $StartInfo.Arguments = (
+        '-m alembic {0}' -f $Command
+    )
+
+    $Process = New-Object System.Diagnostics.Process
+    $Process.StartInfo = $StartInfo
 
     try {
-        $Output = @(
-            & $Python -m alembic $Command 2>&1
-        )
-
-        if ($LASTEXITCODE -ne 0) {
-            $Output | ForEach-Object {
-                Write-Host $_
-            }
-
-            throw "alembic $Command fallo."
+        if (-not $Process.Start()) {
+            throw "No se pudo iniciar alembic $Command."
         }
 
-        $Revisions = @(
-            $Output |
-                ForEach-Object {
-                    $Line = [string]$_
+        $StdOut = $Process.StandardOutput.ReadToEnd()
+        $StdErr = $Process.StandardError.ReadToEnd()
 
-                    if (
-                        $Line -match '^\s*([0-9a-fA-F]+)(?:\s|\(|$)'
-                    ) {
-                        $Matches[1].ToLowerInvariant()
-                    }
-                } |
-                Where-Object { $_ } |
-                Sort-Object -Unique
-        )
-
-        return [pscustomobject]@{
-            Output = $Output
-            Revisions = $Revisions
-        }
+        $Process.WaitForExit()
+        $ExitCode = $Process.ExitCode
     }
     finally {
-        Pop-Location
+        $Process.Dispose()
+    }
+
+    $Output = @()
+
+    if (-not [string]::IsNullOrWhiteSpace($StdOut)) {
+        $Output += @(
+            $StdOut -split "\r?\n" |
+                Where-Object {
+                    -not [string]::IsNullOrWhiteSpace($_)
+                }
+        )
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($StdErr)) {
+        $Output += @(
+            $StdErr -split "\r?\n" |
+                Where-Object {
+                    -not [string]::IsNullOrWhiteSpace($_)
+                }
+        )
+    }
+
+    if ($ExitCode -ne 0) {
+        $Output | ForEach-Object {
+            Write-Host $_
+        }
+
+        throw (
+            "alembic $Command fallo con codigo $ExitCode."
+        )
+    }
+
+    $Revisions = @(
+        $Output |
+            ForEach-Object {
+                $Line = [string]$_
+
+                if (
+                    $Line -match '^\s*([0-9a-fA-F]+)(?:\s|\(|$)'
+                ) {
+                    $Matches[1].ToLowerInvariant()
+                }
+            } |
+            Where-Object { $_ } |
+            Sort-Object -Unique
+    )
+
+    return [pscustomobject]@{
+        Output = @($Output)
+        Revisions = @($Revisions)
     }
 }
 
