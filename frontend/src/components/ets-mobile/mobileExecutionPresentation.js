@@ -102,7 +102,229 @@ export function describeCaptureBlocker(blocker) {
   return where ? `${where}: ${label}` : label;
 }
 
-// Lectura de una hoja LAB: sólo pares etiqueta/valor, nunca inputs.
+// ---------------------------------------------------------------------------
+// Detalle técnico READ-ONLY (equipo + hoja). Sólo pares etiqueta/valor; nunca
+// inputs. Las etiquetas salen de la definición de plantilla cuando existe.
+// ---------------------------------------------------------------------------
+
+export function formatReadOnlyValue(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'boolean') return value ? 'Sí' : 'No';
+  if (Array.isArray(value)) return value.map(formatReadOnlyValue).filter(Boolean).join(', ');
+  if (typeof value === 'object') {
+    return Object.entries(value)
+      .map(([key, item]) => {
+        const text = formatReadOnlyValue(item);
+        return text ? `${humanizeKey(key)}: ${text}` : '';
+      })
+      .filter(Boolean)
+      .join(' · ');
+  }
+  return String(value).trim();
+}
+
+export function humanizeKey(key) {
+  const text = String(key || '').replace(/[_-]+/g, ' ').trim();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : '';
+}
+
+function rows(pairs) {
+  return pairs
+    .map(([label, value]) => [label, formatReadOnlyValue(value)])
+    .filter(([, value]) => value !== '');
+}
+
+export function describeEquipmentReadOnly(equipment) {
+  if (!equipment) return [];
+  return rows([
+    ['Instrumento', equipment.instrument],
+    ['Marca', equipment.brand],
+    ['Modelo', equipment.model],
+    ['Serie', equipment.serial_number],
+    ['Identificación', equipment.identification],
+    ['Número de reporte', equipment.report_number],
+    ['Condición al recibir', equipment.is_good_condition === undefined ? null : (equipment.is_good_condition ? 'Buena' : 'Con observaciones')],
+    ['Observaciones del técnico', equipment.observations],
+    ['Tipo de servicio', LAB_SERVICE_TYPE_LABELS[equipment.service_type] || equipment.service_type],
+    ['Empresa vinculada', equipment.linked_company_name_snapshot],
+    ['Folio de certificado', equipment.certificate_folio],
+    ['Estado del folio', LAB_FOLIO_STATUS_LABELS[equipment.folio_status] || equipment.folio_status],
+  ]);
+}
+
+export function describeDocumentaryClient(equipment) {
+  if (!equipment) return [];
+  if (equipment.certificate_client_mode !== 'different') {
+    return [['Cliente documental', 'Mismo cliente de la OT']];
+  }
+  return rows([
+    ['Cliente documental', 'Diferente al de la OT'],
+    ['Empresa', equipment.final_client_company_snapshot],
+    ['Dirección', equipment.final_client_address_snapshot],
+    ['Atención', equipment.final_client_attention_snapshot],
+  ]);
+}
+
+export function describeFieldSheetSections(sheet) {
+  if (!sheet) return [];
+  return [
+    {
+      title: 'Datos de calibración',
+      rows: rows([
+        ['Estado', LAB_FIELD_SHEET_STATUS_LABELS[sheet.status] || sheet.status],
+        ['Revisión', sheet.revision_number],
+        ['Plantilla', sheet.template_definition?.name || sheet.template_key],
+        ['Fecha de recepción', sheet.reception_date],
+        ['Fecha de calibración', sheet.calibration_date],
+        ['Próxima calibración', sheet.next_calibration_date],
+        ['Lugar de calibración', sheet.calibration_place],
+        ['Ubicación', sheet.location],
+        ['Unidades', sheet.units],
+        ['Método', sheet.method],
+        ['División mínima', sheet.minimum_division],
+        ['Patrón utilizado', sheet.pattern_used],
+        ['OC / cotización', sheet.purchase_order_or_quotation],
+      ]),
+    },
+    {
+      title: 'Condiciones ambientales',
+      rows: rows([
+        ['Temperatura inicio', sheet.environment_temperature_start],
+        ['Temperatura fin', sheet.environment_temperature_end],
+        ['Humedad inicio', sheet.environment_humidity_start],
+        ['Humedad fin', sheet.environment_humidity_end],
+        ['Condiciones ambientales', sheet.environmental_conditions],
+      ]),
+    },
+    {
+      title: 'Condición del equipo',
+      rows: rows([
+        ['Condición general', sheet.equipment_general_condition === null || sheet.equipment_general_condition === undefined
+          ? null
+          : (sheet.equipment_general_condition ? 'Buena' : 'Con observaciones')],
+        ['Considera desviaciones', sheet.consider_equipment_deviations],
+        ['Condición inicial', sheet.initial_condition],
+        ['Condición final', sheet.final_condition],
+      ]),
+    },
+    {
+      title: 'Responsables',
+      rows: rows([
+        ['Calibró', sheet.calibrated_by],
+        ['Revisó', sheet.reviewed_by],
+        ['Elaboró', sheet.report_made_by],
+      ]),
+    },
+    {
+      title: 'Notas del técnico',
+      rows: rows([
+        ['Observaciones', sheet.observations],
+        ['Notas de evidencia', sheet.evidence_notes],
+        ['Notas técnicas', sheet.technician_notes],
+        ['Resultados', sheet.results],
+      ]),
+    },
+  ].filter((section) => section.rows.length);
+}
+
+function templateFieldLabels(definition) {
+  const labels = new Map();
+  for (const block of definition?.blocks || []) {
+    for (const field of block.fields || []) {
+      if (field?.key && field.label) labels.set(field.key, field.label);
+    }
+  }
+  return labels;
+}
+
+// Identidad del equipo ya mostrada en la sección EQUIPO: no se repite.
+const CAPTURE_IDENTITY_KEYS = new Set(['instrument', 'brand', 'model', 'serial_number', 'internal_id']);
+
+export function describeCaptureValues(sheet) {
+  const values = sheet?.capture_values;
+  if (!values || typeof values !== 'object') return [];
+  const labels = templateFieldLabels(sheet.template_definition);
+  return rows(
+    Object.entries(values)
+      .filter(([key]) => !CAPTURE_IDENTITY_KEYS.has(key))
+      .map(([key, value]) => [labels.get(key) || humanizeKey(key), value])
+  );
+}
+
+const STANDARD_RESULT_COLUMNS = [
+  ['pattern_value', 'Patrón'],
+  ['ibc_value_1', 'Lectura 1'],
+  ['ibc_value_2', 'Lectura 2'],
+  ['ibc_value_3', 'Lectura 3'],
+  ['unit', 'Unidad'],
+  ['notes', 'Notas'],
+];
+
+function templateResultSections(definition) {
+  const sections = new Map();
+  const add = (section) => {
+    if (section?.key && !sections.has(section.key)) sections.set(section.key, section);
+  };
+  (definition?.result_sections || []).forEach(add);
+  (definition?.blocks || []).forEach((block) => (block.sections || []).forEach(add));
+  return sections;
+}
+
+function resultCell(row, column) {
+  const data = row.row_data && typeof row.row_data === 'object' ? row.row_data : {};
+  if (data[column.key] !== undefined) return data[column.key];
+  if (column.source && row[column.source] !== undefined) return row[column.source];
+  return row[column.key];
+}
+
+// results_rows → tablas legibles. Usa columnas/títulos de la plantilla y
+// representa también row_data dinámico; nunca muestra JSON crudo.
+export function describeResultSections(sheet) {
+  const resultRows = Array.isArray(sheet?.results_rows) ? sheet.results_rows : [];
+  if (!resultRows.length) return [];
+  const templates = templateResultSections(sheet.template_definition);
+  const bySection = new Map();
+  for (const row of resultRows) {
+    const key = row.section_key || 'resultados';
+    if (!bySection.has(key)) bySection.set(key, []);
+    bySection.get(key).push(row);
+  }
+  return [...bySection.entries()].map(([key, sectionRows]) => {
+    const template = templates.get(key);
+    const columns = (template?.columns || []).map((column) => ({
+      key: column.key, source: column.source, label: column.label || humanizeKey(column.key),
+    }));
+    if (!columns.length) {
+      for (const [field, label] of STANDARD_RESULT_COLUMNS) {
+        if (sectionRows.some((row) => formatReadOnlyValue(row[field]) !== '')) columns.push({ key: field, label });
+      }
+    }
+    const known = new Set(columns.flatMap((column) => [column.key, column.source].filter(Boolean)));
+    for (const row of sectionRows) {
+      for (const dataKey of Object.keys(row.row_data || {})) {
+        if (!known.has(dataKey)) {
+          known.add(dataKey);
+          columns.push({ key: dataKey, label: humanizeKey(dataKey) });
+        }
+      }
+    }
+    const orderedRows = [...sectionRows].sort((a, b) => (a.row_number ?? 0) - (b.row_number ?? 0));
+    return {
+      key,
+      title: template?.title || humanizeKey(key),
+      columns,
+      rows: orderedRows
+        .map((row, index) => ({
+          id: row.id ?? `${key}-${row.row_number ?? index}`,
+          label: template?.row_labels?.[(row.row_number ?? index + 1) - 1] || String(row.row_number ?? index + 1),
+          cells: columns.map((column) => formatReadOnlyValue(resultCell(row, column))),
+        }))
+        .filter((row) => row.cells.some((cell) => cell !== '')),
+    };
+  }).filter((section) => section.rows.length);
+}
+
+// Compatibilidad: resumen breve de una hoja como pares etiqueta/valor.
 export function describeFieldSheetReadOnly(sheet) {
   if (!sheet) return [];
   return [

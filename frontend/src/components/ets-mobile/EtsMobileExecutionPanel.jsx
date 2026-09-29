@@ -1,58 +1,33 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
 
 import {
   cancelServiceOrderMobileWorkOrder,
   downloadServiceOrderMobileFieldSheetPdf,
   getServiceOrderMobileExecution,
-  getServiceOrderMobileFieldSheet,
   linkServiceOrderLab,
   replaceServiceOrderLab,
-  requestServiceOrderMobileCorrection,
   restoreServiceOrderMobileWorkOrder,
   searchServiceOrderLabCandidates,
   unlinkServiceOrderLab,
 } from '../../services/api.js';
-import { formatDateTime } from '../../utils/formatters.js';
+import EtsMobileCorrectionDialog from './EtsMobileCorrectionDialog.jsx';
+import EtsMobileEquipmentDetail from './EtsMobileEquipmentDetail.jsx';
+import EtsMobileModal, { openPdfBlob } from './EtsMobileModal.jsx';
 import {
   LAB_FIELD_SHEET_STATUS_LABELS,
   LAB_FOLIO_STATUS_LABELS,
   LAB_SERVICE_TYPE_LABELS,
   LAB_WORK_ORDER_STATUS_LABELS,
   correctionModeFor,
-  describeFieldSheetReadOnly,
   getMobileExecutionPermissions,
   summarizeMobileExecution,
 } from './mobileExecutionPresentation.js';
 
 // Vista administrativa READ-ONLY de la ejecución técnica MYC Mobile de un ETS.
 // El staff ERP puede VER; no existe ningún input que edite datos técnicos LAB.
-// Se monta en un portal para no quedar dentro del formulario del Resumen ETS.
-
-function openBlob(blob) {
-  const url = URL.createObjectURL(blob);
-  window.open(url, '_blank', 'noopener');
-  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-}
-
-function Modal({ children, onClose, title, subtitle, eyebrow = 'MYC Mobile' }) {
-  return createPortal(
-    <div className="modal-backdrop" role="presentation">
-      <section aria-modal="true" className="client-modal quotation-detail-modal ets-mobile-execution-modal" role="dialog">
-        <div className="quotation-detail-header">
-          <div>
-            <p>{eyebrow}</p>
-            <h2>{title}</h2>
-            {subtitle ? <span>{subtitle}</span> : null}
-          </div>
-          <button className="icon-text-button" onClick={onClose} type="button">Cerrar</button>
-        </div>
-        {children}
-      </section>
-    </div>,
-    document.body
-  );
-}
+// El detalle de equipo es el componente único EtsMobileEquipmentDetail.
+// Clases propias (.ets-mobile-work-order / .ets-mobile-equipment-card): no
+// reutiliza los grids rígidos del flujo legacy de Hojas de Campo.
 
 function LinkPicker({ serviceOrderId, mode, onDone, onCancel }) {
   const [query, setQuery] = useState('');
@@ -90,7 +65,7 @@ function LinkPicker({ serviceOrderId, mode, onDone, onCancel }) {
   }
 
   return (
-    <Modal
+    <EtsMobileModal
       eyebrow="Vínculo ETS ↔ MYC Mobile"
       onClose={onCancel}
       subtitle="Busca la OT raíz o cualquier OT del grupo por folio"
@@ -125,160 +100,11 @@ function LinkPicker({ serviceOrderId, mode, onDone, onCancel }) {
           </button>
         )) : <div className="clients-empty">Sin grupos MYC Mobile que coincidan.</div>}
       </div>
-    </Modal>
+    </EtsMobileModal>
   );
 }
 
-function FieldSheetDetail({ serviceOrderId, equipmentId, onClose }) {
-  const [detail, setDetail] = useState(null);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    let active = true;
-    getServiceOrderMobileFieldSheet(serviceOrderId, equipmentId)
-      .then((payload) => { if (active) setDetail(payload); })
-      .catch((requestError) => { if (active) setError(requestError.message); });
-    return () => { active = false; };
-  }, [equipmentId, serviceOrderId]);
-
-  async function viewPdf(fieldSheetId) {
-    try {
-      const { blob } = await downloadServiceOrderMobileFieldSheetPdf(serviceOrderId, fieldSheetId);
-      openBlob(blob);
-    } catch (requestError) {
-      setError(requestError.message);
-    }
-  }
-
-  const equipment = detail?.equipment;
-  const sheet = detail?.field_sheet;
-  return (
-    <Modal
-      eyebrow="Hoja de Campo MYC Mobile · sólo lectura"
-      onClose={onClose}
-      subtitle={equipment ? `OT ${detail.work_order_folio} · ${equipment.instrument} · ${equipment.certificate_folio || 'Sin folio'}` : null}
-      title="Detalle técnico"
-    >
-      {error ? <div className="form-error" role="alert">{error}</div> : null}
-      {!detail && !error ? <p className="muted">Cargando…</p> : null}
-      {detail ? (
-        <div className="ets-mobile-readonly" data-readonly="true">
-          <p className="muted">
-            Vista administrativa. Los datos técnicos sólo se capturan y corrigen en MYC Mobile.
-          </p>
-          <dl className="ets-mobile-readonly__grid">
-            <div><dt>Instrumento</dt><dd>{equipment.instrument}</dd></div>
-            <div><dt>Marca / modelo</dt><dd>{[equipment.brand, equipment.model].filter(Boolean).join(' · ')}</dd></div>
-            <div><dt>Serie</dt><dd>{equipment.serial_number}</dd></div>
-            <div><dt>Identificación</dt><dd>{equipment.identification}</dd></div>
-            <div><dt>Servicio</dt><dd>{LAB_SERVICE_TYPE_LABELS[equipment.service_type] || equipment.service_type || '-'}</dd></div>
-            <div><dt>Folio</dt><dd>{equipment.certificate_folio || '-'} ({LAB_FOLIO_STATUS_LABELS[equipment.folio_status] || equipment.folio_status})</dd></div>
-            {describeFieldSheetReadOnly(sheet).map(([label, value]) => (
-              <div key={label}><dt>{label}</dt><dd>{String(value)}</dd></div>
-            ))}
-          </dl>
-          {sheet?.results_rows?.length ? (
-            <table className="ets-mobile-readonly__table">
-              <thead><tr><th>Sección</th><th>#</th><th>Patrón</th><th>Lecturas</th><th>Unidad</th></tr></thead>
-              <tbody>
-                {sheet.results_rows.map((row) => (
-                  <tr key={row.id ?? `${row.section_key}-${row.row_number}`}>
-                    <td>{row.section_key}</td>
-                    <td>{row.row_number}</td>
-                    <td>{row.pattern_value || '-'}</td>
-                    <td>{[row.ibc_value_1, row.ibc_value_2, row.ibc_value_3].filter(Boolean).join(' / ') || '-'}</td>
-                    <td>{row.unit || '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : null}
-          <h3>Revisiones</h3>
-          <ul className="ets-mobile-readonly__revisions">
-            {detail.revisions.map((revision) => (
-              <li key={revision.id}>
-                <span>
-                  Revisión {revision.revision_number} · {LAB_FIELD_SHEET_STATUS_LABELS[revision.status] || revision.status}
-                  {revision.is_current ? ' · vigente' : ' · histórica'} · {formatDateTime(revision.updated_at)}
-                </span>
-                {revision.has_final_pdf ? (
-                  <button className="table-button" onClick={() => viewPdf(revision.id)} type="button">Ver PDF final</button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </Modal>
-  );
-}
-
-// "Enviar a corrección en MYC Mobile": el ERP NO edita la hoja. El dominio
-// LAB conserva la revisión N (y su PDF final) y abre N+1 editable en Mobile.
-function CorrectionDialog({ serviceOrderId, target, onDone, onCancel }) {
-  const [reason, setReason] = useState('');
-  const [signaturePolicy, setSignaturePolicy] = useState('preserve');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const closedWorkOrder = target.mode === 'work_order_reopen';
-
-  async function submit() {
-    if (!reason.trim()) {
-      setError('El motivo es obligatorio.');
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      const projection = await requestServiceOrderMobileCorrection(serviceOrderId, target.equipment.id, {
-        reason: reason.trim(),
-        signature_policy: signaturePolicy,
-      });
-      onDone(projection);
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Modal
-      eyebrow="Acción administrativa"
-      onClose={onCancel}
-      subtitle={`OT ${target.workOrder.folio} · ${target.equipment.instrument} · ${target.equipment.certificate_folio || 'Sin folio'}`}
-      title="Enviar a corrección en MYC Mobile"
-    >
-      <p className="muted">
-        La revisión actual y su PDF final se conservan como históricos. MYC Mobile recibirá una nueva revisión editable;
-        la corrección técnica se realiza exclusivamente en MYC Mobile.
-        {closedWorkOrder ? ' La OT está cerrada: se reabrirá conforme a la política de firmas elegida.' : ''}
-      </p>
-      <label className="quotation-client-search">
-        <span>Motivo (obligatorio)</span>
-        <textarea autoFocus onChange={(event) => setReason(event.target.value)} rows={3} value={reason} />
-      </label>
-      {closedWorkOrder ? (
-        <label className="quotation-client-search">
-          <span>Firmas de la OT</span>
-          <select onChange={(event) => setSignaturePolicy(event.target.value)} value={signaturePolicy}>
-            <option value="preserve">Conservar firmas</option>
-            <option value="invalidate">Invalidar firmas (requiere nueva firma)</option>
-          </select>
-        </label>
-      ) : null}
-      {error ? <div className="form-error" role="alert">{error}</div> : null}
-      <div className="toolbar-actions">
-        <button className="table-button" onClick={onCancel} type="button">Cancelar</button>
-        <button className="table-button table-button--primary" disabled={busy || !reason.trim()} onClick={submit} type="button">
-          Enviar a corrección
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
-export default function EtsMobileExecutionPanel({ serviceOrderId, user, onLinkChanged }) {
+export default function EtsMobileExecutionPanel({ serviceOrderId, user, onLinkChanged, onExecutionChanged }) {
   const permissions = getMobileExecutionPermissions(user);
   const [projection, setProjection] = useState(null);
   const [error, setError] = useState('');
@@ -297,6 +123,12 @@ export default function EtsMobileExecutionPanel({ serviceOrderId, user, onLinkCh
   }, [serviceOrderId]);
 
   useEffect(() => { load(); }, [load]);
+
+  function applyProjection(next, message) {
+    if (next) setProjection(next);
+    if (message) setNotice(message);
+    onExecutionChanged?.();
+  }
 
   async function afterLinkChange(message) {
     setPicker(null);
@@ -319,7 +151,7 @@ export default function EtsMobileExecutionPanel({ serviceOrderId, user, onLinkCh
   async function viewPdf(fieldSheetId) {
     try {
       const { blob } = await downloadServiceOrderMobileFieldSheetPdf(serviceOrderId, fieldSheetId);
-      openBlob(blob);
+      openPdfBlob(blob);
     } catch (requestError) {
       setError(requestError.message);
     }
@@ -329,8 +161,10 @@ export default function EtsMobileExecutionPanel({ serviceOrderId, user, onLinkCh
     const reason = window.prompt(`Motivo para cancelar la OT ${workOrder.folio} en MYC Mobile`);
     if (!reason?.trim()) return;
     try {
-      setProjection(await cancelServiceOrderMobileWorkOrder(serviceOrderId, workOrder.id, reason.trim()));
-      setNotice(`OT ${workOrder.folio} cancelada; su historial técnico se conserva.`);
+      applyProjection(
+        await cancelServiceOrderMobileWorkOrder(serviceOrderId, workOrder.id, reason.trim()),
+        `OT ${workOrder.folio} cancelada; su historial técnico se conserva.`,
+      );
     } catch (requestError) {
       setError(requestError.message);
     }
@@ -338,8 +172,10 @@ export default function EtsMobileExecutionPanel({ serviceOrderId, user, onLinkCh
 
   async function restoreWorkOrder(workOrder) {
     try {
-      setProjection(await restoreServiceOrderMobileWorkOrder(serviceOrderId, workOrder.id));
-      setNotice(`OT ${workOrder.folio} restaurada a su estado anterior.`);
+      applyProjection(
+        await restoreServiceOrderMobileWorkOrder(serviceOrderId, workOrder.id),
+        `OT ${workOrder.folio} restaurada a su estado anterior.`,
+      );
     } catch (requestError) {
       setError(requestError.message);
     }
@@ -375,41 +211,55 @@ export default function EtsMobileExecutionPanel({ serviceOrderId, user, onLinkCh
               </span>
             </div>
             {permissions.canManageLink ? (
-              <div className="toolbar-actions">
+              <div className="ets-mobile-equipment-card__actions">
                 <button className="table-button" onClick={() => setPicker('replace')} type="button">Cambiar vínculo</button>
                 <button className="table-button" onClick={unlink} type="button">Desvincular</button>
               </div>
             ) : null}
           </div>
           {projection.work_orders.map((workOrder) => (
-            <article className="ets-field-sheet-work-order is-expanded" key={workOrder.id}>
-              <div className="ets-field-sheet-work-order__summary">
-                <div>
+            <article className="ets-mobile-work-order" key={workOrder.id}>
+              <header className="ets-mobile-work-order__header">
+                <div className="ets-mobile-work-order__title">
                   <small>{workOrder.is_root ? 'OT raíz' : 'OT del grupo'}</small>
                   <strong>OT {workOrder.folio}</strong>
                   <span>{workOrder.client_name}</span>
                 </div>
-                <mark className={`quotation-status status-${workOrder.status}`}>
+                <mark className={`quotation-status status-${workOrder.status} ets-mobile-work-order__status`}>
                   {LAB_WORK_ORDER_STATUS_LABELS[workOrder.status] || workOrder.status}
                 </mark>
                 {permissions.canCancelWorkOrders ? (
-                  workOrder.status === 'cancelled' ? (
-                    <button className="table-button" onClick={() => restoreWorkOrder(workOrder)} type="button">Restaurar OT</button>
-                  ) : (
-                    <button className="table-button" onClick={() => cancelWorkOrder(workOrder)} type="button">Cancelar OT</button>
-                  )
+                  <div className="ets-mobile-work-order__actions">
+                    {workOrder.status === 'cancelled' ? (
+                      <button className="table-button" onClick={() => restoreWorkOrder(workOrder)} type="button">Restaurar OT</button>
+                    ) : (
+                      <button className="table-button" onClick={() => cancelWorkOrder(workOrder)} type="button">Cancelar OT</button>
+                    )}
+                  </div>
                 ) : null}
-              </div>
-              <div className="ets-field-sheet-work-order__equipment">
+              </header>
+              <div className="ets-mobile-work-order__equipment">
                 {workOrder.equipment.length ? workOrder.equipment.map((equipment) => {
                   const sheet = equipment.field_sheet;
+                  const correctionMode = correctionModeFor(workOrder, equipment);
                   return (
-                    <article className="ets-field-sheet-equipment-row" key={equipment.id}>
-                      <div>
-                        <strong>{equipment.position}. {equipment.instrument}</strong>
+                    <article className="ets-mobile-equipment-card" key={equipment.id}>
+                      <div className="ets-mobile-equipment-card__identity">
+                        {permissions.canReadFieldSheets ? (
+                          <button
+                            className="ets-mobile-equipment-card__link"
+                            onClick={() => setDetailEquipmentId(equipment.id)}
+                            type="button"
+                          >
+                            <strong>{equipment.position}. {equipment.instrument}</strong>
+                            <small>Ver detalle</small>
+                          </button>
+                        ) : (
+                          <strong>{equipment.position}. {equipment.instrument}</strong>
+                        )}
                         <span>{[equipment.brand, equipment.model].filter(Boolean).join(' · ')}</span>
                       </div>
-                      <dl>
+                      <dl className="ets-mobile-equipment-card__meta">
                         <div><dt>Serie</dt><dd>{equipment.serial_number}</dd></div>
                         <div><dt>Identificación</dt><dd>{equipment.identification}</dd></div>
                         <div><dt>Servicio</dt><dd>{LAB_SERVICE_TYPE_LABELS[equipment.service_type] || '-'}</dd></div>
@@ -417,17 +267,14 @@ export default function EtsMobileExecutionPanel({ serviceOrderId, user, onLinkCh
                         <div><dt>Estado folio</dt><dd>{LAB_FOLIO_STATUS_LABELS[equipment.folio_status] || equipment.folio_status}</dd></div>
                         <div><dt>Hoja</dt><dd>{sheet ? `R${sheet.revision_number} · ${LAB_FIELD_SHEET_STATUS_LABELS[sheet.status] || sheet.status}` : 'Sin hoja'}</dd></div>
                       </dl>
-                      <div className="toolbar-actions">
-                        {permissions.canReadFieldSheets ? (
-                          <button className="table-button" onClick={() => setDetailEquipmentId(equipment.id)} type="button">Ver hoja</button>
-                        ) : null}
+                      <div className="ets-mobile-equipment-card__actions">
                         {permissions.canReadFieldSheets && sheet?.has_final_pdf ? (
                           <button className="table-button" onClick={() => viewPdf(sheet.id)} type="button">Ver PDF final</button>
                         ) : null}
-                        {permissions.canRequestCorrection && correctionModeFor(workOrder, equipment) ? (
+                        {permissions.canRequestCorrection && correctionMode ? (
                           <button
                             className="table-button"
-                            onClick={() => setCorrectionTarget({ workOrder, equipment, mode: correctionModeFor(workOrder, equipment) })}
+                            onClick={() => setCorrectionTarget({ equipment, workOrderFolio: workOrder.folio, mode: correctionMode })}
                             type="button"
                           >
                             Enviar a corrección
@@ -452,37 +299,43 @@ export default function EtsMobileExecutionPanel({ serviceOrderId, user, onLinkCh
         />
       ) : null}
       {correctionTarget ? (
-        <CorrectionDialog
+        <EtsMobileCorrectionDialog
           onCancel={() => setCorrectionTarget(null)}
           onDone={(next) => {
             setCorrectionTarget(null);
-            setProjection(next);
-            setNotice('Hoja enviada a corrección: MYC Mobile ya tiene la nueva revisión editable.');
+            applyProjection(next, 'Hoja enviada a corrección: MYC Mobile ya tiene la nueva revisión editable.');
           }}
           serviceOrderId={serviceOrderId}
           target={correctionTarget}
         />
       ) : null}
       {detailEquipmentId ? (
-        <FieldSheetDetail
+        <EtsMobileEquipmentDetail
           equipmentId={detailEquipmentId}
+          onChanged={(next) => applyProjection(next)}
           onClose={() => setDetailEquipmentId(null)}
           serviceOrderId={serviceOrderId}
+          user={user}
         />
       ) : null}
     </section>
   );
 }
 
-export function EtsMobileExecutionDialog({ serviceOrderId, serviceOrderFolio, user, onClose, onLinkChanged }) {
+export function EtsMobileExecutionDialog({ serviceOrderId, serviceOrderFolio, user, onClose, onLinkChanged, onExecutionChanged }) {
   return (
-    <Modal
+    <EtsMobileModal
       eyebrow="Ejecución técnica MYC Mobile"
       onClose={onClose}
       subtitle={`${serviceOrderFolio || `ETS ${serviceOrderId}`} · vista administrativa de sólo lectura`}
       title="Servicio / grupo LAB"
     >
-      <EtsMobileExecutionPanel onLinkChanged={onLinkChanged} serviceOrderId={serviceOrderId} user={user} />
-    </Modal>
+      <EtsMobileExecutionPanel
+        onExecutionChanged={onExecutionChanged}
+        onLinkChanged={onLinkChanged}
+        serviceOrderId={serviceOrderId}
+        user={user}
+      />
+    </EtsMobileModal>
   );
 }

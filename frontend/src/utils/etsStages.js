@@ -48,6 +48,15 @@ export function getCaptureStageStatus({ certificates = [], fieldSheetStage }) {
   return stage('active', 'EN PROCESO', 'Falta cargar o enviar uno o más certificados a Calidad.', { expected: certificates.length, finished });
 }
 
+// ETS ejecutado en MYC Mobile: la única autoridad de readiness de Captura es
+// el resumen LAB (capture-package-summary). Sólo presentación; no muta el ETS.
+export function getMobileCaptureStageStatus(summary) {
+  if (!summary) return stage('pending', 'VALIDANDO', 'Consultando la readiness de Captura MYC Mobile.');
+  const metrics = { ready: summary.ready_total ?? 0, pending: summary.pending_total ?? 0 };
+  if (summary.ready) return stage('done', 'LISTA', 'Las Hojas de Campo finales LAB están listas para Captura.', metrics);
+  return stage('blocked', 'BLOQUEADA', 'Captura MYC Mobile tiene bloqueos pendientes.', metrics);
+}
+
 export function getQualityStageStatus({ certificates = [] }) {
   if (!certificates.length) return stage('pending', 'PENDIENTE', 'No hay certificados enviados a Calidad.', { expected: 0, authenticated: 0 });
   const authenticated = certificates.filter((certificate) => qualityFinishedStatuses.has(certificate.status)).length;

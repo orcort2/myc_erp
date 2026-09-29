@@ -93,6 +93,7 @@ import {
   getCertificateStageStatus,
   getEquipmentStageStatus,
   getFieldSheetStageStatus,
+  getMobileCaptureStageStatus,
   getQualityStageStatus,
 } from '../utils/etsStages.js';
 import {
@@ -115,6 +116,7 @@ import ServiceOrderSignatureMorph from '../components/signatures/ServiceOrderSig
 import EtsBillingTab from '../components/ets-billing/EtsBillingTab.jsx';
 import { EtsMobileExecutionDialog } from '../components/ets-mobile/EtsMobileExecutionPanel.jsx';
 import EtsMobileCapturePanel from '../components/ets-mobile/EtsMobileCapturePanel.jsx';
+import useMobileCaptureSummary from '../components/ets-mobile/useMobileCaptureSummary.js';
 import '../components/service-order-exceptions.css';
 
 function safeNumber(value) {
@@ -358,6 +360,14 @@ function ServiceOrdersPage({ user = null }) {
     hasEmbeddedCalibration: selectedOrderHasEmbeddedCalibration,
     managedByMobileCalibration: selectedOrderManagedByMobile,
   } = selectedOrderCapabilities;
+
+  // Autoridad ÚNICA de readiness de Captura para ETS MYC Mobile: el resumen
+  // LAB. La comparten la pestaña Captura, su badge y la franja de etapas.
+  const {
+    summary: mobileCaptureSummary,
+    error: mobileCaptureError,
+    refresh: refreshMobileCaptureSummary,
+  } = useMobileCaptureSummary(selectedOrderManagedByMobile ? selectedOrder?.id : null);
 
   const selectedOrderTabs = useMemo(
     () => (selectedOrder ? buildServiceOrderTabs(selectedOrderCapabilities) : []),
@@ -1236,6 +1246,12 @@ function closeTechnicalSubEts() {
       states.certificates = certificateStage;
     }
 
+    // ETS MYC Mobile: la pestaña y la franja del Resumen derivan del resumen
+    // LAB, nunca del pipeline ERP. Sólo presentación: no muta el ETS.
+    if (selectedOrderManagedByMobile) {
+      states.capture = getMobileCaptureStageStatus(mobileCaptureSummary);
+    }
+
     return states;
   }, [
     selectedOrder,
@@ -1249,6 +1265,8 @@ function closeTechnicalSubEts() {
     selectedOrderHasRepair,
     selectedOrderHasDirectCalibration,
     technicalSubEtsEquipment,
+    selectedOrderManagedByMobile,
+    mobileCaptureSummary,
   ]);
   function getOrderMetrics(order) {
     const orderEquipment = equipment.filter((item) => item.service_order_id === order.id && item.is_active !== false);
@@ -3872,7 +3890,14 @@ function closeTechnicalSubEts() {
             ) : null}
 
             {activeTab === 'capture' && selectedOrderManagedByMobile ? (
-              <EtsMobileCapturePanel serviceOrderFolio={selectedOrder.folio} serviceOrderId={selectedOrder.id} />
+              <EtsMobileCapturePanel
+                onRefresh={refreshMobileCaptureSummary}
+                serviceOrderFolio={selectedOrder.folio}
+                serviceOrderId={selectedOrder.id}
+                summary={mobileCaptureSummary}
+                summaryError={mobileCaptureError}
+                user={user}
+              />
             ) : null}
 
             {activeTab === 'capture' && !selectedOrderManagedByMobile ? (
@@ -5083,7 +5108,11 @@ function closeTechnicalSubEts() {
       {isMobileExecutionOpen && selectedOrder && selectedOrderManagedByMobile ? (
         <EtsMobileExecutionDialog
           onClose={() => setIsMobileExecutionOpen(false)}
-          onLinkChanged={() => setMobileLinkVersion((version) => version + 1)}
+          onExecutionChanged={refreshMobileCaptureSummary}
+          onLinkChanged={() => {
+            setMobileLinkVersion((version) => version + 1);
+            refreshMobileCaptureSummary();
+          }}
           serviceOrderFolio={selectedOrder.folio}
           serviceOrderId={selectedOrder.id}
           user={user}
