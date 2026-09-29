@@ -10,6 +10,16 @@
 
 # Alcance actual del ERP MYC
 
+## ETS ↔ LAB — alcance Fase 1 (2026-09-28)
+
+Se agrega al ERP la gestión histórica de la referencia de un ETS a una raíz LAB,
+con búsqueda por folio de raíz/hija. El buscador `/lab-candidates` no es el flujo
+Mobile de búsqueda/selección de cotización o ETS; esa integración queda para
+una fase posterior. LAB/MYC Mobile conserva toda la autoridad
+técnica. No hay espejos de Equipment/ServiceWorkOrder, mapeo Client↔LabClient,
+frontend, Captura, Calidad, Certificados, handoff, paquetes, creación automática
+de grupos ni sincronización de estados. [Contrato](../architecture/ETS_LAB_TECHNICAL_BRIDGE.md).
+
 ## ETS Mantenimiento — TERMINADO, EN REVISIÓN (2026-08-18)
 
 Incluye preventivo/correctivo, laboratorio/campo, unidad/equipo/OT institucional, asignación y visita, captura Antes–Intervención–Después–Futuro, pausas tipadas, materiales utilizados/requeridos, cambio comercial preventivo→correctivo, referencia separada a Reparación, investigación por equipo inoperable, reporte automático versionado, firma, liberación, permisos y bloqueantes UX accionables. Excluye Compras, Almacén, mapas/tracking externos y ejecución de Reparación.

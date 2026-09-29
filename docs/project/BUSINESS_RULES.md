@@ -10,6 +10,20 @@
 
 # Reglas de negocio vigentes
 
+## Vínculo histórico ETS ↔ LAB — Fase 1 (2026-09-28)
+
+El ERP sólo consulta y administra la asociación histórica; LAB es autoridad
+técnica. Link/replace/unlink requieren conjuntamente `service_orders.create`
+y `service_orders.update`; `update` operativo por sí solo no concede gestión
+estructural del vínculo. Lectura conserva `service_orders.read`.
+Se resuelve la raíz antes de persistir; no se vincula una hija como
+raíz. Máximo un vínculo activo por ETS y por raíz, respaldado por índices
+parciales. Link/replace a la misma raíz son idempotentes. Replace y unlink
+requieren motivo y actor; relink crea una nueva fila. ETS inactivo/cerrado/
+cancelado no admite mutaciones del vínculo; raíz cancelada no admite link/replace.
+El historial permanece consultable. No hay comparación textual obligatoria de
+clientes ni sincronización de estados. [Contrato](../architecture/ETS_LAB_TECHNICAL_BRIDGE.md).
+
 ## ETS Mantenimiento
 
 - Nace exclusivamente de `operational_category=maintenance`; sus unidades no usan evolución genérica.
@@ -321,3 +335,15 @@ opaco. Sólo se persisten hashes de refresh. La migración legacy es temporal,
 de un solo uso por JWT y no demuestra la instalación histórica que lo recibió.
 Las restricciones HTTP y su fecha límite se definen una sola vez en el
 [contrato Mobile](../architecture/MOBILE_SECURITY_CONTEXT.md).
+
+## Presentación PDF de Cotizaciones (2026-09-29)
+
+`DocumentTemplate.show_summary_terms` controla todo el resumen comercial inicial
+incluida su versión; Notas permanece visible independientemente del resumen.
+`show_full_terms` controla la sección completa comercial, metrológica, legal y
+privacidad. `show_acceptance_signature` controla la firma independientemente en
+las secciones habilitadas. Las ocho combinaciones se verifican contra flags
+persistidos y PDFs reales en `backend/tests/test_quotation_pdf.py`.
+Estos toggles no modifican el texto almacenado ni el dominio de la cotización.
+El PDF conserva el permiso `quotations.read` y entrega `application/pdf` con
+`Content-Disposition: inline`; la presentación web no altera esa autorización.

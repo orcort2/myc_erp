@@ -240,6 +240,10 @@
       margin-top: 12px;
     }
 
+    .notes.summary-hidden {
+      display: block;
+    }
+
     .notes p {
       margin: 3px 0;
     }
@@ -444,16 +448,18 @@
     </div>
   </section>
 
-  <section class="grid notes">
+  <section class="grid notes{% if not template_config.show_summary_terms %} summary-hidden{% endif %}">
+    {% if template_config.show_summary_terms %}
     <article class="box">
       <h3>Condiciones comerciales</h3>
       <div class="terms-lines">
         <p>{{ template_config.commercial_terms or "Sin condiciones comerciales configuradas." }}</p>
       </div>
-      {% if template_config.show_summary_terms and template_config.terms_version %}
+      {% if template_config.terms_version %}
       <p><strong>Versi&oacute;n de t&eacute;rminos:</strong> {{ template_config.terms_version }}</p>
       {% endif %}
     </article>
+    {% endif %}
     <article class="box">
       <h3>Notas</h3>
       <p>{{ quotation.notes or "Sin notas adicionales." }}</p>

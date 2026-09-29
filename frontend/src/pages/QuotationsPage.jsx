@@ -1,3 +1,4 @@
+import { openQuotationPdfWindow } from '../utils/quotationPdfWindow';
 import { Download, FileText, Save, Upload } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import mycLogo from '../assets/myc-logo.png';
@@ -34,7 +35,6 @@ import {
   downloadQuotationPdf,
   getQuotation,
   getCurrentUser,
-  getQuotationPdfUrl,
   getQuotationTemplate,
   listLinkedCompanies,
   listQuotationSnapshots,
@@ -782,7 +782,7 @@ function QuotationsPage({ user = null }) {
       setNotice('Crea una cotizacion para generar una vista PDF de prueba.');
       return;
     }
-    window.open(getQuotationPdfUrl(sampleQuotation.id), '_blank', 'noopener,noreferrer');
+    return showAuthenticatedQuotationPdf(sampleQuotation);
   }
 
   async function createDraftQuotationAndOpen(clientId = '') {
@@ -1017,16 +1017,26 @@ function QuotationsPage({ user = null }) {
     return quotationTransitions[quotation.status]?.has(action.nextStatus) ?? false;
   }
 
+  async function showAuthenticatedQuotationPdf(quotation, mode = 'view') {
+    setError('');
+    setNotice('');
+    try {
+      await openQuotationPdfWindow(
+        () => downloadQuotationPdf(
+          quotation.id,
+          quotation,
+          getClientDisplayName(clientsById.get(quotation.client_id))
+        ),
+        { print: mode === 'print', onError: (requestError) => setError(requestError.message) }
+      );
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  }
+
   function continueOpenQuotationPdf(mode = 'view') {
     if (!selectedQuotation) return;
-    const url = getQuotationPdfUrl(selectedQuotation.id);
-    const pdfWindow = window.open(url, '_blank', 'noopener,noreferrer');
-    if (mode === 'print' && pdfWindow) {
-      pdfWindow.addEventListener('load', () => {
-        pdfWindow.focus();
-        pdfWindow.print();
-      });
-    }
+    return showAuthenticatedQuotationPdf(selectedQuotation, mode);
   }
 
   function openQuotationPdf(mode = 'view') {
@@ -1077,7 +1087,8 @@ function QuotationsPage({ user = null }) {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      // Give the browser time to consume the download before releasing it.
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
       setNotice(`PDF ${filename} generado correctamente`);
     } catch (requestError) {
       setError(requestError.message);
@@ -2346,9 +2357,6 @@ function QuotationsPage({ user = null }) {
                 {quotationStatusLabels[selectedQuotation.status] ?? selectedQuotation.status}
               </mark>
               <div className="quotation-pdf-actions">
-                <button className="table-button" onClick={() => openQuotationPdf('view')} type="button">
-                  Vista PDF
-                </button>
                 <button className="table-button" onClick={handleDownloadQuotationPdf} type="button">
                   Descargar PDF
                 </button>

@@ -1881,9 +1881,25 @@ export async function downloadQuotationPdf(quotationId, quotation = null, client
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(getQuotationPdfUrl(quotationId), { headers });
+  let response;
+  try {
+    response = await fetch(getQuotationPdfUrl(quotationId), { headers });
+  } catch {
+    throw new Error('No fue posible conectar con el ERP. Verifica la red e inténtalo de nuevo.');
+  }
   if (!response.ok) {
-    throw new Error('No se pudo generar el PDF de la cotizacion');
+    let message = response.status === 401
+      ? 'Tu sesión no es válida o expiró. Inicia sesión nuevamente.'
+      : response.status === 403
+        ? 'No tienes permiso para realizar esta acción.'
+        : 'No se pudo generar el PDF de la cotizacion';
+    try {
+      const payload = await response.json();
+      message = typeof payload.detail === 'string' ? payload.detail : payload.detail?.message ?? payload.message ?? message;
+    } catch {
+      // Keep the HTTP fallback when the server does not return JSON.
+    }
+    throw new Error(message);
   }
 
   const disposition = response.headers.get('Content-Disposition') ?? '';

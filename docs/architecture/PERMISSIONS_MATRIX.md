@@ -133,3 +133,18 @@ técnico. Las 75 claves HTTP están declaradas en bootstrap:
 Portal usa `portal.read`. Las brechas restantes no autorizan renombrados;
 su clasificación está en el cierre TD-027 y en
 [`security/CAPABILITY_MODEL_GAPS_2026-08-04.md`](security/CAPABILITY_MODEL_GAPS_2026-08-04.md).
+
+## Vínculo ERP ETS ↔ LAB — Fase 1 (2026-09-28)
+
+Los seis endpoints del [bridge](ETS_LAB_TECHNICAL_BRIDGE.md) reutilizan permisos
+existentes: `service_orders.read` para activo/historial/candidatos y
+**`service_orders.create` y `service_orders.update` juntos** para
+link/replace/unlink. El cierre de Fase 1 exige autoridad de creación/completado
+del contexto ETS (M14.A02/M11.A06) además de edición operativa. Técnico tiene
+`update` directamente, pero no `create`; Comercial y Desarrollador tienen ambos,
+y Administrador los satisface con `*`. La composición de roles activos sigue
+siendo aditiva; no se prohíbe un usuario por tener también rol Técnico.
+El inventario exacto de los diez roles está en el contrato del bridge.
+No se agregan permisos ni seeds; las asignaciones ERP permanecen intactas.
+Se usa `require_permission` y
+clasificación API access, sin contexto Mobile ni autorización técnica LAB.

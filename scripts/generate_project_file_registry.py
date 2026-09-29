@@ -30,6 +30,12 @@ EXCLUDED_NAMES = {
 EXCLUDED_PREFIXES = ("backend/resources/sat/reports/",)
 OFFICIAL_IGNORED_RESOURCES = (Path("backend/resources/sat/catalogo sat.xlsx"),)
 STATUS_OVERRIDES = {
+    "backend/app/models/service_order_lab_link.py": "En revisión",
+    "backend/app/schemas/service_order_lab_link.py": "En revisión",
+    "backend/app/services/service_order_lab_links.py": "En revisión",
+    "backend/migrations/versions/d7e9a1c3b5f0_add_service_order_lab_links.py": "En revisión",
+    "backend/tests/test_service_order_lab_links.py": "En revisión",
+    "docs/architecture/ETS_LAB_TECHNICAL_BRIDGE.md": "En revisión",
     "myc-mobile/src/components/lab/LabClientSelector.tsx": "En revisión",
     "myc-mobile/src/components/lab/LabClientSelector.wiring.test.ts": "En revisión",
     "docs/closures/MOBILE_TICKETS_AND_REOPENING_2026-08-14.md": "En revisión",
@@ -90,6 +96,12 @@ STATUS_OVERRIDES = {
     "myc-mobile/src/services/lab-work-order-closure.test.ts": "En revisión",
 }
 FORCE_RECLASSIFY = {
+    "backend/app/models/service_order_lab_link.py",
+    "backend/app/schemas/service_order_lab_link.py",
+    "backend/app/services/service_order_lab_links.py",
+    "backend/migrations/versions/d7e9a1c3b5f0_add_service_order_lab_links.py",
+    "backend/tests/test_service_order_lab_links.py",
+    "docs/architecture/ETS_LAB_TECHNICAL_BRIDGE.md",
     "myc-mobile/src/components/lab/LabTechnicalCapture.render.test.ts",
     "AGENTS.md",
     "docs/project/OBSERVATIONS_REGISTER.md",
@@ -670,6 +682,52 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     value = path.as_posix()
     name = path.name
     subject = words(path)
+    ets_lab_files = {
+        'backend/app/models/service_order_lab_link.py': (
+            'Historial ETS ↔ LAB',
+            'Persiste actores, estados, motivos y sucesión de vínculos; FKs RESTRICT, checks y dos índices únicos parciales preservan trazabilidad y exclusividad activa.',
+            'SQLAlchemy, ServiceOrder, LabWorkOrder y User',
+            'Servicio de vínculos, Alembic y pruebas',
+            'Crítico',
+        ),
+        'backend/app/schemas/service_order_lab_link.py': (
+            'Contratos del vínculo ETS ↔ LAB',
+            'Valida OT destino y motivo no vacío; expone vínculo histórico, actores, folio raíz y candidatos resumidos sin estructuras Mobile.',
+            'Pydantic y modelo histórico',
+            'Router y servicio ETS ↔ LAB',
+            'Alto',
+        ),
+        'backend/app/services/service_order_lab_links.py': (
+            'Lifecycle del vínculo ETS ↔ LAB',
+            'Resuelve raíz, vincula/reemplaza/desvincula/revincula transaccionalmente con locks y auditoría; consulta historial y candidatos sin mutar LAB.',
+            'SQLAlchemy, modelos ETS/LAB, schemas y write_audit_log',
+            'Router ERP y pruebas de invariantes/concurrencia',
+            'Crítico',
+        ),
+        'backend/migrations/versions/d7e9a1c3b5f0_add_service_order_lab_links.py': (
+            'Migración histórica ETS ↔ LAB',
+            'Crea service_order_lab_links con FKs RESTRICT, checks e índices parciales PostgreSQL/SQLite y downgrade de la tabla.',
+            'Alembic, SQLAlchemy y c4d8e2f1a7b3',
+            'Upgrade/downgrade y validación de esquema',
+            'Crítico',
+        ),
+        'backend/tests/test_service_order_lab_links.py': (
+            'Pruebas de vínculo ETS ↔ LAB',
+            'Verifica lifecycle, raíz/siblings, baja tras cancelación LAB, permisos ERP create+update por rol/composición, constraints, rollback, migración SQLite y carreras PostgreSQL con historial del perdedor intacto.',
+            'Pytest, FastAPI, SQLite y ETS_LAB_POSTGRES_TEST_URL',
+            'Gate backend de Fase 1',
+            'Crítico',
+        ),
+        'docs/architecture/ETS_LAB_TECHNICAL_BRIDGE.md': (
+            'Contrato Fase 1 ETS ↔ LAB',
+            'Documenta autoridad LAB, historial, endpoints ERP, inventario de roles y política create+update, transacciones y límites: candidatos sólo LAB por folio; selección Mobile de cotización/ETS es futura.',
+            'Modelo, servicio, router, migración y pruebas',
+            'Desarrollo, revisión, QA y operación',
+            'Crítico',
+        ),
+    }
+    if value in ets_lab_files:
+        return ets_lab_files[value]
     if value in MOBILE_REFETCH_CLIENT_PICKER_FILES:
         return MOBILE_REFETCH_CLIENT_PICKER_FILES[value]
     if value in MOBILE_SESSION_FILES:
@@ -777,8 +835,8 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         "frontend/src/components/ets-maintenance/MaintenanceEtsTab.jsx": ("Workbench ETS Mantenimiento", "Compone captura Antes/Intervención/Después/Futuro, asignación, materiales, pausas, decisiones, reporte, firma y bloqueantes navegables.", "React, API compartida y permisos efectivos", "Asesor, técnico, autorizador, firmante y cierre", "Crítico"),
         "frontend/src/components/ets-maintenance/maintenance-ets.css": ("Estilos ETS Mantenimiento", "Presenta paneles responsive, estados, alertas y bloqueantes visibles/accionables.", "CSS y lenguaje visual ETS", "MaintenanceEtsTab", "Medio"),
         "docs/architecture/MAINTENANCE_ETS_EXECUTION.md": ("Contrato arquitectónico ETS Mantenimiento", "Documenta autoridades, snapshot, lifecycle, captura, materiales, cambios, investigación, reporte, permisos y compatibilidad.", "Código, migración y pruebas Mantenimiento", "Arquitectura, desarrollo, QA y operación", "Crítico"),
-        "backend/app/routers/service_orders.py": ("API ETS/OT y verticales", "Expone ETS general, Venta y Mantenimiento con rutas/permisos separados para gestión, ejecución, autorización, firma y cierre.", "FastAPI, auth, schemas y servicios ETS", "Frontend ETS, Portal, móvil y clientes API", "Crítico"),
-        "backend/app/security/api_access.py": ("Política transversal de acceso", "Clasifica 477 operaciones deny-by-default, incluidos los límites ETS, Mobile y administrativos vigentes.", "FastAPI, permisos e inventario CSV", "Middleware, arranque, generador y pruebas", "Crítico"),
+        "backend/app/routers/service_orders.py": ("API ETS/OT y verticales", "Expone ETS general, Venta, Mantenimiento y vínculo histórico LAB; aplica lectura ERP y create+update para gestión estructural LAB, y delega al servicio de dominio.", "FastAPI, auth, schemas y servicios ETS", "Frontend ETS, Portal, móvil y clientes API", "Crítico"),
+        "backend/app/security/api_access.py": ("Política transversal de acceso", "Clasifica operaciones deny-by-default, incluidos los seis endpoints ERP de vínculo/historial/candidatos LAB: read para consulta, create como mínimo central de mutación y update adicional en el router.", "FastAPI, permisos e inventario CSV", "Middleware, arranque, generador y pruebas", "Crítico"),
         "backend/app/models/catalog_item.py": ("Modelo de catálogo canónico", "Conserva identidad, composición, Venta y configuración estructurada preventivo/correctivo, laboratorio/campo y materiales base.", "SQLAlchemy, catálogo y migraciones", "Cotizaciones, snapshots y servicios operativos", "Crítico"),
         "backend/app/schemas/catalog_item.py": ("Contratos de catálogo", "Valida identidad y configuración exclusiva de Venta/Mantenimiento, materiales base correctivos y reglas comerciales.", "Pydantic y categorías canónicas", "API Catálogo y frontend de cotizaciones", "Crítico"),
         "backend/app/models/quotation.py": ("Agregado comercial y snapshots", "Persiste cotizaciones/snapshots y expone el ETS activo principal asociado sin duplicar la relación.", "SQLAlchemy, catálogo, identidad operativa y ServiceOrder", "Ventas, ETS, Facturación, PDFs y APIs", "Crítico"),
@@ -1128,7 +1186,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/models/service_order.py": (
             "Agregado ETS y snapshots",
-            "Conserva operational_category/configuración por partida, snapshot fuente, OT, firmas y relación histórica con solicitudes persistentes de excepción.",
+            "Conserva operational_category/configuración por partida, snapshot fuente, OT, firmas, excepciones y colección histórica lab_links sin cascada de borrado.",
             "SQLAlchemy, cotizaciones, identidad operativa, órdenes de trabajo y excepciones ETS",
             "Servicios ETS, equipos, certificados, Facturación y auditoría",
             "Crítico",

@@ -4,9 +4,160 @@
 >
 > Autoridad: Media; no sustituye los documentos canónicos de project/
 >
-> Corte: 2026-09-25 — DEV-1C EN REVISIÓN (activos de despliegue del servicio Windows `MYCDeveloperBroker` bajo `NT SERVICE\MYCDeveloperBroker`, sin commit; instalación en Windows pendiente) sobre `main` `05f4c625` (DEV-1B mergeado, PR #9)
+> Corte: corrección acotada PDF de Cotizaciones sobre `39ed4bc`, rama `feat/ets-lab-technical-bridge`; cambios sin commit ni push, pendientes de revisión.
 
 # Estado operativo actual del ERP MYC
+
+## PDF de Cotizaciones — 2026-09-29
+
+- Preflight limpio: HEAD y origin/feat/ets-lab-technical-bridge en
+  `39ed4bc08115d53aae01a2756e57f0c18e119cd2`; origin/main en
+  `439278282328d79535494d59db4346900ab387f0`, ahead 2 / behind 0.
+- Causa: navegación directa a API sin Bearer en tres botones; resumen comercial
+  incondicional aunque show_summary_terms fuera false.
+  Descargar PDF, Imprimir y Vista PDF de prueba reutilizan downloadQuotationPdf/getAccessToken.
+  Pestaña reservada antes de fetch, Blob autenticado, cierre ante errores,
+  impresión tras carga y liberación diferida de URLs. Nombre de descarga intacto.
+- La plantilla condiciona todo el resumen y su versión; Notas, términos completos
+  y firma conservan controles independientes. Las tres flags ya persistían por
+  API/BD; no se cambian modelos, schemas, migraciones, permisos ni ETS/LAB.
+- Backend dirigido: 36 passed y 12 subtests passed (incluye 8 combinaciones PDF
+  reales y 401/403/200), con un warning existente de Starlette.
+- Revisión de lifecycle PDF: observación de carga limitada explícitamente a
+  60 segundos; timers eliminados al cargar, cerrar durante la espera, fallar
+  navegación o vencer el plazo. pagehide no persistido libera el Blob; visores
+  aislados y páginas en caché lo conservan hasta la liberación del documento
+  creador por el navegador. Sin polling indefinido ni revocación por caducidad.
+- Generador de inventario restaurado exactamente a HEAD y ejecutado de nuevo;
+  conserva las filas descriptivas existentes según su comportamiento original.
+- Revalidación: quotation PDF backend 9 passed (ocho combinaciones y 401/403/200);
+  frontend dirigido 23 passed (PDF y quotationsVerificationQa); build correcto.
+- Validación anterior, antes de esta revisión de lifecycle:
+  frontend dirigido 19 passed (PDF y quotationsVerificationQa); build correcto.
+  Suite completa node --test: 74 passed, 1 failed.
+  PDFs de las ocho combinaciones generados y rasterizados; inspección visual
+  de muestras sin resumen, con términos completos y con resumen/firma.
+  npm run lint y npm test no se ejecutan porque package.json no define esos
+  scripts. Se usa node --test; su suite completa conserva un fallo ajeno en
+  notificationNavigation.test.js (work_order espera /communications, obtiene
+  /dashboard?work_order_id=12#servicios), con archivos idénticos a HEAD.
+- Validación PDF sobre SQLite en memoria; no se modifica la BD local persistente
+  ni se requiere migración o regeneración de respaldo SQL.
+- Pendiente: validación manual autenticada de los cuatro botones y del diálogo
+  nativo de impresión en el navegador de destino. Visores que aíslan su documento
+  o no notifican carga mantienen el PDF abierto y muestran alternativa manual.
+- Sin commit, push, merge ni deploy; cambios preparados para revisión.
+
+## Cierre acotado ETS ↔ LAB sobre `108c713` (corte anterior)
+
+- Preflight completo aprobado: worktree limpio, rama correcta y
+  `HEAD = origin/feat/ets-lab-technical-bridge = 108c713ed9cab08214dcf09da504904f2a0c0f4a`.
+- Auditoría de autorización: `service_orders.update` se concede directamente
+  a Comercial, Tecnico y Desarrollador; Administrador lo satisface por `*`.
+  Los demás seis roles no lo reciben. La unión de roles activos es aditiva;
+  los overrides individuales no intervienen en `require_permission`.
+- Decisión justificada antes del cambio: link/replace/unlink requieren
+  **service_orders.create AND service_orders.update**. M14.A02/M11.A06 y la
+  matriz vigente distinguen autoridad de creación/completado del contexto
+  ETS de edición operativa. No se agrega permiso ni se cambia catálogo,
+  asignaciones o autenticación. Técnico puro recibe 403; Comercial,
+  Desarrollador y Administrador conservan gestión; composición e inactividad
+  de roles quedan probadas. Guard central mínimo create y doble control explícito
+  en cada ruta. Lectura conserva read. Inventario exacto en el
+  [contrato del bridge](architecture/ETS_LAB_TECHNICAL_BRIDGE.md).
+- `/lab-candidates` sigue siendo exclusivamente búsqueda por folio de grupos
+  LAB. No es el flujo Mobile de selección de cotización/ETS, reservado para
+  una fase posterior. No se cambia el endpoint ni el dominio técnico LAB.
+- Sin defectos adicionales de dominio en las invariantes revisadas. Se mantienen
+  modelo, servicio, schema y migración `d7e9a1c3b5f0` de Fase 1. No hay frontend,
+  Mobile, Captura, Calidad, Certificados, paquetes, sincronización o creación
+  de grupos en este cierre.
+- Gate focalizado: **118 passed, 0 failed, 0 skipped**, tres warnings existentes
+  de Starlette/reflexión SQLite, en 13.64 s. Comando desde backend con `.venv`:
+  `python -m pytest tests/test_service_order_lab_links.py tests/test_service_order_integrity.py tests/test_api_access_conformity.py -q`.
+  `DATABASE_URL` y `ETS_LAB_POSTGRES_TEST_URL` apuntaron a la BD aislada UTF-8
+  en puerto 55439. Los cinco escenarios concurrentes PostgreSQL pasaron;
+  cada uno utiliza un esquema aleatorio propio que se elimina al terminar.
+- Cobertura: exclusividad raíz/ETS con constraints, hija y siblings a una sola
+  raíz, bloqueo link/replace/unlink por ETS closed/cancelled/inactive,
+  rechazo link/replace por raíz cancelada, unlink después de cancelación LAB,
+  historial/sucesor, rollback completo y carrera de dos reemplazos competidores
+  conservando intacto el vínculo del perdedor. Se probaron los diez roles,
+  composiciones y ausencia de cualquiera de los dos permisos, incluso sin guard
+  central. La suite suma 104 pruebas bridge, 10 integridad ETS y 4 conformidad API.
+- Inventario API regenerado y verificado (543 rutas); registro funcional
+  regenerado y rutas comprobadas; compileall y `git diff --check` correctos.
+  Sin migración ni cambios persistentes de datos operativos; la BD compartida
+  no se utilizó. La suite full y Alembic global no se repiten en este cierre
+  acotado: sus hallazgos preexistentes TD-063/TD-064 siguen documentados abajo.
+- Documentación sincronizada: contrato, matriz, reglas, alcance, decisiones,
+  corte operativo e inventarios. Índice, estado, flujo, observaciones y deuda
+  revisados sin cambios de responsabilidad/estado. No se crean, mueven ni archivan
+  documentos. Commit de cierre separado; sin push, merge ni deploy.
+
+## ETS ↔ LAB técnico — Fase 1 (2026-09-28)
+
+- Preflight completo: worktree limpio en `feat/ets-lab-technical-bridge`,
+  HEAD y origin/main en `439278282328d79535494d59db4346900ab387f0`.
+  Trabajo exclusivo en `myc_erp-dev1c`; sin crear worktree/rama, push, merge ni deploy.
+- Implementados modelo/tabla `ServiceOrderLabLink`, relación histórica del ETS,
+  schemas y servicio dedicado, seis endpoints ERP (activo, historial, link,
+  replace, unlink y candidatos), permisos existentes `service_orders.read/update`
+  y auditoría canónica. LAB mantiene su autoridad técnica; frontend y Mobile
+  no se modifican. [Contrato completo](architecture/ETS_LAB_TECHNICAL_BRIDGE.md).
+- Exclusividad por ETS y raíz mediante índices únicos parciales; FKs RESTRICT,
+  checks de estado/lifecycle, locks ETS/raíz y rollback completo de reemplazo.
+  Motivo obligatorio, actores, idempotencia y revinculación con nuevo historial.
+- Migración `d7e9a1c3b5f0` sobre único head previo `c4d8e2f1a7b3`.
+  Upgrade desde vacío y ciclo upgrade/downgrade/upgrade verificados con PostgreSQL
+  16 aislado en `tmp/ets-lab-validation`; migración SQLite también probada.
+  La base compartida por defecto quedó intacta en `602a09af6218`.
+- Respaldo local ignorado por Git `backup_erp_myc_antes_prueba.sql` regenerado
+  desde la BD **aislada de validación**, sin datos operativos del usuario.
+  Su `alembic_version` coincide con `d7e9a1c3b5f0`; no sustituye un backup de
+  la base compartida. Los logs de validación son locales bajo `tmp/ets-lab-validation`.
+- `alembic check` ejecutado: diferencia preexistente
+  `uq_mobile_biometric_credential_hash` (TD-063). Reproducida con el código exacto
+  `4392782` y su head `c4d8e2f1a7b3` en un snapshot de archivos dentro de tmp,
+  además del head nuevo. No hay diferencias adicionales del bridge.
+- Validación focalizada final: `python -m pytest tests/test_service_order_lab_links.py
+  tests/test_service_order_integrity.py tests/test_api_access_conformity.py -q`
+  desde backend con `.venv`: **69 passed** (55 bridge, 10 integridad ETS,
+  4 conformidad API); incluye cuatro escenarios concurrentes PostgreSQL,
+  constraints SQLite, rollback por fallo de inserción/auditoría/commit y
+  ciclo SQLite upgrade/downgrade. `ETS_LAB_POSTGRES_TEST_URL` apunta a la
+  base aislada UTF-8 en puerto 55439; no hubo skips en este gate.
+- Suite completa: `python -m pytest tests -q` desde backend, con `DATABASE_URL`,
+  `ETS_LAB_POSTGRES_TEST_URL` y `LAB_POSTGRES_TEST_URL` apuntando a PostgreSQL
+  aislado: **1966 passed, 6 failed, 19 skipped**, 19 subtests passed. Incluye
+  suites ETS y LAB. Esta ejecución precedió dos pruebas adicionales del bridge
+  (rechazo de token Mobile y roundtrip SQLite), ambas aprobadas en el gate final.
+- Contraste con snapshot exacto del commit base `4392782`, mismo comando full:
+  **1912 passed, 7 failed, 19 skipped**, 19 subtests passed. Los seis fallos
+  de la rama están reproducidos en la base: una prueba LAB de cohortes con
+  equipo sin `service_type`, cuatro aserciones de logging del Developer Broker
+  y el XLS SAT oficial ausente. El fallo adicional de la base es
+  `test_postgresql_concurrent_folio_allocation_is_unique`: esa prueba reutiliza
+  la BD indicada por `LAB_POSTGRES_TEST_URL` y exige folios iniciales 6400/6401,
+  pero la ejecución anterior ya consumió la secuencia (obtuvo 6404/6405).
+  No se modifican esos módulos/pruebas ajenos. Lista exacta en TD-064 y logs
+  `full-backend.log` / `baseline-full.log` del directorio local de validación.
+- `python -m compileall` sobre archivos Python afectados, inventario API `--check`,
+  generador de registro, verificación de rutas y `git diff --check`: correctos.
+  No existe configuración de lint/formato Python en el backend; no se instaló
+  ni se introdujo una herramienta nueva para esta fase.
+- Inventario API: 543 operaciones y seis rutas nuevas clasificadas.
+  Registro funcional regenerado; también reconcilia dos scripts Windows ya
+  versionados y retira la referencia al XLS SAT ausente en este worktree.
+  Sin modificaciones a esos scripts ni a recursos SAT.
+- Revisión documental: actualizado contrato LAB/bridge, permisos, canónicos de
+  alcance/flujo/reglas/decisiones/estado, índice, deuda e inventarios.
+  `OBSERVATIONS_REGISTER.md` revisado sin cambios: no se cierran observaciones
+  funcionales/UX existentes. Se crea sólo el contrato arquitectónico del bridge;
+  no se mueven ni archivan documentos.
+- Pendientes fuera de Fase 1: frontend, Captura/Calidad/Certificados, handoff,
+  paquetes LAB desde ETS, sincronización y creación automática de grupos.
+  Aplicar migración en el entorno destino antes de habilitar endpoints.
 
 ## MYC Mobile — refetch no destructivo y selector modal de cliente OT (2026-09-28, en revisión)
 

@@ -7,6 +7,13 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.models.user import User
+from app.schemas.service_order_lab_link import (
+    ServiceOrderLabCandidateRead,
+    ServiceOrderLabLinkCreate,
+    ServiceOrderLabLinkRead,
+    ServiceOrderLabLinkReplace,
+    ServiceOrderLabLinkUnlink,
+)
 from app.schemas.certificate import CertificateBatchActionRead, CertificateBulkUploadRead
 from app.schemas.service_order import (
     ServiceOrderCreate,
@@ -79,6 +86,14 @@ from app.services.capture_packages import (
 from app.services.certificates import (
     bulk_upload_certificate_pdfs,
     release_authenticated_certificates_for_service_order,
+)
+from app.services.service_order_lab_links import (
+    get_active_lab_link,
+    link_lab_group,
+    list_lab_link_history,
+    replace_lab_group,
+    search_lab_candidates,
+    unlink_lab_group,
 )
 from app.services.service_orders import (
     authorize_service_order_exception,
@@ -917,3 +932,76 @@ def delete_work_order(
 ) -> Response:
     delete_service_work_order(db, work_order_id, user_id=current_user.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{service_order_id}/lab-link", response_model=ServiceOrderLabLinkRead | None)
+def get_service_order_lab_link(
+    service_order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.read")),
+):
+    return get_active_lab_link(db, service_order_id)
+
+
+@router.get("/{service_order_id}/lab-link/history", response_model=list[ServiceOrderLabLinkRead])
+def get_service_order_lab_link_history(
+    service_order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.read")),
+):
+    return list_lab_link_history(db, service_order_id)
+
+
+@router.post(
+    "/{service_order_id}/lab-link",
+    response_model=ServiceOrderLabLinkRead,
+    dependencies=[Depends(require_permission("service_orders.create"))],
+)
+def post_service_order_lab_link(
+    service_order_id: int,
+    payload: ServiceOrderLabLinkCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.update")),
+):
+    return link_lab_group(db, service_order_id, payload.work_order_id, user_id=current_user.id)
+
+
+@router.post(
+    "/{service_order_id}/lab-link/replace",
+    response_model=ServiceOrderLabLinkRead,
+    dependencies=[Depends(require_permission("service_orders.create"))],
+)
+def replace_service_order_lab_link(
+    service_order_id: int,
+    payload: ServiceOrderLabLinkReplace,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.update")),
+):
+    return replace_lab_group(
+        db, service_order_id, payload.work_order_id, payload.reason, user_id=current_user.id,
+    )
+
+
+@router.post(
+    "/{service_order_id}/lab-link/unlink",
+    response_model=ServiceOrderLabLinkRead,
+    dependencies=[Depends(require_permission("service_orders.create"))],
+)
+def unlink_service_order_lab_link(
+    service_order_id: int,
+    payload: ServiceOrderLabLinkUnlink,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.update")),
+):
+    return unlink_lab_group(db, service_order_id, payload.reason, user_id=current_user.id)
+
+
+@router.get("/{service_order_id}/lab-candidates", response_model=list[ServiceOrderLabCandidateRead])
+def get_service_order_lab_candidates(
+    service_order_id: int,
+    q: str = Query(default="", max_length=40),
+    limit: int = Query(default=50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.read")),
+):
+    return search_lab_candidates(db, service_order_id, q, limit=limit)

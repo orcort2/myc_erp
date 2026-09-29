@@ -10,6 +10,20 @@
 
 # Registro de decisiones vigentes
 
+## Decisión ETS ↔ LAB Fase 1 (2026-09-28)
+
+Por alcance explícito se permite una referencia histórica del ERP a LAB, como
+excepción acotada al aislamiento técnico anterior. `ServiceOrderLabLink` vive
+en archivo/tabla propios para localizar su lifecycle y no duplicar el dominio
+LAB. Se reutiliza `service_orders.read` y, en el cierre, se exige
+`service_orders.create` **y** `service_orders.update` para las tres mutaciones.
+`update` operativo de Técnico por sí solo no concede la asociación estructural;
+`create` corresponde a creación/completado de contexto ETS (M14.A02/M11.A06).
+Se mantienen los roles existentes y su composición aditiva, POST unlink, auditoría canónica,
+locks ETS/raíz e índices parciales PostgreSQL/SQLite. No se agregan permisos,
+modelos espejo, sincronización de estados ni escrituras técnicas. LAB/MYC Mobile
+conserva la autoridad técnica completa. [Contrato](../architecture/ETS_LAB_TECHNICAL_BRIDGE.md).
+
 ## ADR-080 — Mantenimiento como agregado por unidad sobre el núcleo ETS (2026-08-18)
 
 Se adopta `MaintenanceExecution` como proyección uno-a-uno de `ServiceUnit` y `ServiceStage(category=maintenance)`. Pausas, materiales y cambios de alcance son entidades propias; la captura usa bloques JSON acotados. Conserva OT, snapshot v2 y etapas append-only, evita un motor paralelo y permite retirar el vertical sin alterar el núcleo. La migración `d1f3a5c7e9b2` añade persistencia y configuración de catálogo. Estado: **EN REVISIÓN**.
