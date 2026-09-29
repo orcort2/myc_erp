@@ -246,6 +246,20 @@ acceso válido queda auditado.
 
 ## 2. Cliente y Cotización
 
+Descargar PDF, Imprimir y Vista PDF de prueba reutilizan
+`downloadQuotationPdf` con el access token oficial en Authorization. Las vistas
+reservan una pestaña durante el clic y navegan al Blob recibido; Imprimir espera
+la carga del documento. Los errores HTTP se muestran en la pantalla y cierran
+la pestaña vacía. No se navega a la API protegida ni se incluyen tokens en URLs.
+La detección de carga se limita a 60 segundos y elimina todos sus timers al
+confirmar carga, cerrar durante la espera o agotar ese plazo. El visor conserva
+su URL para guardar/imprimir; pagehide la libera si la página no se conserva
+en caché. Cuando un visor aislado no permite observar su salida, o la página
+queda en caché, la URL se conserva hasta que el navegador libere el documento
+creador. No hay polling durante la vida de la pestaña. La descarga
+conserva el filename del servidor y difiere la liberación de su URL.
+
+
 El cliente conserva identidad, datos fiscales, contactos dependientes, constancia y perfiles de certificado. La cotización se crea con partidas propias o provenientes del Catálogo MYC, calcula importes, guarda snapshots y puede transitar entre `draft`, `sent`, `waiting` y estados terminales.
 
 La transición institucional a `accepted` materializa automáticamente el ETS en

@@ -4,11 +4,51 @@
 >
 > Autoridad: Media; no sustituye los documentos canónicos de project/
 >
-> Corte: cierre acotado de Fase 1 ETS ↔ LAB sobre `108c713`, rama `feat/ets-lab-technical-bridge`; validación PostgreSQL aislada, sin merge ni deploy.
+> Corte: corrección acotada PDF de Cotizaciones sobre `39ed4bc`, rama `feat/ets-lab-technical-bridge`; cambios sin commit ni push, pendientes de revisión.
 
 # Estado operativo actual del ERP MYC
 
-## Cierre acotado ETS ↔ LAB sobre `108c713`
+## PDF de Cotizaciones — 2026-09-29
+
+- Preflight limpio: HEAD y origin/feat/ets-lab-technical-bridge en
+  `39ed4bc08115d53aae01a2756e57f0c18e119cd2`; origin/main en
+  `439278282328d79535494d59db4346900ab387f0`, ahead 2 / behind 0.
+- Causa: navegación directa a API sin Bearer en tres botones; resumen comercial
+  incondicional aunque show_summary_terms fuera false.
+  Descargar PDF, Imprimir y Vista PDF de prueba reutilizan downloadQuotationPdf/getAccessToken.
+  Pestaña reservada antes de fetch, Blob autenticado, cierre ante errores,
+  impresión tras carga y liberación diferida de URLs. Nombre de descarga intacto.
+- La plantilla condiciona todo el resumen y su versión; Notas, términos completos
+  y firma conservan controles independientes. Las tres flags ya persistían por
+  API/BD; no se cambian modelos, schemas, migraciones, permisos ni ETS/LAB.
+- Backend dirigido: 36 passed y 12 subtests passed (incluye 8 combinaciones PDF
+  reales y 401/403/200), con un warning existente de Starlette.
+- Revisión de lifecycle PDF: observación de carga limitada explícitamente a
+  60 segundos; timers eliminados al cargar, cerrar durante la espera, fallar
+  navegación o vencer el plazo. pagehide no persistido libera el Blob; visores
+  aislados y páginas en caché lo conservan hasta la liberación del documento
+  creador por el navegador. Sin polling indefinido ni revocación por caducidad.
+- Generador de inventario restaurado exactamente a HEAD y ejecutado de nuevo;
+  conserva las filas descriptivas existentes según su comportamiento original.
+- Revalidación: quotation PDF backend 9 passed (ocho combinaciones y 401/403/200);
+  frontend dirigido 23 passed (PDF y quotationsVerificationQa); build correcto.
+- Validación anterior, antes de esta revisión de lifecycle:
+  frontend dirigido 19 passed (PDF y quotationsVerificationQa); build correcto.
+  Suite completa node --test: 74 passed, 1 failed.
+  PDFs de las ocho combinaciones generados y rasterizados; inspección visual
+  de muestras sin resumen, con términos completos y con resumen/firma.
+  npm run lint y npm test no se ejecutan porque package.json no define esos
+  scripts. Se usa node --test; su suite completa conserva un fallo ajeno en
+  notificationNavigation.test.js (work_order espera /communications, obtiene
+  /dashboard?work_order_id=12#servicios), con archivos idénticos a HEAD.
+- Validación PDF sobre SQLite en memoria; no se modifica la BD local persistente
+  ni se requiere migración o regeneración de respaldo SQL.
+- Pendiente: validación manual autenticada de los cuatro botones y del diálogo
+  nativo de impresión en el navegador de destino. Visores que aíslan su documento
+  o no notifican carga mantienen el PDF abierto y muestran alternativa manual.
+- Sin commit, push, merge ni deploy; cambios preparados para revisión.
+
+## Cierre acotado ETS ↔ LAB sobre `108c713` (corte anterior)
 
 - Preflight completo aprobado: worktree limpio, rama correcta y
   `HEAD = origin/feat/ets-lab-technical-bridge = 108c713ed9cab08214dcf09da504904f2a0c0f4a`.

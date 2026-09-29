@@ -335,3 +335,15 @@ opaco. Sólo se persisten hashes de refresh. La migración legacy es temporal,
 de un solo uso por JWT y no demuestra la instalación histórica que lo recibió.
 Las restricciones HTTP y su fecha límite se definen una sola vez en el
 [contrato Mobile](../architecture/MOBILE_SECURITY_CONTEXT.md).
+
+## Presentación PDF de Cotizaciones (2026-09-29)
+
+`DocumentTemplate.show_summary_terms` controla todo el resumen comercial inicial
+incluida su versión; Notas permanece visible independientemente del resumen.
+`show_full_terms` controla la sección completa comercial, metrológica, legal y
+privacidad. `show_acceptance_signature` controla la firma independientemente en
+las secciones habilitadas. Las ocho combinaciones se verifican contra flags
+persistidos y PDFs reales en `backend/tests/test_quotation_pdf.py`.
+Estos toggles no modifican el texto almacenado ni el dominio de la cotización.
+El PDF conserva el permiso `quotations.read` y entrega `application/pdf` con
+`Content-Disposition: inline`; la presentación web no altera esa autorización.
