@@ -325,11 +325,17 @@ def list_lab_work_orders(
     status: Literal["all", "open", "completed"] = "all",
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=25, ge=1, le=100),
+    *,
+    response: Response,
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(
         require_mobile_permission("work_orders.read_organization", "lab_work_orders.use")
     ),
 ) -> list[LabWorkOrderListItem]:
+    # Confirma al cliente que la búsqueda unificada se aplicó en servidor: un
+    # backend anterior ignoraba ``q`` en silencio y devolvía el listado completo.
+    if q and q.strip():
+        response.headers["X-MYC-Search-Applied"] = "q"
     return list_work_orders(
         db,
         q=q,

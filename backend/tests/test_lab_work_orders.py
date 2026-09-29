@@ -2552,6 +2552,21 @@ def test_unified_work_order_search_preserves_legacy_status_and_pagination(lab_co
     assert client.get(url, params={"q": "x" * 256}, headers=headers).status_code == 422
 
 
+def test_unified_search_confirms_server_side_application(lab_context):
+    """Regresión buscador Mobile: el cliente distingue un servidor que aplicó q
+    de uno que lo ignoró en silencio (listado completo sin filtrar)."""
+    client, _factory, tokens = lab_context
+    url = "/api/mobile/v1/technician/lab-work-orders"
+    headers = auth(tokens["tech"])
+    for name in ("Cliente Ejemplo SA", "Otro cliente"):
+        assert client.post(url, json=create_payload(name), headers=headers).status_code == 201
+    searched = client.get(url, params={"q": "cliente ejemplo"}, headers=headers)
+    assert searched.headers["X-MYC-Search-Applied"] == "q"
+    assert [item["client_name"] for item in searched.json()] == ["Cliente Ejemplo SA"]
+    assert "X-MYC-Search-Applied" not in client.get(url, headers=headers).headers
+    assert "X-MYC-Search-Applied" not in client.get(url, params={"q": "  "}, headers=headers).headers
+
+
 def test_unified_search_keeps_endpoint_permission_and_operator_scope(lab_context):
     from app.core.mobile.security import MobileSecurityContext, get_mobile_context
 

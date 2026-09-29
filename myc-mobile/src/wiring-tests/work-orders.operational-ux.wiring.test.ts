@@ -190,25 +190,37 @@ test('listado usa un input q, debounce de 400 ms y limpia búsqueda/estado', () 
   const header = source.slice(source.indexOf('<View style={styles.filters}>'), source.indexOf('<View style={styles.screenActions}>'));
   assert.equal((header.match(/<TextInput/g) ?? []).length, 1);
   assert.match(header, /placeholder="Buscar OT o cliente"/);
+  // typing -> searchFilter
   assert.match(header, /onChangeText=\{setSearchFilter\}/);
   assert.doesNotMatch(source, /folioFilter|clientFilter|debouncedFolio|debouncedClient|`folio=|`client=/);
-  assert.match(source, /debouncedSearch \? `q=\$\{encodeURIComponent\(debouncedSearch\)\}`/);
-  assert.match(source, /setTimeout\(\(\) => \{\s*setDebouncedSearch\(searchFilter\.trim\(\)\);\s*}, 400\)/);
+  // debounce -> debouncedSearch (nunca una request por tecla)
+  assert.match(source, /setTimeout\(\(\) => \{\s*setDebouncedSearch\(searchFilter\.trim\(\)\);\s*}, WORK_ORDER_SEARCH_DEBOUNCE_MS\)/);
   assert.match(source, /return \(\) => clearTimeout\(timer\)/);
   assert.match(source, /function clearFilters\(\) \{\s*setSearchFilter\(''\);\s*setDebouncedSearch\(''\);\s*setStatusFilter\('all'\)/);
   assert.match(header, /onPress=\{clearFilters\}/);
   assert.match(header, /onPress=\{\(\) => setStatusFilter\(value\)\}/);
   assert.match(source, /if \(userId != null\) refresh\(\);[\s\S]*?\[debouncedSearch, statusFilter, userId\]/);
+  // q viaja en la request server-side; nunca filtrado local de la página visible.
+  assert.match(source, /const listQuery = useMemo<WorkOrderListQuery>\(\s*\(\) => \(\{ status: statusFilter, q: debouncedSearch \}\)/);
+  assert.match(source, /requestResponse\(buildWorkOrderListPath\(listQuery, page, PAGE_SIZE\)\)/);
+  assert.match(source, /\}, \[commitListLoad, listQuery, requestResponse, userId\]\);/);
+  assert.doesNotMatch(source, /items\.filter\([^)]*client_name/);
 });
 
-test('listado conserva offset, tamaño de página y append versus reset', () => {
-  assert.match(source, /const offset = append \? itemCount\.current : 0/);
-  assert.match(source, /`limit=\$\{PAGE_SIZE\}`/);
-  assert.match(source, /`offset=\$\{offset\}`/);
-  assert.match(source, /`status=\$\{statusFilter\}`/);
-  assert.match(source, /const updated = append \? \[\.\.\.current, \.\.\.next\] : next/);
+test('listado: nuevo q reinicia offset y reemplaza; "Cargar más" conserva q; respuesta vieja no pisa', () => {
+  assert.match(source, /const page = planWorkOrderListPage\(\{\s*trigger,\s*requestedKey: key,\s*loadedKey: loadedListKey\.current,\s*loadedCount: itemCount\.current,/);
+  // append ya no se hereda de listLoad (bug: búsqueda durante "Cargar más").
+  assert.doesNotMatch(source, /const append = plan\.next\.loadingMore/);
+  assert.match(source, /const fetchTrigger: ListFetchTrigger = page\.append \? 'more' : trigger === 'more' \? 'background' : trigger;/);
+  assert.match(source, /const updated = mergeWorkOrderPage\(current, next, page\)/);
+  assert.match(source, /if \(requestId !== listRequestSequence\.current\) return;\s*loadedListKey\.current = key;/);
   assert.match(source, /setHasMore\(next\.length === PAGE_SIZE\)/);
   assert.match(source, /onPress=\{\(\) => refresh\('more'\)\}/);
+});
+
+test('listado: un servidor que ignora q se reporta y la búsqueda vacía tiene su propio estado', () => {
+  assert.match(source, /searchIgnoredByServer\(listQuery, response\.headers\.get\(SEARCH_APPLIED_HEADER\)\)/);
+  assert.match(source, /\{emptyListMessage\(listQuery\)\}/);
 });
 
 test('generación conserva dos targets, permisos y handlers con composición horizontal local', () => {

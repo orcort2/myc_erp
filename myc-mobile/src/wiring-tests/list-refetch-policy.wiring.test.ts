@@ -75,5 +75,7 @@ test('AuthProvider: authorizedFetch tiene identidad estable, fuera del useMemo q
 });
 
 test('work-orders: request (usado por LabTechnicalCapture y LabClientSelector) sólo depende de authorizedFetch', () => {
-  assert.match(screens['work-orders'], /return response\.json\(\) as Promise<T>;\n  \}, \[authorizedFetch\]\);/);
+  // request -> requestResponse -> authorizedFetch: la identidad sigue atada sólo a authorizedFetch.
+  assert.match(screens['work-orders'], /return response;\n  \}, \[authorizedFetch\]\);/);
+  assert.match(screens['work-orders'], /return response\.json\(\) as Promise<T>;\n  \}, \[requestResponse\]\);/);
 });

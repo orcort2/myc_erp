@@ -74,6 +74,17 @@ import { deriveMobileCapabilities } from '@/src/permissions/mobile-capabilities'
 import { hasPermission } from '@/src/permissions/permissions';
 import { affectsWorkOrders, RefreshGate } from '@/src/notifications/refresh-policy';
 import {
+  buildWorkOrderListPath,
+  emptyListMessage,
+  mergeWorkOrderPage,
+  planWorkOrderListPage,
+  SEARCH_APPLIED_HEADER,
+  searchIgnoredByServer,
+  WORK_ORDER_SEARCH_DEBOUNCE_MS,
+  workOrderListKey,
+  type WorkOrderListQuery,
+} from '@/src/sync/work-order-list-query';
+import {
   beginListFetch,
   canLoadMore,
   initialListLoadState,
@@ -295,6 +306,9 @@ export default function WorkOrdersScreen() {
   const [voidingDelivery, setVoidingDelivery] = useState<LabDelivery | null>(null);
   const [voidingEquipment, setVoidingEquipment] = useState<LabEquipment | null>(null);
   const itemCount = useRef(0);
+  // Consulta (estado + q) a la que pertenecen los items en memoria: "Cargar
+  // más" sólo anexa sobre esa misma consulta.
+  const loadedListKey = useRef<string | null>(null);
   const listLoadRef = useRef(listLoad);
   const listRequestSequence = useRef(0);
   const refreshGate = useRef(new RefreshGate());
@@ -306,7 +320,7 @@ export default function WorkOrdersScreen() {
   // recarga usan el id, nunca la referencia del objeto.
   const userId = user?.id ?? null;
 
-  const request = useCallback(async <T,>(path: string, init?: RequestInit): Promise<T> => {
+  const requestResponse = useCallback(async (path: string, init?: RequestInit): Promise<Response> => {
     const headers = new Headers(init?.headers);
     if (init?.body) headers.set('Content-Type', 'application/json');
     const response = await authorizedFetch(apiUrl(path), { ...init, headers });
@@ -314,9 +328,14 @@ export default function WorkOrdersScreen() {
       const detail = await readApiErrorDetail(response);
       throw new ApiError(detail.message, response.status, detail.missingFields, detail.code, detail.items, detail.fieldErrors);
     }
+    return response;
+  }, [authorizedFetch]);
+
+  const request = useCallback(async <T,>(path: string, init?: RequestInit): Promise<T> => {
+    const response = await requestResponse(path, init);
     if (response.status === 204) return undefined as T;
     return response.json() as Promise<T>;
-  }, [authorizedFetch]);
+  }, [requestResponse]);
 
   const loadDeliveryStatus = useCallback(async (workOrderId: number) => {
     try {
@@ -376,31 +395,46 @@ export default function WorkOrdersScreen() {
   // muestra spinner; un refetch con datos válidos conserva la lista y sólo
   // enciende un indicador no destructivo. Sólo la petición más reciente
   // aplica resultados, de modo que un filtro/focus concurrente no reordena.
+  // Búsqueda server-side (src/sync/work-order-list-query.ts): un cambio de
+  // q/estado reinicia en offset 0 y reemplaza la lista; sólo "Cargar más"
+  // sobre la MISMA consulta anexa. append nunca se hereda del estado de
+  // carga: una búsqueda iniciada mientras "Cargar más" seguía en curso
+  // anexaba la primera página filtrada (offset > 0) a la lista anterior.
+  const listQuery = useMemo<WorkOrderListQuery>(
+    () => ({ status: statusFilter, q: debouncedSearch }),
+    [debouncedSearch, statusFilter],
+  );
   const refresh = useCallback(async (trigger: ListFetchTrigger = 'background') => {
     if (userId == null) return;
     if (trigger === 'more' && !canLoadMore(listLoadRef.current)) return;
-    const plan = beginListFetch(listLoadRef.current, trigger, userId);
+    const key = workOrderListKey(listQuery);
+    const page = planWorkOrderListPage({
+      trigger,
+      requestedKey: key,
+      loadedKey: loadedListKey.current,
+      loadedCount: itemCount.current,
+    });
+    const fetchTrigger: ListFetchTrigger = page.append ? 'more' : trigger === 'more' ? 'background' : trigger;
+    const plan = beginListFetch(listLoadRef.current, fetchTrigger, userId);
     if (plan.discardData) {
       setItems([]);
       itemCount.current = 0;
+      loadedListKey.current = null;
       setHasMore(false);
     }
     commitListLoad(plan.next);
-    const append = plan.next.loadingMore;
     const requestId = ++listRequestSequence.current;
     setListError('');
     try {
-      const offset = append ? itemCount.current : 0;
-      const query = [
-        `limit=${PAGE_SIZE}`,
-        `offset=${offset}`,
-        `status=${statusFilter}`,
-        debouncedSearch ? `q=${encodeURIComponent(debouncedSearch)}` : '',
-      ].filter(Boolean).join('&');
-      const next = await request<LabListItem[]>(`/mobile/v1/technician/lab-work-orders?${query}`);
+      const response = await requestResponse(buildWorkOrderListPath(listQuery, page, PAGE_SIZE));
+      if (searchIgnoredByServer(listQuery, response.headers.get(SEARCH_APPLIED_HEADER))) {
+        throw new Error('El servidor ERP no aplicó la búsqueda (versión desactualizada). Actualiza el backend.');
+      }
+      const next = await response.json() as LabListItem[];
       if (requestId !== listRequestSequence.current) return;
+      loadedListKey.current = key;
       setItems((current) => {
-        const updated = append ? [...current, ...next] : next;
+        const updated = mergeWorkOrderPage(current, next, page);
         itemCount.current = updated.length;
         return updated;
       });
@@ -411,7 +445,7 @@ export default function WorkOrdersScreen() {
       setListError(error instanceof Error ? error.message : 'Intenta nuevamente');
       commitListLoad(settleListFetch(listLoadRef.current, 'error', userId));
     }
-  }, [commitListLoad, debouncedSearch, request, statusFilter, userId]);
+  }, [commitListLoad, listQuery, requestResponse, userId]);
 
   const refreshActive = useCallback(async (force = false, trigger: 'background' | 'pull' = 'background') => {
     if (!refreshGate.current.shouldRefresh(Date.now(), force)) return;
@@ -423,7 +457,7 @@ export default function WorkOrdersScreen() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchFilter.trim());
-    }, 400);
+    }, WORK_ORDER_SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [searchFilter]);
 
@@ -1627,7 +1661,7 @@ export default function WorkOrdersScreen() {
               <View style={styles.cardRight}><Text style={styles.count}>{item.completed_equipment_count}/{item.equipment_count} equipos</Text><Text style={styles.status}>{presentation.label}</Text></View>
             </Pressable>
           );})}
-          {!items.length && !listError && <Text style={styles.empty}>No hay órdenes que coincidan con los filtros.</Text>}
+          {!items.length && !listError && <Text style={styles.empty}>{emptyListMessage(listQuery)}</Text>}
           {hasMore && (
             <Pressable disabled={!canLoadMore(listLoad)} onPress={() => refresh('more')} style={styles.loadMore}>
               {listLoad.loadingMore ? <ActivityIndicator /> : <Text style={styles.secondaryText}>Cargar más</Text>}
