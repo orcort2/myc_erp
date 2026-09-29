@@ -34,8 +34,17 @@ class MobileExecutionEquipment(BaseModel):
     model: str | None
     serial_number: str
     identification: str
+    report_number: str | None = None
     is_good_condition: bool
+    # Observaciones de recepción capturadas por el técnico en MYC Mobile.
+    observations: str | None = None
     service_type: str | None
+    linked_company_name_snapshot: str | None = None
+    # Cliente documental del equipo: "order" hereda la OT; "different" congela snapshot.
+    certificate_client_mode: str = "order"
+    final_client_company_snapshot: str | None = None
+    final_client_address_snapshot: str | None = None
+    final_client_attention_snapshot: str | None = None
     certificate_folio: str | None
     folio_status: str
     field_sheet: MobileExecutionFieldSheetSummary | None

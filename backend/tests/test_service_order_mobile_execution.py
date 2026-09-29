@@ -25,7 +25,7 @@ from app.models.catalog_item import CatalogItem
 from app.models.certificate import Certificate
 from app.models.client import Client
 from app.models.equipment import Equipment
-from app.models.field_sheet import FieldSheet
+from app.models.field_sheet import FieldSheet, FieldSheetResult
 from app.models.folio_sequence import InstitutionalFolioSequence
 from app.models.lab_work_order import (
     LabWorkOrder,
@@ -108,7 +108,8 @@ class Lab:
             brand="Fluke", model="51-II", identification=f"TER-{order.folio}-{position}",
             serial_number=f"SN{order.folio}{position}", is_good_condition=True,
             service_type="traceable", certificate_folio=certificate_folio, folio_status=folio_status,
-            is_active=active,
+            is_active=active, report_number=f"REP-{order.folio}{position}",
+            observations="Golpe leve en carcasa",
         )
         self.db.add(equipment)
         self.db.flush()
@@ -118,6 +119,9 @@ class Lab:
                 revision_number=1, is_current=True, capture_values={"instrument": equipment.instrument},
                 results="valor técnico secreto", lab_signature_session_id=order.signature_session_id,
             )
+            sheet.results_rows = [FieldSheetResult(
+                section_key="repeatability", row_number=1, row_data={"nominal": "100", "reading": "100.02"},
+            )]
             self.db.add(sheet)
             self.db.flush()
             if final_pdf:
@@ -235,6 +239,11 @@ def test_projection_resolves_root_full_group_and_active_equipment_only(ctx):
     assert [item["id"] for item in child["equipment"]] == [ctx["e2"]]  # tombstone excluido
     assert child["retired_equipment_count"] == 1
     equipment = child["equipment"][0]
+    assert equipment["report_number"] == "REP-64391"
+    assert equipment["observations"] == "Golpe leve en carcasa"
+    assert equipment["is_good_condition"] is True
+    assert equipment["certificate_client_mode"] == "order"
+    assert equipment["final_client_company_snapshot"] is None
     assert equipment["certificate_folio"] == "MYCT-09-2026-64391"
     assert equipment["folio_status"] == "reserved"
     assert {"instrument", "brand", "model", "serial_number", "identification", "service_type"} <= set(equipment)
@@ -245,16 +254,32 @@ def test_projection_resolves_root_full_group_and_active_equipment_only(ctx):
     assert "results" not in sheet and "capture_values" not in sheet
 
 
+def _sheet_state(db):
+    return [
+        (sheet.id, sheet.status, sheet.revision_number, sheet.is_current, sheet.final_pdf_path,
+         sheet.final_pdf_sha256, sheet.updated_at)
+        for sheet in db.scalars(select(FieldSheet).order_by(FieldSheet.id)).all()
+    ]
+
+
 def test_projection_reads_never_create_or_copy_erp_technical_rows(ctx):
     _link(ctx)
     with ctx["factory"]() as db:
         before = _counts(db)
+        sheets_before = _sheet_state(db)
+        sheet_id = db.scalar(select(FieldSheet.id).where(FieldSheet.lab_equipment_id == ctx["e1"]))
+        pdf_path = ctx["storage"] / db.get(FieldSheet, sheet_id).final_pdf_path
+        pdf_before = pdf_path.read_bytes()
     http, headers = ctx["http"], ctx["headers"]["Administrador"]
     assert http.get(_url(ctx, "/mobile-execution"), headers=headers).status_code == 200
     assert http.get(_url(ctx, f"/mobile-execution/equipment/{ctx['e1']}/field-sheet"), headers=headers).status_code == 200
+    assert http.get(_url(ctx, f"/mobile-execution/field-sheets/{sheet_id}/pdf"), headers=headers).status_code == 200
     assert http.get(_url(ctx, "/capture-package-summary"), headers=headers).status_code == 200
+    assert http.get(_url(ctx, "/capture-package"), headers=headers).status_code == 200
     with ctx["factory"]() as db:
         assert _counts(db) == before
+        assert _sheet_state(db) == sheets_before  # ninguna lectura escribe la hoja
+    assert pdf_path.read_bytes() == pdf_before  # PDF congelado intacto
 
 
 def test_field_sheet_detail_is_read_only_and_scoped_to_linked_group(ctx):
@@ -267,6 +292,9 @@ def test_field_sheet_detail_is_read_only_and_scoped_to_linked_group(ctx):
     body = detail.json()
     assert body["work_order_folio"] == 6439
     assert body["field_sheet"]["results"] == "valor técnico secreto"
+    assert body["field_sheet"]["capture_values"]["instrument"] == "Termómetro 1"
+    assert body["field_sheet"]["results_rows"][0]["row_data"] == {"nominal": "100", "reading": "100.02"}
+    assert body["equipment"]["observations"] == "Golpe leve en carcasa"
     assert [item["revision_number"] for item in body["revisions"]] == [1]
     # Tombstone y equipo ajeno al grupo vinculado no son accesibles.
     assert http.get(_url(ctx, f"/mobile-execution/equipment/{ctx['retired']}/field-sheet"),
