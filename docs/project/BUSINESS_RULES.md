@@ -13,7 +13,10 @@
 ## Vínculo histórico ETS ↔ LAB — Fase 1 (2026-09-28)
 
 El ERP sólo consulta y administra la asociación histórica; LAB es autoridad
-técnica. Se resuelve la raíz antes de persistir; no se vincula una hija como
+técnica. Link/replace/unlink requieren conjuntamente `service_orders.create`
+y `service_orders.update`; `update` operativo por sí solo no concede gestión
+estructural del vínculo. Lectura conserva `service_orders.read`.
+Se resuelve la raíz antes de persistir; no se vincula una hija como
 raíz. Máximo un vínculo activo por ETS y por raíz, respaldado por índices
 parciales. Link/replace a la misma raíz son idempotentes. Replace y unlink
 requieren motivo y actor; relink crea una nueva fila. ETS inactivo/cerrado/

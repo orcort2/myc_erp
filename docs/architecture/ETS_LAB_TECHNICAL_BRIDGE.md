@@ -85,16 +85,61 @@ Base: `/api/service-orders/{service_order_id}`. Autenticación ERP normal,
 | --- | --- | --- | --- |
 | GET | `/lab-link` | `service_orders.read` | Vínculo activo o JSON null si no existe; ETS inexistente 404. |
 | GET | `/lab-link/history` | `service_orders.read` | Todos los registros, más recientes primero; desempate por ID. |
-| POST | `/lab-link` | `service_orders.update` | `{"work_order_id": 123}`; devuelve fila activa (200). |
-| POST | `/lab-link/replace` | `service_orders.update` | `{"work_order_id": 456, "reason": "Corrección"}`. |
-| POST | `/lab-link/unlink` | `service_orders.update` | `{"reason": "Desvinculación"}`; devuelve fila histórica. |
+| POST | `/lab-link` | `service_orders.create` **y** `service_orders.update` | `{"work_order_id": 123}`; devuelve fila activa (200). |
+| POST | `/lab-link/replace` | `service_orders.create` **y** `service_orders.update` | `{"work_order_id": 456, "reason": "Corrección"}`. |
+| POST | `/lab-link/unlink` | `service_orders.create` **y** `service_orders.update` | `{"reason": "Desvinculación"}`; devuelve fila histórica. |
 | GET | `/lab-candidates?q=6401&limit=50` | `service_orders.read` | Resumen por raíz; limit 1–100 y q de hasta 40 caracteres. |
 
 POST unlink sigue el patrón de acciones ETS con payload y evita un body DELETE.
-Los permisos ya están en catálogo/roles; no se agregan códigos ni seeds. Asesor y
-Técnico ya tienen read/update; Captura/Finanzas tienen lectura; Cliente no recibe
-estas capacidades. Administrador conserva su comodín existente. Los tokens de
-contexto Mobile no son credenciales ERP válidas para estas rutas.
+Los permisos ya están en catálogo/roles; no se agregan códigos ni seeds.
+
+### Revisión de cierre: autorización estructural
+
+Preflight del cierre: rama `feat/ets-lab-technical-bridge`, worktree limpio y
+HEAD igual a `origin/feat/ets-lab-technical-bridge` en
+`108c713ed9cab08214dcf09da504904f2a0c0f4a`.
+
+Inventario exacto de las capacidades relevantes declaradas en
+`backend/app/core/permissions.py` al inicio de la revisión (sin cambios de roles):
+
+| Rol (clave exacta) | service_orders.read | service_orders.create | service_orders.update |
+| --- | --- | --- | --- |
+| Administrador | vía `*` | vía `*` | vía `*` |
+| Comercial | directo | directo | directo |
+| Tecnico | directo | no | directo |
+| Captura | directo | no | no |
+| Calidad | directo | no | no |
+| Finanzas | directo | no | no |
+| Cliente | no | no | no |
+| Desarrollador | directo | directo | directo |
+| Operador | no | no | no |
+| Auditor | no | no | no |
+
+`auth.user_has_permission` consulta los roles activos de la BD y acepta permiso
+literal, `*` o comodín de módulo. Ningún rol actual tiene `service_orders.*`.
+La composición es aditiva: Técnico+Comercial o Técnico+Desarrollador satisface
+ambas capacidades; Técnico+Calidad no. Roles inactivos no conceden autoridad.
+Cliente sólo tiene `service_orders.read_own`, que no equivale a `read`.
+Los overrides individuales persistidos no participan en `require_permission`.
+
+**Decisión de cierre:** las tres mutaciones requieren **create AND update**.
+`update` solo se concede al Técnico para edición operativa y no basta para
+alterar el contexto estructural ETS↔LAB. El catálogo institucional M14.A02
+("Crear y completar contexto") y M11.A06 ("Abrir expediente de servicio"), junto
+con la matriz Comercial/Desarrollador, permiten usar `service_orders.create`
+como capacidad adicional de gestión del contexto. Es una política compuesta
+acotada a este bridge, no una equivalencia general entre crear ETS y gestionar
+LAB. No existe una clave específica de vínculo LAB en el catálogo y no se crea
+una nueva; tampoco se reutilizan permisos de borrado, Tickets o excepciones.
+
+El guard central clasifica `create` como mínimo y cada ruta exige explícitamente
+`create` y `update` mediante `require_permission`. Por ello el inventario CSV
+expone el mínimo `create`; el requisito adicional `update` está en el router.
+Ambos se prueban incluso sin el guard central. Lectura sigue en `read`.
+Comercial, Desarrollador y Administrador conservan gestión; Técnico puro obtiene
+403 para link/replace/unlink y conserva su edición ETS y lectura anteriores.
+No se modifican catálogo, seeds, asignaciones ni autenticación. Los tokens de
+contexto Mobile siguen siendo inválidos para estas rutas ERP.
 
 Schemas dedicados exponen ID, ETS, raíz/folio, estado, fechas/actores/nombres,
 motivo y sucesor, sin serializar colecciones técnicas. Los nombres y folio de
@@ -106,6 +151,11 @@ por raíz, orden folio/ID. Devuelve folios de todo el grupo histórico, snapshot
 ETS actualmente asociado e indicador de asociación a otro ETS. Incluye grupos
 cancelados identificados por su estado; intentar vincularlos retorna 409. No
 filtra por identidad comercial ni carga firmas, hojas, PDFs o entregas.
+
+`/lab-candidates` es exclusivamente un buscador de **grupos LAB por folio**.
+No constituye el flujo Mobile de búsqueda/selección de cotización o ETS. La
+integración **Mobile → cotización/ETS** corresponde a una fase posterior; no
+se amplía este endpoint ni se implementa esa integración en este cierre.
 
 ## Auditoría
 

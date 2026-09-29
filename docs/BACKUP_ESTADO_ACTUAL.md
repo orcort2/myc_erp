@@ -4,9 +4,56 @@
 >
 > Autoridad: Media; no sustituye los documentos canónicos de project/
 >
-> Corte: 2026-09-28 — Fase 1 ETS ↔ LAB en `feat/ets-lab-technical-bridge`, base `4392782`; validación en PostgreSQL aislado, sin deploy.
+> Corte: cierre acotado de Fase 1 ETS ↔ LAB sobre `108c713`, rama `feat/ets-lab-technical-bridge`; validación PostgreSQL aislada, sin merge ni deploy.
 
 # Estado operativo actual del ERP MYC
+
+## Cierre acotado ETS ↔ LAB sobre `108c713`
+
+- Preflight completo aprobado: worktree limpio, rama correcta y
+  `HEAD = origin/feat/ets-lab-technical-bridge = 108c713ed9cab08214dcf09da504904f2a0c0f4a`.
+- Auditoría de autorización: `service_orders.update` se concede directamente
+  a Comercial, Tecnico y Desarrollador; Administrador lo satisface por `*`.
+  Los demás seis roles no lo reciben. La unión de roles activos es aditiva;
+  los overrides individuales no intervienen en `require_permission`.
+- Decisión justificada antes del cambio: link/replace/unlink requieren
+  **service_orders.create AND service_orders.update**. M14.A02/M11.A06 y la
+  matriz vigente distinguen autoridad de creación/completado del contexto
+  ETS de edición operativa. No se agrega permiso ni se cambia catálogo,
+  asignaciones o autenticación. Técnico puro recibe 403; Comercial,
+  Desarrollador y Administrador conservan gestión; composición e inactividad
+  de roles quedan probadas. Guard central mínimo create y doble control explícito
+  en cada ruta. Lectura conserva read. Inventario exacto en el
+  [contrato del bridge](architecture/ETS_LAB_TECHNICAL_BRIDGE.md).
+- `/lab-candidates` sigue siendo exclusivamente búsqueda por folio de grupos
+  LAB. No es el flujo Mobile de selección de cotización/ETS, reservado para
+  una fase posterior. No se cambia el endpoint ni el dominio técnico LAB.
+- Sin defectos adicionales de dominio en las invariantes revisadas. Se mantienen
+  modelo, servicio, schema y migración `d7e9a1c3b5f0` de Fase 1. No hay frontend,
+  Mobile, Captura, Calidad, Certificados, paquetes, sincronización o creación
+  de grupos en este cierre.
+- Gate focalizado: **118 passed, 0 failed, 0 skipped**, tres warnings existentes
+  de Starlette/reflexión SQLite, en 13.64 s. Comando desde backend con `.venv`:
+  `python -m pytest tests/test_service_order_lab_links.py tests/test_service_order_integrity.py tests/test_api_access_conformity.py -q`.
+  `DATABASE_URL` y `ETS_LAB_POSTGRES_TEST_URL` apuntaron a la BD aislada UTF-8
+  en puerto 55439. Los cinco escenarios concurrentes PostgreSQL pasaron;
+  cada uno utiliza un esquema aleatorio propio que se elimina al terminar.
+- Cobertura: exclusividad raíz/ETS con constraints, hija y siblings a una sola
+  raíz, bloqueo link/replace/unlink por ETS closed/cancelled/inactive,
+  rechazo link/replace por raíz cancelada, unlink después de cancelación LAB,
+  historial/sucesor, rollback completo y carrera de dos reemplazos competidores
+  conservando intacto el vínculo del perdedor. Se probaron los diez roles,
+  composiciones y ausencia de cualquiera de los dos permisos, incluso sin guard
+  central. La suite suma 104 pruebas bridge, 10 integridad ETS y 4 conformidad API.
+- Inventario API regenerado y verificado (543 rutas); registro funcional
+  regenerado y rutas comprobadas; compileall y `git diff --check` correctos.
+  Sin migración ni cambios persistentes de datos operativos; la BD compartida
+  no se utilizó. La suite full y Alembic global no se repiten en este cierre
+  acotado: sus hallazgos preexistentes TD-063/TD-064 siguen documentados abajo.
+- Documentación sincronizada: contrato, matriz, reglas, alcance, decisiones,
+  corte operativo e inventarios. Índice, estado, flujo, observaciones y deuda
+  revisados sin cambios de responsabilidad/estado. No se crean, mueven ni archivan
+  documentos. Commit de cierre separado; sin push, merge ni deploy.
 
 ## ETS ↔ LAB técnico — Fase 1 (2026-09-28)
 

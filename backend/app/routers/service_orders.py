@@ -952,7 +952,11 @@ def get_service_order_lab_link_history(
     return list_lab_link_history(db, service_order_id)
 
 
-@router.post("/{service_order_id}/lab-link", response_model=ServiceOrderLabLinkRead)
+@router.post(
+    "/{service_order_id}/lab-link",
+    response_model=ServiceOrderLabLinkRead,
+    dependencies=[Depends(require_permission("service_orders.create"))],
+)
 def post_service_order_lab_link(
     service_order_id: int,
     payload: ServiceOrderLabLinkCreate,
@@ -962,7 +966,11 @@ def post_service_order_lab_link(
     return link_lab_group(db, service_order_id, payload.work_order_id, user_id=current_user.id)
 
 
-@router.post("/{service_order_id}/lab-link/replace", response_model=ServiceOrderLabLinkRead)
+@router.post(
+    "/{service_order_id}/lab-link/replace",
+    response_model=ServiceOrderLabLinkRead,
+    dependencies=[Depends(require_permission("service_orders.create"))],
+)
 def replace_service_order_lab_link(
     service_order_id: int,
     payload: ServiceOrderLabLinkReplace,
@@ -974,7 +982,11 @@ def replace_service_order_lab_link(
     )
 
 
-@router.post("/{service_order_id}/lab-link/unlink", response_model=ServiceOrderLabLinkRead)
+@router.post(
+    "/{service_order_id}/lab-link/unlink",
+    response_model=ServiceOrderLabLinkRead,
+    dependencies=[Depends(require_permission("service_orders.create"))],
+)
 def unlink_service_order_lab_link(
     service_order_id: int,
     payload: ServiceOrderLabLinkUnlink,

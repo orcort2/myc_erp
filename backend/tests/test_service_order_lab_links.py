@@ -31,7 +31,7 @@ from app.services import service_order_lab_links as service
 
 def seed(db):
     actors = {}
-    for key, role_name in (("writer", "Tecnico"), ("reader", "Captura"), ("denied", "Cliente")):
+    for key, role_name in (("writer", "Comercial"), ("reader", "Captura"), ("denied", "Cliente")):
         role = Role(name=role_name)
         user = User(username=f"bridge-{key}", email=f"{key}@example.test",
                     full_name=f"Bridge {key}", hashed_password="unused", roles=[role])
@@ -384,7 +384,7 @@ def test_http_permissions_and_classification(ctx, method, suffix):
     assert reader.status_code == (200 if method == "GET" else 403)
     policy = classify_operation(method, path, ["service-orders"])
     assert policy.access_type == AccessType.PERMISSION
-    assert policy.permission == ("service_orders.read" if method == "GET" else "service_orders.update")
+    assert policy.permission == ("service_orders.read" if method == "GET" else "service_orders.create")
     operations = assert_all_routes_classified(app)
     assert any(op.path == f"/api/service-orders/{{service_order_id}}{suffix}" and op.method == method
                for op in operations)
@@ -538,3 +538,144 @@ def test_sqlite_migration_roundtrip_matches_model(ctx):
             status="active", linked_at=datetime.now(timezone.utc), linked_by_user_id=ctx.actors["writer"].id,
         ))
     ctx.db.rollback()
+
+
+@pytest.mark.parametrize("suffix", ["", "/replace", "/unlink"])
+@pytest.mark.parametrize("role_names,allowed", [
+    (["Administrador"], True), (["Comercial"], True), (["Desarrollador"], True),
+    (["Tecnico"], False), (["Captura"], False), (["Calidad"], False),
+    (["Finanzas"], False), (["Cliente"], False), (["Operador"], False),
+    (["Auditor"], False), (["Tecnico", "Comercial"], True),
+    (["Tecnico", "Desarrollador"], True), (["Tecnico", "Calidad"], False),
+])
+def test_mutations_require_structural_authority_from_active_roles(ctx, suffix, role_names, allowed):
+    if suffix:
+        link(ctx)
+    actor = ctx.actors["writer"]
+    roles = []
+    for name in role_names:
+        role = ctx.db.scalar(select(Role).where(Role.name == name))
+        if role is None:
+            role = Role(name=name)
+            ctx.db.add(role)
+        roles.append(role)
+    actor.roles = roles
+    ctx.db.commit()
+    before = ctx.db.execute(select(ServiceOrderLabLink.__table__)).all()
+    audit_count = len(audits(ctx))
+    response = ctx.client.post(
+        f"{ctx.path}/lab-link{suffix}",
+        json={"work_order_id": ctx.roots[1].id, "reason": "structural authority"},
+        headers=ctx.headers["writer"],
+    )
+    assert response.status_code == (200 if allowed else 403), response.text
+    if not allowed:
+        assert ctx.db.execute(select(ServiceOrderLabLink.__table__)).all() == before
+        assert len(audits(ctx)) == audit_count
+
+
+@pytest.mark.parametrize("suffix", ["", "/replace", "/unlink"])
+@pytest.mark.parametrize("permissions", [{"service_orders.create"}, {"service_orders.update"}])
+def test_both_permissions_are_required_even_without_central_guard(ctx, monkeypatch, suffix, permissions):
+    from app.core.permissions import ROLE_PERMISSIONS
+    from app.security.api_access import enforce_api_access
+
+    # The route itself enforces AND, independently of the classified minimum.
+    monkeypatch.setitem(ROLE_PERMISSIONS, "Comercial", permissions)
+    app.dependency_overrides[enforce_api_access] = lambda: None
+    response = ctx.client.post(
+        f"{ctx.path}/lab-link{suffix}",
+        json={"work_order_id": ctx.roots[0].id, "reason": "insufficient"},
+        headers=ctx.headers["writer"],
+    )
+    assert response.status_code == 403
+    assert audits(ctx) == []
+
+
+def test_inactive_commercial_role_does_not_elevate_technician(ctx):
+    from app.services.auth import user_has_permission
+
+    actor = ctx.actors["writer"]
+    actor.roles[0].is_active = False
+    actor.roles.append(Role(name="Tecnico"))
+    ctx.db.commit()
+    assert user_has_permission(actor, "service_orders.update")
+    assert not user_has_permission(actor, "service_orders.create")
+    response = ctx.client.post(f"{ctx.path}/lab-link", json={"work_order_id": ctx.child.id},
+                               headers=ctx.headers["writer"])
+    assert response.status_code == 403
+    assert ctx.client.get(f"{ctx.path}/lab-link", headers=ctx.headers["writer"]).status_code == 200
+
+
+def test_siblings_resolve_one_link_and_cannot_attach_to_other_ets(ctx):
+    sibling = LabWorkOrder(
+        folio=6402, root_work_order_id=ctx.roots[0].id, sequence_number=3,
+        created_by_user_id=ctx.actors["writer"].id,
+        reception_date=date.today(), client_name="LAB snapshot", status="draft",
+    )
+    ctx.db.add(sibling)
+    ctx.db.commit()
+    first = link(ctx, ctx.child)
+    assert link(ctx, sibling).id == first.id
+    assert service.replace_lab_group(ctx.db, ctx.orders[0].id, sibling.id,
+                                      "same group", user_id=ctx.actors["writer"].id).id == first.id
+    with pytest.raises(HTTPException) as exc:
+        link(ctx, sibling, ctx.orders[1])
+    assert exc.value.status_code == 409
+    assert ctx.db.scalar(select(func.count(ServiceOrderLabLink.id))) == 1
+    assert first.lab_root_work_order_id == ctx.roots[0].id
+    assert len(audits(ctx)) == 1
+
+
+def test_unlink_remains_allowed_after_lab_root_is_cancelled(ctx):
+    old = link(ctx)
+    ctx.roots[0].status = "cancelled"
+    ctx.db.commit()
+    response = ctx.client.post(f"{ctx.path}/lab-link/unlink", json={"reason": "LAB cancelled later"},
+                               headers=ctx.headers["writer"])
+    assert response.status_code == 200, response.text
+    assert response.json()["id"] == old.id and response.json()["status"] == "unlinked"
+    assert service.get_active_lab_link(ctx.db, ctx.orders[0].id) is None
+    ctx.db.refresh(ctx.roots[0])
+    assert ctx.roots[0].status == "cancelled"
+    assert audits(ctx)[-1].action == "service_order.lab_group_unlinked"
+
+
+def test_postgres_competing_replacements_leave_loser_history_intact(postgres_ctx):
+    factory = postgres_ctx.factory
+    orders, roots, actor = postgres_ctx.ids
+    with factory() as db:
+        target = LabWorkOrder(folio=6420, sequence_number=1, created_by_user_id=actor,
+                              reception_date=date.today(), client_name="Target", status="draft")
+        db.add(target)
+        db.commit()
+        target_id = target.id
+        old_ids = [service.link_lab_group(db, order, root, user_id=actor).id
+                   for order, root in zip(orders, roots)]
+    barrier = Barrier(2)
+
+    def replace(index):
+        with factory() as db:
+            barrier.wait(timeout=10)
+            try:
+                row = service.replace_lab_group(db, orders[index], target_id, "race", user_id=actor)
+                return index, row.id
+            except HTTPException as exc:
+                assert exc.status_code == 409
+                return index, None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(replace, [0, 1]))
+    winner, new_id = next(item for item in results if item[1] is not None)
+    loser, _ = next(item for item in results if item[1] is None)
+    with factory() as db:
+        rows = list(db.scalars(select(ServiceOrderLabLink)))
+        assert len(rows) == 3
+        assert sum(row.status == "active" for row in rows) == 2
+        assert sum(row.status == "active" and row.lab_root_work_order_id == target_id for row in rows) == 1
+        won = db.get(ServiceOrderLabLink, old_ids[winner])
+        lost = db.get(ServiceOrderLabLink, old_ids[loser])
+        assert won.status == "replaced" and won.replaced_by_link_id == new_id
+        assert lost.status == "active" and lost.replaced_by_link_id is None
+        assert lost.unlinked_at is None and lost.unlinked_by_user_id is None and lost.unlink_reason is None
+        assert db.scalar(select(func.count(AuditLog.id))) == 3

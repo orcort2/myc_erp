@@ -15,7 +15,11 @@
 Por alcance explícito se permite una referencia histórica del ERP a LAB, como
 excepción acotada al aislamiento técnico anterior. `ServiceOrderLabLink` vive
 en archivo/tabla propios para localizar su lifecycle y no duplicar el dominio
-LAB. Se reutilizan `service_orders.read/update`, POST unlink, auditoría canónica,
+LAB. Se reutiliza `service_orders.read` y, en el cierre, se exige
+`service_orders.create` **y** `service_orders.update` para las tres mutaciones.
+`update` operativo de Técnico por sí solo no concede la asociación estructural;
+`create` corresponde a creación/completado de contexto ETS (M14.A02/M11.A06).
+Se mantienen los roles existentes y su composición aditiva, POST unlink, auditoría canónica,
 locks ETS/raíz e índices parciales PostgreSQL/SQLite. No se agregan permisos,
 modelos espejo, sincronización de estados ni escrituras técnicas. LAB/MYC Mobile
 conserva la autoridad técnica completa. [Contrato](../architecture/ETS_LAB_TECHNICAL_BRIDGE.md).
