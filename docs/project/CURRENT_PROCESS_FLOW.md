@@ -10,6 +10,15 @@
 
 # Flujo operativo actual
 
+## Asociación ERP ETS ↔ LAB (2026-09-28)
+
+`ETS editable → buscar grupo LAB existente → link → replace con motivo o unlink
+con motivo → relink opcional`. Cada reemplazo/desvinculación conserva el vínculo
+anterior, actor, fecha y motivo; revincular crea otro registro. Una sola raíz
+activa por ETS y un solo ETS activo por raíz. Esta secuencia sólo administra la
+referencia histórica; el flujo técnico LAB continúa independiente.
+[Contrato y endpoints](../architecture/ETS_LAB_TECHNICAL_BRIDGE.md).
+
 ## Mantenimiento
 
 `cotización aprobada/snapshot → ServiceUnit + ServiceStage maintenance + OT → arribo/equipo (laboratorio) o equipo + solicitud/aceptación/programación (campo) → asignado → en mantenimiento ↔ pausado → captura estructurada → técnicamente terminado → reporte versionado → firma vigente → liberación/cierre`.

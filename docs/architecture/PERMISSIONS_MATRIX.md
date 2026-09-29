@@ -133,3 +133,11 @@ técnico. Las 75 claves HTTP están declaradas en bootstrap:
 Portal usa `portal.read`. Las brechas restantes no autorizan renombrados;
 su clasificación está en el cierre TD-027 y en
 [`security/CAPABILITY_MODEL_GAPS_2026-08-04.md`](security/CAPABILITY_MODEL_GAPS_2026-08-04.md).
+
+## Vínculo ERP ETS ↔ LAB — Fase 1 (2026-09-28)
+
+Los seis endpoints del [bridge](ETS_LAB_TECHNICAL_BRIDGE.md) reutilizan permisos
+existentes: `service_orders.read` para activo/historial/candidatos y
+`service_orders.update` para link/replace/unlink. No se agregan permisos ni
+seeds; aplican las asignaciones ERP actuales. Se usa `require_permission` y
+clasificación API access, sin contexto Mobile ni autorización técnica LAB.

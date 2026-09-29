@@ -10,6 +10,17 @@
 
 # Reglas de negocio vigentes
 
+## Vínculo histórico ETS ↔ LAB — Fase 1 (2026-09-28)
+
+El ERP sólo consulta y administra la asociación histórica; LAB es autoridad
+técnica. Se resuelve la raíz antes de persistir; no se vincula una hija como
+raíz. Máximo un vínculo activo por ETS y por raíz, respaldado por índices
+parciales. Link/replace a la misma raíz son idempotentes. Replace y unlink
+requieren motivo y actor; relink crea una nueva fila. ETS inactivo/cerrado/
+cancelado no admite mutaciones del vínculo; raíz cancelada no admite link/replace.
+El historial permanece consultable. No hay comparación textual obligatoria de
+clientes ni sincronización de estados. [Contrato](../architecture/ETS_LAB_TECHNICAL_BRIDGE.md).
+
 ## ETS Mantenimiento
 
 - Nace exclusivamente de `operational_category=maintenance`; sus unidades no usan evolución genérica.

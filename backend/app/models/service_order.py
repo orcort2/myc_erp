@@ -186,6 +186,13 @@ class ServiceOrder(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         order_by="ServiceWorkOrder.sequence.asc()",
     )
 
+    # Historical associations cannot cascade-delete or be detached from their ETS.
+    lab_links: Mapped[list["ServiceOrderLabLink"]] = relationship(
+        back_populates="service_order",
+        passive_deletes="all",
+        order_by="(ServiceOrderLabLink.linked_at.desc(), ServiceOrderLabLink.id.desc())",
+    )
+
     signature_cycles: Mapped[list["ServiceOrderSignatureCycle"]] = relationship(
         back_populates="service_order",
         cascade="all, delete-orphan",

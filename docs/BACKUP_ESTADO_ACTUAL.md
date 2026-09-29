@@ -4,9 +4,73 @@
 >
 > Autoridad: Media; no sustituye los documentos canónicos de project/
 >
-> Corte: 2026-09-25 — DEV-1C EN REVISIÓN (activos de despliegue del servicio Windows `MYCDeveloperBroker` bajo `NT SERVICE\MYCDeveloperBroker`, sin commit; instalación en Windows pendiente) sobre `main` `05f4c625` (DEV-1B mergeado, PR #9)
+> Corte: 2026-09-28 — Fase 1 ETS ↔ LAB en `feat/ets-lab-technical-bridge`, base `4392782`; validación en PostgreSQL aislado, sin deploy.
 
 # Estado operativo actual del ERP MYC
+
+## ETS ↔ LAB técnico — Fase 1 (2026-09-28)
+
+- Preflight completo: worktree limpio en `feat/ets-lab-technical-bridge`,
+  HEAD y origin/main en `439278282328d79535494d59db4346900ab387f0`.
+  Trabajo exclusivo en `myc_erp-dev1c`; sin crear worktree/rama, push, merge ni deploy.
+- Implementados modelo/tabla `ServiceOrderLabLink`, relación histórica del ETS,
+  schemas y servicio dedicado, seis endpoints ERP (activo, historial, link,
+  replace, unlink y candidatos), permisos existentes `service_orders.read/update`
+  y auditoría canónica. LAB mantiene su autoridad técnica; frontend y Mobile
+  no se modifican. [Contrato completo](architecture/ETS_LAB_TECHNICAL_BRIDGE.md).
+- Exclusividad por ETS y raíz mediante índices únicos parciales; FKs RESTRICT,
+  checks de estado/lifecycle, locks ETS/raíz y rollback completo de reemplazo.
+  Motivo obligatorio, actores, idempotencia y revinculación con nuevo historial.
+- Migración `d7e9a1c3b5f0` sobre único head previo `c4d8e2f1a7b3`.
+  Upgrade desde vacío y ciclo upgrade/downgrade/upgrade verificados con PostgreSQL
+  16 aislado en `tmp/ets-lab-validation`; migración SQLite también probada.
+  La base compartida por defecto quedó intacta en `602a09af6218`.
+- Respaldo local ignorado por Git `backup_erp_myc_antes_prueba.sql` regenerado
+  desde la BD **aislada de validación**, sin datos operativos del usuario.
+  Su `alembic_version` coincide con `d7e9a1c3b5f0`; no sustituye un backup de
+  la base compartida. Los logs de validación son locales bajo `tmp/ets-lab-validation`.
+- `alembic check` ejecutado: diferencia preexistente
+  `uq_mobile_biometric_credential_hash` (TD-063). Reproducida con el código exacto
+  `4392782` y su head `c4d8e2f1a7b3` en un snapshot de archivos dentro de tmp,
+  además del head nuevo. No hay diferencias adicionales del bridge.
+- Validación focalizada final: `python -m pytest tests/test_service_order_lab_links.py
+  tests/test_service_order_integrity.py tests/test_api_access_conformity.py -q`
+  desde backend con `.venv`: **69 passed** (55 bridge, 10 integridad ETS,
+  4 conformidad API); incluye cuatro escenarios concurrentes PostgreSQL,
+  constraints SQLite, rollback por fallo de inserción/auditoría/commit y
+  ciclo SQLite upgrade/downgrade. `ETS_LAB_POSTGRES_TEST_URL` apunta a la
+  base aislada UTF-8 en puerto 55439; no hubo skips en este gate.
+- Suite completa: `python -m pytest tests -q` desde backend, con `DATABASE_URL`,
+  `ETS_LAB_POSTGRES_TEST_URL` y `LAB_POSTGRES_TEST_URL` apuntando a PostgreSQL
+  aislado: **1966 passed, 6 failed, 19 skipped**, 19 subtests passed. Incluye
+  suites ETS y LAB. Esta ejecución precedió dos pruebas adicionales del bridge
+  (rechazo de token Mobile y roundtrip SQLite), ambas aprobadas en el gate final.
+- Contraste con snapshot exacto del commit base `4392782`, mismo comando full:
+  **1912 passed, 7 failed, 19 skipped**, 19 subtests passed. Los seis fallos
+  de la rama están reproducidos en la base: una prueba LAB de cohortes con
+  equipo sin `service_type`, cuatro aserciones de logging del Developer Broker
+  y el XLS SAT oficial ausente. El fallo adicional de la base es
+  `test_postgresql_concurrent_folio_allocation_is_unique`: esa prueba reutiliza
+  la BD indicada por `LAB_POSTGRES_TEST_URL` y exige folios iniciales 6400/6401,
+  pero la ejecución anterior ya consumió la secuencia (obtuvo 6404/6405).
+  No se modifican esos módulos/pruebas ajenos. Lista exacta en TD-064 y logs
+  `full-backend.log` / `baseline-full.log` del directorio local de validación.
+- `python -m compileall` sobre archivos Python afectados, inventario API `--check`,
+  generador de registro, verificación de rutas y `git diff --check`: correctos.
+  No existe configuración de lint/formato Python en el backend; no se instaló
+  ni se introdujo una herramienta nueva para esta fase.
+- Inventario API: 543 operaciones y seis rutas nuevas clasificadas.
+  Registro funcional regenerado; también reconcilia dos scripts Windows ya
+  versionados y retira la referencia al XLS SAT ausente en este worktree.
+  Sin modificaciones a esos scripts ni a recursos SAT.
+- Revisión documental: actualizado contrato LAB/bridge, permisos, canónicos de
+  alcance/flujo/reglas/decisiones/estado, índice, deuda e inventarios.
+  `OBSERVATIONS_REGISTER.md` revisado sin cambios: no se cierran observaciones
+  funcionales/UX existentes. Se crea sólo el contrato arquitectónico del bridge;
+  no se mueven ni archivan documentos.
+- Pendientes fuera de Fase 1: frontend, Captura/Calidad/Certificados, handoff,
+  paquetes LAB desde ETS, sincronización y creación automática de grupos.
+  Aplicar migración en el entorno destino antes de habilitar endpoints.
 
 ## MYC Mobile — refetch no destructivo y selector modal de cliente OT (2026-09-28, en revisión)
 

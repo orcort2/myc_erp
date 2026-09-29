@@ -51,7 +51,11 @@ La bandeja administrativa Mobile compone `OperationalTicket` y `WorkOrderGroupRe
 El LAB resuelve captura operativa temporal desde iPhone sin crear ni modificar
 `ServiceOrder`, `ServiceWorkOrder`, `Equipment`, `Client`, `Certificate`, Hojas
 de Campo, Facturación ni entidades del Motor de Resoluciones. El flujo
-productivo no puede depender de tablas, rutas o tipos LAB. La app no consulta
+productivo conserva sus autoridades propias. La excepción acotada de Fase 1
+[ETS ↔ LAB](ETS_LAB_TECHNICAL_BRIDGE.md) permite al ERP consultar y vincular
+históricamente una raíz LAB, sin editar datos técnicos ni sincronizar estados.
+Sus FKs RESTRICT preservan raíces referenciadas incluso después de desvincular.
+La app no consulta
 `/api/service-orders/...` para listar, abrir, documentar o eliminar OT LAB.
 
 El namespace protegido es

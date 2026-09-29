@@ -126,6 +126,7 @@ from app.models.quotation_service_change import (
     QuotationServiceChangeRequest,
 )
 from app.models.service_order_exception import ServiceOrderExceptionRequest
+from app.models.service_order_lab_link import ServiceOrderLabLink
 from app.models.sale_execution import (
     SaleAuthorization,
     SaleDelivery,
@@ -310,6 +311,7 @@ __all__ = [
     "SatCatalogVersion",
     "ServiceOrder",
     "ServiceOrderItem",
+    "ServiceOrderLabLink",
     "ServiceStage",
     "ServiceStageDocument",
     "ServiceTask",

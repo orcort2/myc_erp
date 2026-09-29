@@ -131,6 +131,8 @@ def _quotation_policy(method: str, path: str) -> AccessPolicy:
 
 
 def _service_order_policy(method: str, path: str) -> AccessPolicy:
+    if "/lab-link" in path or path.endswith("/lab-candidates"):
+        return _permission("service_orders.read" if method == "GET" else "service_orders.update")
     if method == "DELETE" and path.startswith("/api/service-orders/work-orders/"):
         return _permission("service_orders.delete")
     if "/maintenance/" in path or path.endswith("/maintenance"):

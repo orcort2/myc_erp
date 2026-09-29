@@ -10,6 +10,16 @@
 
 # Estado actual del ERP MYC
 
+## ETS ↔ LAB técnico — Fase 1 (2026-09-28)
+
+Implementada la asociación histórica ERP con grupos LAB: link, replace, unlink,
+relink, consulta de historial y candidatos. Modelo separado, exclusividad activa
+DB, transacciones, auditoría y permisos ERP existentes. Estado del módulo ETS:
+**EN DESARROLLO**; esta entrega se limita al backend del vínculo. Frontend,
+Captura/Calidad/Certificados, handoff, paquetes y sincronización de estados quedan
+fuera de esta fase. Contrato: [ETS ↔ LAB](../architecture/ETS_LAB_TECHNICAL_BRIDGE.md);
+evidencia y limitaciones en [corte operativo](../BACKUP_ESTADO_ACTUAL.md).
+
 ## ETS Mantenimiento — TERMINADO, EN REVISIÓN
 
 Vertical integrado al motor ETS con configuración congelada, preventivo/correctivo, laboratorio/campo, OT/equipo, asignación, visita, pausas, captura estructurada, materiales, cambios comerciales, investigación, reporte PDF versionado, firma y cierre. No se declara SELLADO porque falta aceptación autenticada en navegador/dispositivo físico y permanecen TD-045/TD-046/TD-047. Reparación, Compras, Almacén y navegación externa continúan fuera de alcance.
