@@ -304,7 +304,7 @@ contrato abierto a futuras verticales Mobile sin asumir que todo servicio es cal
 
 | Método | Ruta (`/api/service-orders/{id}`) | Permiso | Contrato |
 | --- | --- | --- | --- |
-| GET | `/mobile-execution` | `service_orders.read` | Grupo/OT/equipo (identidad, `service_type`, `certificate_folio`, `folio_status`) y resumen de hoja (id, revisión, estado, plantilla, PDF final, timestamps). Sin valores técnicos; tombstones sólo contados. Sin vínculo: `linked=false`. |
+| GET | `/mobile-execution` | `service_orders.read` | Grupo/OT/equipo (identidad, `report_number`, `is_good_condition`, observaciones de recepción, `service_type`, empresa vinculada, cliente documental `order`/`different` con snapshots, `certificate_folio`, `folio_status`) y resumen de hoja (id, revisión, estado, plantilla, PDF final, timestamps). Sin valores técnicos; tombstones sólo contados. Sin vínculo: `linked=false`. |
 | GET | `/mobile-execution/equipment/{eq}/field-sheet` | `service_orders.read` + `field_sheets.read` | Detalle de la revisión vigente (`FieldSheetRead`) e historial de revisiones; 409 `LAB_LINK_REQUIRED`, 404 fuera del grupo o tombstone. |
 | GET | `/mobile-execution/field-sheets/{sheet}/pdf` | `service_orders.read` + `field_sheets.read` | PDF final congelado (vigente o histórico) tras validar SHA-256; nunca regenera. |
 
@@ -372,9 +372,10 @@ No se exigen Master, `certificate_master_*` ni plantilla.
   `LAB_CERTIFICATE_FOLIO_MISSING`, `LAB_CERTIFICATE_FOLIO_NOT_READY`,
   `LAB_FIELD_SHEET_MISSING`, `LAB_FIELD_SHEET_NOT_COMPLETED`, `LAB_FINAL_PDF_MISSING`,
   `LAB_FINAL_PDF_HASH_MISMATCH`. Sin efectos: no muta el lifecycle del ETS.
-- `GET capture-package` → ZIP todo-o-nada
-  `<ETS>/OT-<folio>/<certificate_folio>/Hoja_Campo_<certificate_folio>.pdf` con los
-  archivos congelados (nunca regenerados); 409 `LAB_CAPTURE_PACKAGE_BLOCKED` con bloqueos.
+- `GET capture-package` → ZIP todo-o-nada nombrado `<folio ETS>.zip` con estructura
+  plana `OT-<folio OT>/Hoja_Campo_<certificate_folio>.pdf` (sin carpeta ETS ni carpeta
+  por folio; nombres sanitizados; p. ej. `OT-6438/Hoja_Campo_MYCA-09-26-4721.pdf`) con
+  los archivos congelados (nunca regenerados, SHA-256 validado); 409 `LAB_CAPTURE_PACKAGE_BLOCKED` con bloqueos.
   No incluye XLSX/Master, no crea Certificate, no reserva ni consume folios y no crea
   Equipment ERP.
 - Paquete por OT ERP y carga XLSX responden 409 estructurado
@@ -410,6 +411,26 @@ Mobile" sin vínculo o "Abrir ejecución técnica" con vínculo: vista grupo →
 detalle de hoja sin inputs, PDF final, cambio/desvinculación con motivo y acciones
 administrativas según permisos. La pestaña Captura de un ETS Mobile muestra LISTA/
 BLOQUEADA, bloqueos y la descarga PDF; los ETS históricos/mixtos conservan su UI.
+
+### Cierre UX web (2026-09-29)
+
+- Readiness de Captura para ETS Mobile: una sola autoridad visual, el resumen LAB,
+  cargado una vez por `useMobileCaptureSummary` en la página y compartido por la
+  pestaña Captura (badge), la franja de etapas del Resumen y el panel; `null` →
+  VALIDANDO, `ready` → LISTA, en otro caso BLOQUEADA. "Actualizar", correcciones,
+  cancelaciones y cambios de vínculo refrescan ese mismo loader. No muta el ETS.
+  Los ETS legacy siguen con `getCaptureStageStatus`.
+- Vista administrativa con clases propias (`.ets-mobile-work-order*`,
+  `.ets-mobile-equipment-card*`, `minmax(0, …)` y container queries por ancho del
+  contenedor); las clases legacy de Hojas de Campo no se modificaron.
+- La identidad del equipo ("1. BÁSCULA · Ver detalle") y el estado de la hoja en Captura
+  abren el MISMO detalle read-only (`EtsMobileEquipmentDetail`): equipo, cliente
+  documental, datos de hoja (fechas, lugar, ubicación, unidades, método, división
+  mínima, condiciones ambientales, condición, desviaciones, responsables, notas,
+  `capture_values` con labels de plantilla y `results_rows` con columnas de plantilla y
+  `row_data` dinámico), revisiones vigente/histórica con PDF final. Sin inputs ni PATCH.
+  "Enviar a corrección" aparece en el detalle con `work_orders.reopen` y modo válido y
+  abre el diálogo único existente.
 
 ### Navegación futura "Servicios" (preparación, no implementada)
 

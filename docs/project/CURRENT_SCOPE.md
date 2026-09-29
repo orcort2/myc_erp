@@ -15,8 +15,9 @@
 Incluye: Master de catálogo desconectado (LEGACY), proyección READ-ONLY grupo/OT/equipo/
 hoja con detalle y PDF final, vista web "Ejecución técnica MYC Mobile" con vincular/
 cambiar/desvincular, acciones administrativas ERP (enviar a corrección, cancelar/restaurar
-OT) sobre el dominio LAB, Captura LAB PDF-only con bloqueos estructurados y corrección del
-buscador de OT en Mobile. Excluye: ingestión/matching XLSX, `Certificate.lab_equipment_id`,
+OT) sobre el dominio LAB, Captura LAB PDF-only (ZIP plano por OT) con bloqueos
+estructurados y readiness sincronizada en pestaña/Resumen, inspección read-only completa de
+equipo y hoja desde Ejecución y Captura, y corrección del buscador de OT en Mobile. Excluye: ingestión/matching XLSX, `Certificate.lab_equipment_id`,
 Calidad/autenticación LAB, ejecución Mobile de Verificación y otras verticales, renombrado
 "Servicios" y cualquier edición técnica desde el ERP. [Contrato](../architecture/ETS_LAB_TECHNICAL_BRIDGE.md#fase-3--mobile-único-editor-técnico-erp-proyecta-gobierna-y-entrega-a-captura-2026-09-29)
 

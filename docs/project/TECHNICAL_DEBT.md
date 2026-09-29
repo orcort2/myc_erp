@@ -186,7 +186,10 @@ Una deuda se elimina sólo cuando la condición deja de existir y la validación
 
 ## Deuda agregada ETS ↔ LAB Fase 3 (2026-09-29)
 
-- TD-068 (P1): validación visual autenticada de la vista "Ejecución técnica MYC Mobile",
+- TD-068 (P1, parcialmente atendida): el buscador Mobile ya se validó físicamente y el
+  layout de la vista administrativa se verificó por geometría con el CSS real (1060/420 px,
+  sin solapes, overflow ni texto vertical); resta la validación visual autenticada de la
+  vista "Ejecución técnica MYC Mobile",
   enviar a corrección (OT abierta y cerrada), cancelar/restaurar y Captura LISTA/BLOQUEADA
   en navegador, y verificación física del buscador de OT en iOS/Android contra el backend
   desplegado (cabecera `X-MYC-Search-Applied`). Cubierto por pruebas automatizadas, no por

@@ -8,6 +8,22 @@
 
 # Estado operativo actual del ERP MYC
 
+## Cierre UX ETS ↔ LAB Fase 3 (2026-09-29)
+
+- Preflight limpio: HEAD = origin = `6a0e53e5f86680bd9f375a8b37393e686f2bb3bb`.
+- Captura Mobile: pestaña, franja del Resumen y panel comparten el resumen LAB
+  (`useMobileCaptureSummary`); se corrige "BLOQUEADA" con LAB lista. ZIP LAB plano
+  `OT-<folio>/Hoja_Campo_<folio certificado>.pdf` (legacy sin cambios).
+- Proyección con `report_number`, observaciones, condición, empresa vinculada y cliente
+  documental; detalle read-only único para Ejecución y Captura con datos completos de
+  hoja, `row_data` dinámico, revisiones/PDF y "Enviar a corrección" por permiso.
+- Layout propio con container queries; geometría verificada con el CSS real en un arnés
+  local (`tmp/lab-authority-validation/ui/harness.html`, retirable).
+- Sin migraciones, sin cambios en Mobile, dominio de corrección, vínculo, folios,
+  Certificate/Calidad/XLSX.
+- Backend focalizado 37 passed; frontend `node --test` 107/108 (fallo preexistente
+  `notificationNavigation`); `npm run build` correcto.
+
 ## ETS ↔ LAB Fase 3 — Mobile único editor técnico (2026-09-29)
 
 - Preflight: worktree limpio, rama `feat/mobile-calibration-authority-2026`,
