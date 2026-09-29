@@ -75,6 +75,24 @@ class ServiceOrderLabLink(IntegerPkMixin, TimestampMixin, Base):
         return self.lab_root_work_order.folio
 
     @property
+    def group_work_order_count(self) -> int:
+        """Current LAB group size resolved through the root (read-only projection)."""
+        from sqlalchemy import func, select
+        from sqlalchemy.orm import object_session
+
+        from app.models.lab_work_order import LabWorkOrder
+
+        session = object_session(self)
+        if session is None:
+            return 1
+        root_id = self.lab_root_work_order_id
+        return int(session.scalar(
+            select(func.count(LabWorkOrder.id)).where(
+                func.coalesce(LabWorkOrder.root_work_order_id, LabWorkOrder.id) == root_id
+            )
+        ) or 0)
+
+    @property
     def linked_by_name(self) -> str:
         return self.linked_by.full_name or self.linked_by.email
 

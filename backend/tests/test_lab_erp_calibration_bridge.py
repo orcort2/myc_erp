@@ -245,6 +245,9 @@ def test_group_with_service_order_links_only_the_root(ctx):
     response = ctx["http"].post(f"{BASE}/groups", json=payload(quantity=3, service_order_id=so_id), headers=ctx["headers"])
     assert response.status_code == 201, response.text
     with ctx["factory"]() as db:
+        link = service_order_lab_links.get_active_lab_link(db, so_id)
+        assert (link.root_folio, link.group_work_order_count) == (6400, 3)
+    with ctx["factory"]() as db:
         members = list(db.scalars(select(LabWorkOrder).order_by(LabWorkOrder.sequence_number)))
         assert len(members) == 3 and {item.root_work_order_id for item in members} == {members[0].id}
         links = list(db.scalars(select(ServiceOrderLabLink)))

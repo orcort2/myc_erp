@@ -70,7 +70,8 @@ import {
   updateServiceOrder,
   confirmServiceOrderSignatures,
   releaseAuthenticatedCertificates,
-  validateFieldSheetPatterns
+  validateFieldSheetPatterns,
+  getServiceOrderLabLink,
 } from '../services/api.js';
 import useConfirmDialog from '../utils/useConfirmDialog.js';
 import { getCaptureMasterReadiness } from '../utils/captureMasters.js';
@@ -102,6 +103,11 @@ import { suggestOfficialFieldSheetTemplate } from '../utils/fieldSheetTemplateRe
 import { formatDate, formatDateTime, getClientAddress, getClientDisplayName } from '../utils/formatters.js';
 import { exceptionActionLabel } from '../utils/exceptionAuthority.js';
 import { canDeleteWorkOrder } from '../utils/workOrderDeletion.js';
+import {
+  buildServiceOrderTabs,
+  describeMobileExecution,
+  getWorkOrderLabel,
+} from '../utils/serviceOrderTechnicalFlow.js';
 import FieldSheetLayout from '../components/field-sheets/FieldSheetLayout.jsx';
 import ServiceOrderSignatureMorph from '../components/signatures/ServiceOrderSignatureMorph.jsx';
 import EtsBillingTab from '../components/ets-billing/EtsBillingTab.jsx';
@@ -155,8 +161,12 @@ function getServiceOrderCapabilities(order) {
     hasDirectCalibration,
     hasVerification,
     hasEmbeddedCalibration,
+    // Proyección backend (política técnica 2026): ETS nuevo sólo de
+    // calibración ejecutado en MYC Mobile; sin OT/equipos/hojas ERP.
+    managedByMobileCalibration: Boolean(order?.calibration_flow_managed_by_mobile),
   };
 }
+
 
 const operationalCategoryLabels = {
   calibration: 'Calibración',
@@ -362,6 +372,28 @@ function ServiceOrdersPage({ user = null }) {
     [selectedOrder]
   );
 
+  // Proyección de la ejecución técnica LAB (bridge ETS ↔ raíz LAB); sólo se
+  // consulta para ETS de calibración MYC Mobile y nunca permite editarlo aquí.
+  const [mobileLabLink, setMobileLabLink] = useState({ status: 'none', link: null });
+  const mobileLinkOrderId = selectedOrder?.calibration_flow_managed_by_mobile ? selectedOrder.id : null;
+
+  useEffect(() => {
+    if (!mobileLinkOrderId) {
+      setMobileLabLink({ status: 'none', link: null });
+      return undefined;
+    }
+    let active = true;
+    setMobileLabLink({ status: 'loading', link: null });
+    getServiceOrderLabLink(mobileLinkOrderId)
+      .then((link) => {
+        if (active) setMobileLabLink(link ? { status: 'linked', link } : { status: 'none', link: null });
+      })
+      .catch(() => {
+        if (active) setMobileLabLink({ status: 'error', link: null });
+      });
+    return () => { active = false; };
+  }, [mobileLinkOrderId]);
+
   const {
     hasSale: selectedOrderHasSale,
     hasMaintenance: selectedOrderHasMaintenance,
@@ -369,60 +401,13 @@ function ServiceOrdersPage({ user = null }) {
     hasDirectCalibration: selectedOrderHasDirectCalibration,
     hasVerification: selectedOrderHasVerification,
     hasEmbeddedCalibration: selectedOrderHasEmbeddedCalibration,
+    managedByMobileCalibration: selectedOrderManagedByMobile,
   } = selectedOrderCapabilities;
 
-  const selectedOrderTabs = useMemo(() => {
-    if (!selectedOrder) {
-      return [];
-    }
-
-    return [
-      ['info', 'Resumen'],
-
-      ...(selectedOrderHasMaintenance
-        ? [['maintenance', 'Mantenimiento']]
-        : []),
-
-      ...(selectedOrderHasRepair
-        ? [['repair', 'Reparación']]
-        : []),  
-
-      ...(selectedOrderHasSale
-        ? [['sale', 'Venta']]
-        : []),
-
-      ...(
-        selectedOrderHasSale ||
-        selectedOrderHasMaintenance ||
-        selectedOrderHasRepair ||
-        selectedOrderHasDirectCalibration ||
-        selectedOrderHasVerification
-          ? [['equipment', 'Equipos']]
-          : []
-      ),
-
-      ...(selectedOrderHasDirectCalibration || selectedOrderHasVerification
-        ? [
-            ['field-sheet', 'Hojas de Campo'],
-            ['capture', 'Captura'],
-            ['quality', 'Calidad'],
-            ['certificates', 'Certificados'],
-          ]
-        : []),
-
-      ['billing', 'Facturacion'],
-      ['documents', 'Documentos'],
-      ['notes', 'Actividad'],
-      ['history', 'Historial'],
-    ];
-  }, [
-    selectedOrder,
-    selectedOrderHasSale,
-    selectedOrderHasMaintenance,
-    selectedOrderHasRepair,
-    selectedOrderHasDirectCalibration,
-    selectedOrderHasVerification,
-  ]);
+  const selectedOrderTabs = useMemo(
+    () => (selectedOrder ? buildServiceOrderTabs(selectedOrderCapabilities) : []),
+    [selectedOrder, selectedOrderCapabilities]
+  );
 
   const technicalSubEtsTabs = useMemo(
     () => [
@@ -886,6 +871,8 @@ function closeTechnicalSubEts() {
   const hasAvailableWorkOrderCapacity = workOrderCapacitySummary.totalAvailable > 0;
   const shouldShowSignatureLauncher = Boolean(
     selectedOrder &&
+      // Firma técnica ERP no aplica: la firma técnica vive en MYC Mobile.
+      !selectedOrder.calibration_flow_managed_by_mobile &&
       (selectedOrder.has_pending_signature_work_orders ||
         signatureLauncherActiveOrderId === selectedOrder.id)
   );
@@ -1322,11 +1309,16 @@ function closeTechnicalSubEts() {
     const released = orderCertificates.filter((certificate) => certificate.status === 'released_to_client').length;
     const expectedEquipment = equipmentStage.metrics.expected;
     const fieldSheetsDone = orderSheets.filter((sheet) => ['completed', 'under_review', 'approved'].includes(sheet.status)).length;
+    // En un ETS de calibración MYC Mobile, Equipos/Hojas ERP no existen y no
+    // bloquean el progreso.
+    const managedByMobile = Boolean(order.calibration_flow_managed_by_mobile);
     const stageChecks = [
       Boolean(order.quotation_id),
       Boolean(order.agenda_date && order.service_date && order.technician_id),
-      equipmentStage.status === 'done',
-      fieldSheetStage.status === 'done',
+      ...(managedByMobile ? [] : [
+        equipmentStage.status === 'done',
+        fieldSheetStage.status === 'done',
+      ]),
       captureStage.status === 'done',
       qualityStage.status === 'done',
       certificateStage.status === 'done',
@@ -3132,7 +3124,7 @@ function closeTechnicalSubEts() {
               return (
                 <button className="clients-table__row quotation-row-button" key={order.id} onClick={() => openOrderDetail(order)} type="button">
                   <span>{order.folio}</span>
-                  <span>OT {order.work_order_number ?? '-'}</span>
+                  <span>{getWorkOrderLabel(order)}</span>
                   <span>{getClientDisplayName(client)}</span>
                   <span>
                     <mark className={`quotation-status status-${order.status}`}>
@@ -3232,15 +3224,19 @@ function closeTechnicalSubEts() {
             ) : null}
 
             <div className="ets-modal-action-ribbon" aria-label="Acciones principales del ETS">
-              <button className="table-button" onClick={() => openWorkOrderPdf('view')} type="button">
-                Ver orden PDF
-              </button>
-              <button className="table-button" onClick={handleDownloadWorkOrderPdf} type="button">
-                Descargar PDF
-              </button>
-              <button className="table-button" onClick={() => openWorkOrderPdf('print')} type="button">
-                Imprimir
-              </button>
+              {!selectedOrderManagedByMobile ? (
+                <>
+                  <button className="table-button" onClick={() => openWorkOrderPdf('view')} type="button">
+                    Ver orden PDF
+                  </button>
+                  <button className="table-button" onClick={handleDownloadWorkOrderPdf} type="button">
+                    Descargar PDF
+                  </button>
+                  <button className="table-button" onClick={() => openWorkOrderPdf('print')} type="button">
+                    Imprimir
+                  </button>
+                </>
+              ) : null}
               <button
                 className="primary-button"
                 disabled={
@@ -3360,8 +3356,12 @@ function closeTechnicalSubEts() {
                         {[
                           ['Cotización', Boolean(selectedOrder.quotation_id), 'done'],
                           ['Resumen', selectedStageState.info?.ready, selectedStageState.info?.status],
-                          ['Equipos', selectedStageState.equipment?.ready, selectedStageState.equipment?.status],
-                          ['Hojas', selectedStageState['field-sheet']?.ready, selectedStageState['field-sheet']?.status],
+                          ...(selectedOrderManagedByMobile
+                            ? [['MYC Mobile', mobileLabLink.status === 'linked', mobileLabLink.status === 'linked' ? 'done' : 'pending']]
+                            : [
+                                ['Equipos', selectedStageState.equipment?.ready, selectedStageState.equipment?.status],
+                                ['Hojas', selectedStageState['field-sheet']?.ready, selectedStageState['field-sheet']?.status],
+                              ]),
                           ['Captura', selectedStageState.capture?.ready, selectedStageState.capture?.status],
                           ['Calidad', selectedStageState.quality?.ready, selectedStageState.quality?.status],
                           ['PDF autenticado', selectedOrderMetrics.certificatesExpected > 0 && selectedOrderMetrics.authenticated === selectedOrderMetrics.certificatesExpected, selectedOrderMetrics.authenticated ? 'done' : 'pending'],
@@ -3377,17 +3377,27 @@ function closeTechnicalSubEts() {
                         <span>Folio OS</span>
                         <strong>{selectedOrder.folio}</strong>
                       </article>
-                      <button
-                        className="ets-summary-work-orders ets-summary-card"
-                        onClick={() => setIsWorkOrdersModalOpen(true)}
-                        type="button"
-                        >
-                          <span>Órdenes de trabajo</span>
-                          <strong>{relatedWorkOrders.length} orden(es)</strong>
-                          <small>
-                            {relatedWorkOrders.reduce((sum, order) => sum + getWorkOrderEquipmentCount(order), 0)} equipo(s)
-                          </small>
-                      </button>
+                      {selectedOrderManagedByMobile ? (
+                        <article className="ets-summary-card ets-mobile-execution-card" aria-live="polite">
+                          <span>Ejecución técnica MYC Mobile</span>
+                          <strong>{describeMobileExecution(mobileLabLink).title}</strong>
+                          {describeMobileExecution(mobileLabLink).detail ? (
+                            <small>{describeMobileExecution(mobileLabLink).detail}</small>
+                          ) : null}
+                        </article>
+                      ) : (
+                        <button
+                          className="ets-summary-work-orders ets-summary-card"
+                          onClick={() => setIsWorkOrdersModalOpen(true)}
+                          type="button"
+                          >
+                            <span>Órdenes de trabajo</span>
+                            <strong>{relatedWorkOrders.length} orden(es)</strong>
+                            <small>
+                              {relatedWorkOrders.reduce((sum, order) => sum + getWorkOrderEquipmentCount(order), 0)} equipo(s)
+                            </small>
+                        </button>
+                      )}
                       <article>
                         <span>Cliente</span>
                         <strong>{getClientDisplayName(clientsById.get(selectedOrder.client_id))}</strong>
@@ -3403,11 +3413,13 @@ function closeTechnicalSubEts() {
                         <span>Equipos esperados desde cotizacion</span>
                         <strong>{safeNumber(selectedOrderMetrics.expectedEquipment)}</strong>
                       </article>
-                      <button className="ets-summary-card" onClick={() => openTabFromSummary('equipment')} type="button">
-                        <span>Equipos registrados</span>
-                        <strong>{workOrderCapacitySummary.totalRegistered} / {workOrderCapacitySummary.totalLimit}</strong>
-                        <small>{workOrderCapacitySummary.groups.length} OT</small>
-                      </button>
+                      {!selectedOrderManagedByMobile ? (
+                        <button className="ets-summary-card" onClick={() => openTabFromSummary('equipment')} type="button">
+                          <span>Equipos registrados</span>
+                          <strong>{workOrderCapacitySummary.totalRegistered} / {workOrderCapacitySummary.totalLimit}</strong>
+                          <small>{workOrderCapacitySummary.groups.length} OT</small>
+                        </button>
+                      ) : null}
                       <article>
                         <span>Asesor</span>
                         <strong>{getOrderAdvisorName(selectedOrder)}</strong>
@@ -4031,18 +4043,27 @@ function closeTechnicalSubEts() {
                     <span>{quotationsById.get(selectedOrder.quotation_id)?.folio || 'Sin cotizacion vinculada'}</span>
                     <button className="table-button" disabled type="button">Pendiente</button>
                   </article>
-                  <article className="glass-card-mini">
-                    <strong>Orden de trabajo</strong>
-                    <span>Documento operativo del ETS.</span>
-                    <button className="table-button" onClick={() => openWorkOrderPdf('view')} type="button">Abrir</button>
-                    <button className="table-button" onClick={handleDownloadWorkOrderPdf} type="button">Descargar</button>
-                    <button className="table-button" onClick={() => openWorkOrderPdf('print')} type="button">Imprimir</button>
-                  </article>
-                  <article className="glass-card-mini">
-                    <strong>Hojas de campo</strong>
-                    <span>{selectedFieldSheets.length} hojas vinculadas al expediente.</span>
-                    <button className="table-button" onClick={() => setActiveTab('field-sheet')} type="button">Abrir hojas</button>
-                  </article>
+                  {selectedOrderManagedByMobile ? (
+                    <article className="glass-card-mini">
+                      <strong>Ejecución técnica MYC Mobile</strong>
+                      <span>La OT, las hojas de campo y las firmas técnicas viven en MYC Mobile.</span>
+                    </article>
+                  ) : (
+                    <>
+                      <article className="glass-card-mini">
+                        <strong>Orden de trabajo</strong>
+                        <span>Documento operativo del ETS.</span>
+                        <button className="table-button" onClick={() => openWorkOrderPdf('view')} type="button">Abrir</button>
+                        <button className="table-button" onClick={handleDownloadWorkOrderPdf} type="button">Descargar</button>
+                        <button className="table-button" onClick={() => openWorkOrderPdf('print')} type="button">Imprimir</button>
+                      </article>
+                      <article className="glass-card-mini">
+                        <strong>Hojas de campo</strong>
+                        <span>{selectedFieldSheets.length} hojas vinculadas al expediente.</span>
+                        <button className="table-button" onClick={() => setActiveTab('field-sheet')} type="button">Abrir hojas</button>
+                      </article>
+                    </>
+                  )}
                   <article className="glass-card-mini">
                     <strong>Certificados originales</strong>
                     <span>{selectedCertificates.filter((certificate) => certificate.final_pdf_path).length} PDF originales cargados.</span>
@@ -4124,7 +4145,9 @@ function closeTechnicalSubEts() {
                       date: selectedOrder.created_at,
                       action: 'Orden creada',
                       entity: selectedOrder.folio,
-                      description: `OT ${selectedOrder.work_order_number ?? '-'} registrada.`
+                      description: selectedOrder.calibration_flow_managed_by_mobile
+                        ? 'ETS de calibración ejecutado en MYC Mobile (sin OT ERP).'
+                        : `${getWorkOrderLabel(selectedOrder)} registrada.`
                     },
                     ...selectedEquipment.map((item) => ({
                       date: item.created_at,
@@ -4291,7 +4314,7 @@ function closeTechnicalSubEts() {
               <div>
                 <p>Detalle de equipo</p>
                 <h2>{selectedEquipmentDetail.name}</h2>
-                <span>{selectedOrder?.folio} · OT {selectedOrder?.work_order_number ?? '-'}</span>
+                <span>{selectedOrder?.folio} · {getWorkOrderLabel(selectedOrder)}</span>
               </div>
               <mark className={`quotation-status quotation-status--large status-${selectedEquipmentDetail.status}`}>
                 {equipmentStatusLabels[selectedEquipmentDetail.status] ?? selectedEquipmentDetail.status}

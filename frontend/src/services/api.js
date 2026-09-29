@@ -1200,6 +1200,11 @@ export async function deleteFieldSheet(fieldSheetId) {
   });
 }
 
+// Vínculo activo ETS ↔ raíz LAB (bridge Fase 1, lectura). null si no existe.
+export async function getServiceOrderLabLink(serviceOrderId) {
+  return request(`/service-orders/${serviceOrderId}/lab-link`);
+}
+
 export function getWorkOrderPdfUrl(serviceOrderId) {
   return `${API_URL}/service-orders/${serviceOrderId}/work-order-pdf`;
 }

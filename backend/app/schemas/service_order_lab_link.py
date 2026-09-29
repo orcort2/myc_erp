@@ -26,6 +26,8 @@ class ServiceOrderLabLinkRead(BaseModel):
     service_order_id: int
     lab_root_work_order_id: int
     root_folio: int
+    # Proyección de lectura: OT actuales del grupo LAB (resueltas por la raíz).
+    group_work_order_count: int = 1
     status: Literal["active", "unlinked", "replaced"]
     linked_at: datetime
     linked_by_user_id: int
