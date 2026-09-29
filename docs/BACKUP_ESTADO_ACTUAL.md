@@ -4,9 +4,40 @@
 >
 > Autoridad: Media; no sustituye los documentos canónicos de project/
 >
-> Corte: ETS ↔ LAB Fase 2 (calibración MYC Mobile) sobre `8b6da02`, rama `feat/mobile-calibration-authority-2026`; commits locales sin push, merge ni deploy, pendientes de revisión.
+> Corte: ETS ↔ LAB Fase 3 (Mobile único editor técnico, gobierno ERP y Captura PDF-only) sobre `e4cfb42`, rama `feat/mobile-calibration-authority-2026`; push a origin sin merge ni deploy, pendiente de revisión.
 
 # Estado operativo actual del ERP MYC
+
+## ETS ↔ LAB Fase 3 — Mobile único editor técnico (2026-09-29)
+
+- Preflight: worktree limpio, rama `feat/mobile-calibration-authority-2026`,
+  HEAD = origin = `e4cfb42c2535c33d6f658e6d0d677c4d4150aab1`. Sin rama/worktree nuevos,
+  merge ni deploy.
+- Buscador OT LAB en Mobile: backend correcto en SQLite y PostgreSQL 16 real (folio
+  exacto/parcial, cliente case-insensitive, q+estado, paginación). Corregido en cliente
+  el anexado heredado del estado de carga (búsqueda durante "Cargar más") con
+  `src/sync/work-order-list-query.ts`; el servidor confirma `q` con
+  `X-MYC-Search-Applied` y Mobile reporta un backend que lo ignore (anterior a `9cd8796`,
+  causa plausible del síntoma físico; no verificable sin el dispositivo/servidor usados).
+- Catálogo: `expected_certificate_master_id` LEGACY; Calibración/Verificación sin Master;
+  ETS acepta Verificación sin Master; paquete legacy de Verificación sin Master genérico
+  va sólo con PDF. Sin migración ni borrado de datos.
+- Proyección READ-ONLY `/mobile-execution` (+ detalle de hoja y PDF final), acciones
+  administrativas ERP (enviar a corrección, cancelar/restaurar OT) sobre el dominio LAB,
+  Captura LAB PDF-only con bloqueos estructurados y vista web correspondiente.
+  [Contrato](architecture/ETS_LAB_TECHNICAL_BRIDGE.md#fase-3--mobile-único-editor-técnico-erp-proyecta-gobierna-y-entrega-a-captura-2026-09-29).
+- Sin migraciones: head Alembic sin cambios (`e8f1a3c5d7b9`); no se regeneró
+  `backup_erp_myc_antes_prueba.sql` ni se usó la BD compartida.
+- Backend full (SQLite): 2080 passed, 42 skipped, 0 failed tras ajustar el conteo
+  gobernado de `test_capability_gate_reconciliation` (+`work_orders.reopen`,
+  +`lab_work_orders.cancel`). Focalizado bridge/proyección/admin/Captura con
+  `ETS_LAB_POSTGRES_TEST_URL` en PostgreSQL 16 aislado (`tmp/lab-authority-validation`,
+  puerto 55442, recurso de esta ejecución y retirable): 152 passed, 0 skipped.
+  Inventario API regenerado: 550 operaciones.
+- Frontend `node --test`: 96 passed, 1 failed preexistente (`notificationNavigation`,
+  archivo sin cambios); `npm run build` correcto. Mobile: 869/869, `tsc` y lint limpios.
+- Pendiente: TD-068 (validación visual/física), fase documental XLSX → Certificate LAB
+  (TD-066) y simetría PDF-only legacy (TD-069).
 
 ## ETS ↔ LAB Fase 2 — calibración ejecutada en MYC Mobile (2026-09-29)
 

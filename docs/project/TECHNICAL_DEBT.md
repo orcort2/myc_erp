@@ -174,10 +174,25 @@ Una deuda se elimina sólo cuando la condición deja de existir y la validación
   validación visual autenticada ni física (iOS/Android). Ejecutar: selección/limpieza,
   OT individual y grupo directo vinculados, 409 visibles, Resumen con vínculo/espera y
   ausencia de Equipos/Hojas/firma/PDF OT en web.
-- TD-066 (P1): Captura LAB no existe todavía. En un ETS de calibración MYC Mobile la etapa
-  Captura del ERP sigue calculándose con certificados/hojas ERP y no avanzará hasta la fase
-  documental (Certificate `equipment_id XOR lab_equipment_id`, folio LAB, sin reservar otro).
+- TD-066 (P1, parcialmente resuelta 2026-09-29): el handoff PDF-only a Captura ya existe
+  (readiness, bloqueos y paquete LAB). Sigue pendiente la fase documental: carga/matching
+  XLSX por folio LAB, Certificate `equipment_id XOR lab_equipment_id` sin reservar otro
+  folio, Calidad y autenticación LAB. Hasta entonces la métrica de etapa Captura del
+  Resumen se calcula con certificados ERP y no avanza para ETS Mobile.
 - TD-067 (P2): durante una corrida full del backend en macOS (Python 3.14) el proceso
   terminó una vez por un fallo nativo de fontconfig/pango (WeasyPrint) en un hilo de GC;
   la repetición completó sin incidentes. Aislar/reintentar si reaparece; no es regresión
   funcional de esta fase.
+
+## Deuda agregada ETS ↔ LAB Fase 3 (2026-09-29)
+
+- TD-068 (P1): validación visual autenticada de la vista "Ejecución técnica MYC Mobile",
+  enviar a corrección (OT abierta y cerrada), cancelar/restaurar y Captura LISTA/BLOQUEADA
+  en navegador, y verificación física del buscador de OT en iOS/Android contra el backend
+  desplegado (cabecera `X-MYC-Search-Applied`). Cubierto por pruebas automatizadas, no por
+  inspección en dispositivo.
+- TD-069 (P2): el paquete de Captura legacy (ETS ERP) sigue siendo PDF + Master XLSX por
+  depender de su ingestión; la simetría PDF-only se evaluará con la ingestión documental.
+- TD-070 (P2): Desarrollador puede cancelar/reabrir pero no posee `field_sheets.read`, por
+  lo que no abre el detalle de hoja en la vista ERP; revisar la matriz de roles si se
+  requiere, sin crear permisos nuevos en esta fase.

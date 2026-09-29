@@ -10,6 +10,23 @@
 
 # Reglas de negocio vigentes
 
+## Mobile único editor técnico; ERP gobierna (2026-09-29)
+
+- MYC Mobile es la única interfaz de escritura técnica LAB. El ERP no modifica
+  resultados, identidad técnica, firmas, valores metrológicos ni folios LAB; no existe
+  formulario ERP de edición de FieldSheet LAB (tampoco para Captura o Calidad).
+- "Enviar a corrección en MYC Mobile": motivo obligatorio, actor staff, sólo hoja
+  `completed`; OT abierta → reapertura directa de hoja (`lab_folios.resolve`); OT cerrada →
+  reapertura directa de OT con ese equipo (`work_orders.reopen` + política de firmas).
+  La revisión N y su PDF final se conservan; Mobile corrige en N+1.
+- Cancelar/restaurar OT LAB desde el ERP usa el dominio (`lab_work_orders.cancel`). El
+  ERP no ofrece DELETE físico de OT/equipo/hoja LAB.
+- Captura LAB está LISTA sólo si cada equipo activo tiene folio resuelto, hoja vigente
+  `completed`, PDF final con SHA-256 válido y cada OT no cancelada es técnicamente final;
+  el paquete es PDF-only, todo-o-nada y sin efectos (no Certificate, folio ni Equipment).
+- `expected_certificate_master_id` es LEGACY: Calibración/Verificación se dan de alta sin
+  Master; editar un concepto con Master histórico inválido procede si no se cambia el Master.
+
 ## ETS de calibración ejecutado en MYC Mobile (2026-09-29)
 
 - Un ETS **nuevo** cuyas partidas activas son todas `calibration`

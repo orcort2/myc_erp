@@ -681,6 +681,27 @@ ETS_LAB_PHASE2_FILES = {
 }
 FORCE_RECLASSIFY.update(ETS_LAB_PHASE2_FILES)
 
+# 2026-09-29: Mobile = único editor técnico; ERP proyección/gobierno; Captura LAB PDF-only.
+ETS_LAB_PHASE3_FILES = {
+    'backend/app/schemas/service_order_mobile_execution.py': ('Contratos de ejecución técnica MYC Mobile', 'Define la proyección READ-ONLY grupo/OT/equipo/hoja (source="lab", sin valores técnicos en resumen), el detalle de hoja con historial de revisiones y los payloads administrativos de corrección/cancelación.', 'Pydantic y FieldSheetRead', 'Router ETS, servicios de proyección/administración y pruebas', 'Alto'),
+    'backend/app/services/service_order_mobile_execution.py': ('Proyección READ-ONLY ETS ↔ LAB', 'Resuelve ETS → ServiceOrderLabLink activo → raíz → grupo LAB → equipo activo → FieldSheet vigente consultando LAB directamente; sirve el PDF final congelado validando SHA-256; nunca crea ni copia Equipment, ServiceWorkOrder, FieldSheet ni snapshots.', 'SQLAlchemy, modelos ETS/LAB, storage_service', 'Router ETS, Captura LAB, acciones administrativas y pruebas', 'Crítico'),
+    'backend/app/services/service_order_mobile_administration.py': ('Acciones administrativas ERP sobre MYC Mobile', 'Wrappers explícitos que validan pertenencia al grupo vinculado, trazan en el ETS (actor, motivo, origin=erp) y delegan en los mismos servicios LAB: enviar a corrección (reapertura de hoja u OT con N+1), cancelar y restaurar OT. Nunca editan valores técnicos.', 'Servicios LAB (lab_field_sheets, operational_tickets, lab_work_orders), audit log', 'Router ETS y pruebas', 'Crítico'),
+    'backend/app/services/lab_capture_packages.py': ('Captura LAB-backed PDF-only', 'Readiness estructurada por equipo activo (folio LAB resuelto, hoja completed, PDF final con hash válido, OT técnicamente final) y ZIP <ETS>/OT-<folio>/<folio certificado>/Hoja_Campo_<folio>.pdf sin XLSX, Master, Certificate, folios ni Equipment; sin efectos en GET.', 'Proyección LAB, regla de folio LAB, storage_service', 'capture_packages (estrategia B) y pruebas', 'Crítico'),
+    'backend/app/services/capture_packages.py': ('Paquetes de Captura', 'Contrato público único con dos estrategias: legacy ERP (Equipment/FieldSheet/Certificate + Master XLSX; Verificación sin Master genérico va sólo con PDF e identifica su Master por fingerprint) y LAB-backed PDF-only para ETS MYC Mobile; rechaza con 409 estructurado paquete por OT ERP y carga XLSX en ETS Mobile.', 'Modelos ERP/LAB, lab_capture_packages, field_sheet_pdfs, file_security', 'Router ETS y pruebas de Captura', 'Crítico'),
+    'backend/app/services/catalog_items.py': ('Catálogo comercial', 'Alta/edición de conceptos, componentes y servicio vinculado; expected_certificate_master_id es LEGACY: Calibración/Verificación se crean sin Master y sólo se valida un Master que el cambio intente asignar.', 'SQLAlchemy, ControlledDocument, audit log', 'Router de catálogo, cotizaciones y pruebas', 'Alto'),
+    'backend/tests/test_service_order_mobile_execution.py': ('Regresión proyección ETS ↔ LAB', 'Prueba proyección sin vínculo, raíz desde hija, grupo completo, sólo equipos activos, folio/estado/hoja, ausencia de valores técnicos en resumen, lecturas sin crear filas ERP, detalle acotado al grupo, PDF congelado con hash y convergencia/historial del vínculo ERP↔Mobile.', 'Pytest, FastAPI TestClient, SQLite', 'Gate backend', 'Crítico'),
+    'backend/tests/test_service_order_mobile_administration.py': ('Regresión acciones administrativas ERP→LAB', 'Prueba enviar a corrección en OT cerrada/abierta vía dominio (N intacta con PDF, N+1 editable), permisos por rol, motivo obligatorio, auditoría actor/motivo, cancelar/restaurar y que no existen rutas ERP de escritura técnica.', 'Pytest, FastAPI TestClient, SQLite', 'Gate backend', 'Crítico'),
+    'backend/tests/test_lab_capture_packages.py': ('Regresión Captura LAB PDF-only', 'Prueba cada bloqueo estructurado, grupo parcialmente incompleto bloqueado, tombstone ignorado, ZIP sólo con PDFs LAB nombrados por folio LAB y sin Certificate/Equipment/folios/auditoría nuevos.', 'Pytest, FastAPI TestClient, SQLite', 'Gate backend', 'Crítico'),
+    'frontend/src/components/ets-mobile/EtsMobileExecutionPanel.jsx': ('Vista administrativa MYC Mobile del ETS', 'Vincula/cambia/desvincula el servicio MYC Mobile, muestra grupo → OT → equipo, detalle de hoja de sólo lectura con revisiones y PDF final, y acciones administrativas por permiso (enviar a corrección con motivo, cancelar/restaurar OT); sin inputs técnicos.', 'React, api.js, mobileExecutionPresentation', 'ServiceOrdersPage', 'Alto'),
+    'frontend/src/components/ets-mobile/EtsMobileCapturePanel.jsx': ('Pestaña Captura MYC Mobile', 'Muestra LISTA/BLOQUEADA, bloqueos estructurados por OT/equipo y descarga el paquete PDF sólo cuando está listo; no ofrece carga XLSX.', 'React, api.js, mobileExecutionPresentation', 'ServiceOrdersPage', 'Alto'),
+    'frontend/src/components/ets-mobile/mobileExecutionPresentation.js': ('Presentación ejecución MYC Mobile', 'Etiquetas LAB, permisos de UI (vínculo create+update, corrección, cancelación, lectura de hojas), elegibilidad de corrección, bloqueos de Captura y lectura de hoja como pares etiqueta/valor.', 'JavaScript puro, accessControl', 'Componentes ets-mobile', 'Alto'),
+    'frontend/src/components/ets-mobile/mobileExecutionPresentation.test.js': ('Regresión presentación MYC Mobile', 'Prueba permisos por rol, elegibilidad de corrección, bloqueos legibles y totales de proyección.', 'node:test', 'Gate frontend', 'Alto'),
+    'frontend/src/components/ets-mobile/etsMobilePanels.test.js': ('Cableado vista/Captura MYC Mobile', 'Verifica vincular servicio, proyección, detalle sin inputs (admin ERP no modifica resultados), PDF final, acciones por permiso con motivo y Captura PDF-only.', 'node:test', 'Gate frontend', 'Alto'),
+    'myc-mobile/src/sync/work-order-list-query.ts': ('Consulta server-side del listado OT LAB', 'Construye la request q/estado/página, reinicia en offset 0 y reemplaza ante nueva consulta, sólo anexa "Cargar más" sobre la misma consulta y detecta un servidor que ignora q (cabecera X-MYC-Search-Applied).', 'TypeScript puro', 'work-orders.tsx', 'Alto'),
+    'myc-mobile/src/sync/work-order-list-query.test.ts': ('Regresión del buscador OT LAB', 'Prueba q en la request, reinicio de offset, reemplazo vs anexado, "Cargar más" con el mismo q, cambio de estado con q, limpieza y detección de q ignorado.', 'node:test (tsx)', 'Gate Mobile', 'Alto'),
+}
+FORCE_RECLASSIFY.update(ETS_LAB_PHASE3_FILES)
+
 
 def words(path: Path) -> str:
     stem = path.stem.replace("_", " ").replace("-", " ")
@@ -749,6 +770,8 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     }
     if value in ets_lab_files:
         return ets_lab_files[value]
+    if value in ETS_LAB_PHASE3_FILES:
+        return ETS_LAB_PHASE3_FILES[value]
     if value in ETS_LAB_PHASE2_FILES:
         return ETS_LAB_PHASE2_FILES[value]
     if value in MOBILE_REFETCH_CLIENT_PICKER_FILES:

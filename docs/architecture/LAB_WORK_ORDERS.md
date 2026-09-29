@@ -6,6 +6,18 @@
 
 # Órdenes de Trabajo LAB
 
+## Autoridad técnica 2026 y gobierno ERP
+
+MYC Mobile es la única interfaz de escritura técnica de LAB (OT, grupos, equipos,
+recepción, firmas, hojas, resultados, folios, reaperturas, cierre y entrega). El ERP
+sólo consulta la proyección READ-ONLY del grupo vinculado y ejecuta acciones
+administrativas que reutilizan los servicios de este módulo: enviar a corrección
+(`reopen_lab_field_sheet_directly` u `operational_tickets.reopen_work_order_directly`
+con `equipment_id` opcional), cancelar y restaurar OT. La regla de folio resuelto
+`equipment_certificate_folio_resolved` es compartida por el cierre staff y la readiness de
+Captura LAB. Matriz completa y contratos en
+[ETS_LAB_TECHNICAL_BRIDGE](ETS_LAB_TECHNICAL_BRIDGE.md#fase-3--mobile-único-editor-técnico-erp-proyecta-gobierna-y-entrega-a-captura-2026-09-29).
+
 ## Catálogo LabClient e importación
 
 `LabClient` es la autoridad temporal de clientes para la operación LAB móvil y
@@ -765,7 +777,13 @@ filtra; `%` y `_` se tratan como texto. No busca dirección, contacto ni equipo.
 `folio`/`client` mantienen su semántica anterior y se intersectan por AND con
 `q`, estado y scope organizacional. Orden descendente por folio, offset y limit
 no cambian. Mobile usa un único input, debounce de 400 ms y limpiar restaura
-búsqueda vacía/Todas. Los accesos de generación son horizontales locales,
+búsqueda vacía/Todas. Cuando `q` no está vacío la respuesta incluye
+`X-MYC-Search-Applied: q`: Mobile (`src/sync/work-order-list-query.ts`) reporta
+un servidor que ignora `q` (anterior a `9cd8796`; FastAPI descarta parámetros
+desconocidos y devolvería el listado completo) en vez de mostrarlo como
+resultado. Un cambio de `q`/estado reinicia en offset 0 y reemplaza la lista;
+sólo "Cargar más" sobre la misma consulta anexa; la petición más reciente es la
+única que aplica resultados. La búsqueda es siempre server-side. Los accesos de generación son horizontales locales,
 con altura mínima de 52, mismos permisos y handlers; revisión visual pendiente.
 
 | Método | Ruta relativa | Efecto |

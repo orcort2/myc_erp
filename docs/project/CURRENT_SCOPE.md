@@ -10,6 +10,16 @@
 
 # Alcance actual del ERP MYC
 
+## ETS ↔ LAB — Fase 3: gobierno ERP y Captura PDF-only (2026-09-29, en revisión)
+
+Incluye: Master de catálogo desconectado (LEGACY), proyección READ-ONLY grupo/OT/equipo/
+hoja con detalle y PDF final, vista web "Ejecución técnica MYC Mobile" con vincular/
+cambiar/desvincular, acciones administrativas ERP (enviar a corrección, cancelar/restaurar
+OT) sobre el dominio LAB, Captura LAB PDF-only con bloqueos estructurados y corrección del
+buscador de OT en Mobile. Excluye: ingestión/matching XLSX, `Certificate.lab_equipment_id`,
+Calidad/autenticación LAB, ejecución Mobile de Verificación y otras verticales, renombrado
+"Servicios" y cualquier edición técnica desde el ERP. [Contrato](../architecture/ETS_LAB_TECHNICAL_BRIDGE.md#fase-3--mobile-único-editor-técnico-erp-proyecta-gobierna-y-entrega-a-captura-2026-09-29)
+
 ## ETS ↔ LAB — Fase 2: calibración MYC Mobile (2026-09-29, en revisión)
 
 Incluye: ETS nuevo sólo de calibración sin OT ERP, frontera técnica 409 en backend,

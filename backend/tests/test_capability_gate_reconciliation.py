@@ -26,7 +26,13 @@ def test_inventory_has_only_the_32_governed_compatibility_gaps():
     # más abajo), simplemente ausente del catálogo institucional congelado
     # v1.0 -- que es anterior a MYC Mobile/LAB -- igual que el resto de la
     # familia lab_work_order_groups.*/service_orders.sales.* ya listada aquí.
-    assert len(inventory - catalog_permissions) == 33
+    # 35 = 33 + work_orders.reopen y lab_work_orders.cancel (2026-09-29): las
+    # acciones administrativas ERP sobre MYC Mobile (enviar a corrección,
+    # cancelar/restaurar OT LAB) se clasifican con la misma autoridad LAB que
+    # ya exigen sus servicios de dominio en Mobile; ambos permisos ya están
+    # gobernados por ROLE_PERMISSIONS y son posteriores al catálogo v1.0.
+    assert len(inventory - catalog_permissions) == 35
+    assert {"work_orders.reopen", "lab_work_orders.cancel"} <= inventory - catalog_permissions
     assert inventory <= current
     assert "portal.view" not in inventory
     assert "portal.read" in inventory & catalog_permissions & current

@@ -1,4 +1,4 @@
-> Estado: VIGENTE — Fase 1 implementada; Fase 2 (calibración MYC Mobile) en revisión
+> Estado: VIGENTE — Fase 1 implementada; Fases 2 y 3 (calibración MYC Mobile, proyección/gobierno ERP y Captura PDF-only) en revisión
 >
 > Corte: 2026-09-29
 >
@@ -277,3 +277,144 @@ igual que `is_calibration_only`. Históricos y mixtos conservan la UI.
 Fuera de alcance: paquete técnico LAB desde ETS, ingestión XLSX, cambios a Certificate,
 Calidad/autenticación LAB, verticales Mobile distintas de calibración, sincronización de
 estados, migración LabEquipment→Equipment y cualquier backfill.
+
+
+## Fase 3 — Mobile único editor técnico; ERP proyecta, gobierna y entrega a Captura (2026-09-29)
+
+### Autoridad (ciclo 2026)
+
+**MYC Mobile es la ÚNICA interfaz de escritura técnica** de los servicios ejecutados
+por la vertical LAB: OT/servicio, grupos y OT adicionales, equipos, recepción, flujo
+técnico, firmas, hojas de campo, resultados, condiciones/observaciones, folios de
+certificado, reaperturas/correcciones, cierre técnico y entrega LAB.
+
+El ERP **gobierna pero no edita**: consulta/supervisión, trazabilidad, vínculo ETS ↔ LAB,
+acciones administrativas de dominio (solicitar corrección/reapertura, cancelar/restaurar),
+Captura documental, Calidad, autenticación, facturación, pagos y auditoría. No existe
+ningún formulario ni endpoint ERP que modifique resultados, identidad técnica, firmas,
+valores metrológicos o folios LAB. Nunca hay dos autoridades de escritura sobre el mismo dato.
+
+### Proyección READ-ONLY
+
+`backend/app/services/service_order_mobile_execution.py`: ETS → `ServiceOrderLabLink`
+activo → raíz → grupo completo (`coalesce(root_work_order_id, id)`) → equipo **activo**
+→ `current_field_sheet`. Consulta LAB directamente; no copia a `Equipment`,
+`ServiceWorkOrder` ni tablas espejo y no persiste snapshots. `source="lab"` deja el
+contrato abierto a futuras verticales Mobile sin asumir que todo servicio es calibración.
+
+| Método | Ruta (`/api/service-orders/{id}`) | Permiso | Contrato |
+| --- | --- | --- | --- |
+| GET | `/mobile-execution` | `service_orders.read` | Grupo/OT/equipo (identidad, `service_type`, `certificate_folio`, `folio_status`) y resumen de hoja (id, revisión, estado, plantilla, PDF final, timestamps). Sin valores técnicos; tombstones sólo contados. Sin vínculo: `linked=false`. |
+| GET | `/mobile-execution/equipment/{eq}/field-sheet` | `service_orders.read` + `field_sheets.read` | Detalle de la revisión vigente (`FieldSheetRead`) e historial de revisiones; 409 `LAB_LINK_REQUIRED`, 404 fuera del grupo o tombstone. |
+| GET | `/mobile-execution/field-sheets/{sheet}/pdf` | `service_orders.read` + `field_sheets.read` | PDF final congelado (vigente o histórico) tras validar SHA-256; nunca regenera. |
+
+### Matriz de acciones administrativas LAB (auditoría)
+
+| Acción | Servicio existente | Permiso de dominio | Estados admitidos | Preserva histórico | ERP |
+| --- | --- | --- | --- | --- | --- |
+| Cancelar OT | `lab_work_orders.cancel_work_order` | `lab_work_orders.cancel` (staff) | Cualquiera sin entrega física vigente; idempotente | Sí (`previous_status`; no toca equipo/hojas/firmas/PDF) | **Expuesta** |
+| Restaurar OT | `restore_work_order` | `lab_work_orders.cancel` | `cancelled` con `previous_status` | Sí | **Expuesta** |
+| Reabrir OT por ticket | `create_reopen_ticket` / `approve_reopen_ticket` | `tickets.create`; aprobar `work_orders.reopen` + política, sin autoaprobación | `completed`/`partially_closed`, sin entrega vigente | Sí (`LabWorkOrderRevision`, PDF OT archivado) | No (flujo de tickets Mobile) |
+| Reapertura directa de OT | `operational_tickets.reopen_work_order_directly` | `work_orders.reopen` + `reopen_preserve/invalidate_signatures` | Cohorte cerrada, sin entrega vigente | Sí | Sólo dentro de "Enviar a corrección" (OT cerrada) |
+| Reapertura de FieldSheet por ticket | `create_field_sheet_reopen_ticket` + `resolve_operational_ticket` | `lab_folios.resolve` | OT `received_signed`/`in_progress`/`ready_to_close`, hoja `completed` | Sí (N intacta, N+1 clon) | No (equivalente directo) |
+| Reapertura directa de FieldSheet | `lab_field_sheets.reopen_lab_field_sheet_directly` | `lab_folios.resolve` | Igual que el ticket | Sí | Sólo dentro de "Enviar a corrección" (OT abierta) |
+| Cambiar workflow mode | `change_lab_work_order_workflow_mode` | `lab_work_orders.cancel` | `draft` sin sesión de firma | Sí (auditoría) | No: decisión de captura previa a la firma (Mobile) |
+| Retirar equipo | `void_equipment_entry` | `lab_work_orders.cancel` | OT editable, motivo y `expected_edit_version` | Sí (tombstone) | No: depende de la sesión de edición Mobile |
+| Eliminar OT | `delete_work_order` | `lab_work_orders.delete` | Sin entrega vigente; hojas protegidas sólo si cancelada | **No** (DELETE físico) | No: el ERP usa cancelar; la raíz vinculada además está protegida por FK RESTRICT |
+| Anular entrega | `void_lab_delivery` | `lab_work_orders.cancel` | Entrega `completed` | Sí (`void_reason`, voucher) | No: entrega LAB es autoridad Mobile |
+| Entrega parcial | `create_partial_delivery_ticket` / `execute_partial_delivery` | tickets / `lab_work_orders.use` | Según ticket | Sí | No |
+| Descartar revisión editable | `discard_lab_field_sheet` | captura LAB | Hoja editable | Sí (sólo descarta borrador) | No: técnica |
+| Cambiar plantilla | `change_lab_field_sheet_template` | captura LAB | Hoja editable | Sí | No: técnica |
+| Resolver folios | `resolve_operational_ticket` (`manual_myc_folio`/`linked_folio`) | `lab_folios.resolve` | Ticket `pending` | Sí | No: folio LAB es autoridad Mobile |
+| Distribuir folios | `distribute_pending_certificate_folios` | `lab_work_orders.cancel` | MYCA/MYCT `pending` | Sí | No |
+| Tickets operativos | router `/mobile/v1/technician/tickets` | `tickets.*` | Por tipo | Sí | No (bandeja Mobile) |
+
+### Acciones ERP expuestas
+
+`backend/app/services/service_order_mobile_administration.py` valida que el objetivo
+pertenece al grupo vinculado, exige staff interno y ETS activo/no terminal, traza en el
+ETS (`service_order.mobile_correction_requested`, `service_order.mobile_work_order_cancelled`,
+`service_order.mobile_work_order_restored`: actor, motivo, `origin=erp`) y delega en el
+**mismo** servicio de dominio, que vuelve a verificar su autoridad y hace el commit; si
+el dominio rechaza, la sesión se descarta sin trazas huérfanas.
+
+| Método | Ruta | Guard | Dominio |
+| --- | --- | --- | --- |
+| POST | `/mobile-execution/equipment/{eq}/request-correction` `{reason, signature_policy}` | `service_orders.read` + `work_orders.reopen` | OT abierta → `reopen_lab_field_sheet_directly` (además `lab_folios.resolve`); OT cerrada → `reopen_work_order_directly(equipment_id=…)` (+ política de firmas) |
+| POST | `/mobile-execution/work-orders/{wo}/cancel` `{reason}` | `service_orders.read` + `lab_work_orders.cancel` | `cancel_work_order` |
+| POST | `/mobile-execution/work-orders/{wo}/restore` | `service_orders.read` + `lab_work_orders.cancel` | `restore_work_order` |
+
+**Enviar a corrección en MYC Mobile** nunca edita la hoja: sólo procede sobre una hoja
+`completed`; la revisión N queda intacta (`status`, `final_pdf_path`, `final_pdf_sha256`
+y el archivo) y `_clone_field_sheet_for_correction` abre N+1 editable, que Mobile ve como
+vigente. `reopen_work_order_directly` recibe el `equipment_id` opcional que su núcleo
+`_reopen_closed_cohort` ya soportaba para el ticket; la ruta Mobile no lo envía. Con los
+roles actuales: Administrador corrige en OT abierta o cerrada; Calidad y Desarrollador
+sólo en OT cerrada (no poseen `lab_folios.resolve`); Técnico, Captura, Comercial y
+Finanzas reciben 403. No se crean códigos de permiso ni se modifican roles.
+
+### Captura LAB-backed (PDF-only)
+
+"Captura" en el ERP es un handoff **documental**. `capture_packages.py` conserva un
+contrato público con dos estrategias: A. legacy ERP (sin cambios: Equipment/FieldSheet/
+Certificate y Master XLSX) y B. LAB-backed (`lab_capture_packages.py`) para ETS Mobile.
+
+Readiness por equipo activo: `certificate_folio` presente y resuelto
+(`equipment_certificate_folio_resolved`, la misma regla del cierre LAB), hoja vigente
+`completed`, `final_pdf_path` + `final_pdf_sha256`, archivo presente y hash coincidente;
+además, cada OT no cancelada del grupo debe estar técnicamente final
+(`completed`/`partially_closed`). Contenido incompleto bloquea aunque la OT esté cerrada.
+No se exigen Master, `certificate_master_*` ni plantilla.
+
+- `GET capture-package-summary` → `source="lab"`, `ready`, `ready_total`,
+  `pending_total`, `root_folio`, `groups` y `blockers` estructurados:
+  `LAB_LINK_REQUIRED`, `LAB_NO_ACTIVE_EQUIPMENT`, `LAB_WORK_ORDER_NOT_FINAL`,
+  `LAB_CERTIFICATE_FOLIO_MISSING`, `LAB_CERTIFICATE_FOLIO_NOT_READY`,
+  `LAB_FIELD_SHEET_MISSING`, `LAB_FIELD_SHEET_NOT_COMPLETED`, `LAB_FINAL_PDF_MISSING`,
+  `LAB_FINAL_PDF_HASH_MISMATCH`. Sin efectos: no muta el lifecycle del ETS.
+- `GET capture-package` → ZIP todo-o-nada
+  `<ETS>/OT-<folio>/<certificate_folio>/Hoja_Campo_<certificate_folio>.pdf` con los
+  archivos congelados (nunca regenerados); 409 `LAB_CAPTURE_PACKAGE_BLOCKED` con bloqueos.
+  No incluye XLSX/Master, no crea Certificate, no reserva ni consume folios y no crea
+  Equipment ERP.
+- Paquete por OT ERP y carga XLSX responden 409 estructurado
+  (`LAB_CAPTURE_USES_SERVICE_ORDER_PACKAGE`, `LAB_CAPTURE_INGESTION_NOT_AVAILABLE`).
+
+**Divergencia documentada:** el paquete legacy conserva PDF + Master XLSX porque su
+ingestión (identificación por fingerprint de Master, validación de identidad y avance de
+Certificate) depende de ese archivo; convertirlo a PDF-only rompería contratos
+verificados sin necesidad. Única adecuación legacy: una Verificación sin Master genérico
+inicial (catálogo 2026) viaja sólo con su PDF y su Master final se identifica por el
+fingerprint registrado ya existente.
+
+`LabWorkOrderEquipment.certificate_folio` es la autoridad del folio: nombra carpeta y
+archivo y será la llave del matching XLSX. No se copia a otra tabla ni se reserva un folio
+ERP. Fase siguiente (no implementada, sin cerrar su arquitectura): XLSX → folio LAB →
+pertenencia ETS/raíz/equipo → identidad/contenido → `Certificate` LAB-backed
+(`equipment_id XOR lab_equipment_id`) → Calidad → autenticación.
+
+### Catálogo: Master desconectado
+
+`expected_certificate_master_id` es LEGACY. Calibración y Verificación nuevas se crean sin
+Master; editar un concepto histórico con Master inactivo/caducado procede mientras el
+cambio no intente asignar otro Master (que sí se valida por compatibilidad API). El ETS ya
+no rechaza Verificación sin Master. No se eliminó columna, valor, `ControlledDocument` ni
+se migró nada. La ejecución de Verificación permanece en el ERP hasta su propia fase.
+
+### Vínculo y web
+
+`ServiceOrderLabLink` sigue siendo la única autoridad: el vínculo nacido en Mobile
+(creación atómica) y el creado después desde el ERP convergen en la misma tabla; los
+permisos `create`+`update` se conservan. El Resumen del ETS ofrece "Vincular servicio MYC
+Mobile" sin vínculo o "Abrir ejecución técnica" con vínculo: vista grupo → OT → equipo,
+detalle de hoja sin inputs, PDF final, cambio/desvinculación con motivo y acciones
+administrativas según permisos. La pestaña Captura de un ETS Mobile muestra LISTA/
+BLOQUEADA, bloqueos y la descarga PDF; los ETS históricos/mixtos conservan su UI.
+
+### Navegación futura "Servicios" (preparación, no implementada)
+
+Para staff MYC la pantalla principal Mobile evolucionará de "OT" a "Servicios" con
+verticales (Calibración, Mantenimiento, Reparación, Verificación, Venta…); los usuarios
+operativos externos conservan la vista y flujo actuales. Los contratos nuevos usan
+nombres neutrales (`mobile-execution`, `source`) donde representan esa abstracción futura,
+sin abstraer el modelo LAB actual. Las demás verticales quedan para fases posteriores.

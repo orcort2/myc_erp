@@ -10,6 +10,29 @@
 
 # Registro de decisiones vigentes
 
+## Decisión ETS ↔ LAB Fase 3 — Mobile único editor técnico (2026-09-29)
+
+Durante 2026 **MYC Mobile es la única interfaz de escritura técnica** de los servicios
+ejecutados por LAB; el ERP **gobierna pero no edita** (consulta, trazabilidad, vínculo,
+acciones administrativas de dominio, Captura documental, Calidad, autenticación,
+facturación, pagos y auditoría). Nunca dos autoridades de escritura sobre el mismo dato:
+una corrección iniciada en el ERP ("Enviar a corrección en MYC Mobile") se ejecuta
+reabriendo por el dominio LAB existente (N intacta, N+1 editable) y se corrige en Mobile.
+El ERP ve el trabajo técnico mediante una proyección READ-ONLY que consulta LAB sin
+copiarlo. "Eliminar" desde el ERP se resuelve con operaciones de dominio (cancelar/
+restaurar, tombstone, reapertura), nunca con DELETE físico. `ServiceOrderLabLink` sigue
+siendo el vínculo único (nazca en Mobile o en el ERP). Captura es un handoff **PDF-only**
+de las hojas finales LAB; `LabWorkOrderEquipment.certificate_folio` es la autoridad del
+folio. El Master XLSX de catálogo (`expected_certificate_master_id`) queda LEGACY y
+desconectado del alta de Calibración/Verificación, sin borrar columna ni valores. El
+paquete legacy conserva su Master porque su ingestión depende de él (divergencia
+documentada). Navegación futura de staff: "Servicios" con verticales; externos sin
+cambios; demás verticales en fases posteriores. [Contrato](../architecture/ETS_LAB_TECHNICAL_BRIDGE.md#fase-3--mobile-único-editor-técnico-erp-proyecta-gobierna-y-entrega-a-captura-2026-09-29)
+
+Buscador OT LAB en Mobile: la búsqueda sigue siendo server-side; el backend confirma la
+aplicación de `q` con `X-MYC-Search-Applied` para que un desfase de versión no se muestre
+como resultado, y el cliente nunca anexa una página de otra consulta.
+
 ## Decisión ETS ↔ LAB Fase 2 — calibración ejecutada en MYC Mobile (2026-09-29)
 
 Se adopta la realidad estructural como autoridad, sin `execution_mode` ni selector: ETS
