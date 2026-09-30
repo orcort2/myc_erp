@@ -64,6 +64,9 @@ class MobileExecutionWorkOrder(BaseModel):
     completed_at: datetime | None
     cancelled_at: datetime | None
     revision_number: int
+    # Documento oficial LAB: LabWorkOrder.final_pdf congelado al cierre.
+    has_final_pdf: bool = False
+    final_pdf_generated_at: datetime | None = None
     retired_equipment_count: int
     equipment: list[MobileExecutionEquipment] = Field(default_factory=list)
 

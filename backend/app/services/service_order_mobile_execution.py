@@ -129,6 +129,11 @@ def _equipment(equipment: LabWorkOrderEquipment) -> MobileExecutionEquipment:
     )
 
 
+def work_order_final_pdf_available(work_order: LabWorkOrder) -> bool:
+    """Misma condición que lab_work_orders.get_pdf: OT cerrada con PDF final."""
+    return work_order.status in {"completed", "partially_closed"} and bool(work_order.final_pdf)
+
+
 def _work_order(work_order: LabWorkOrder, root_id: int) -> MobileExecutionWorkOrder:
     return MobileExecutionWorkOrder(
         id=work_order.id,
@@ -143,6 +148,8 @@ def _work_order(work_order: LabWorkOrder, root_id: int) -> MobileExecutionWorkOr
         completed_at=work_order.completed_at,
         cancelled_at=work_order.cancelled_at,
         revision_number=work_order.revision_number,
+        has_final_pdf=work_order_final_pdf_available(work_order),
+        final_pdf_generated_at=work_order.final_pdf_generated_at,
         retired_equipment_count=sum(1 for item in work_order.equipment if not item.is_active),
         equipment=[_equipment(item) for item in work_order.active_equipment],
     )
@@ -217,3 +224,16 @@ def get_mobile_execution_field_sheet_pdf(
                         f"Hoja_Campo_{folio}_R{sheet.revision_number}.pdf",
                     )
     raise HTTPException(status_code=404, detail="Hoja de Campo no encontrada en el servicio MYC Mobile vinculado")
+
+
+def get_mobile_execution_work_order_pdf(
+    db: Session, service_order_id: int, work_order_id: int,
+) -> tuple[bytes, str]:
+    """PDF oficial de una OT del grupo vinculado: reutiliza get_pdf (el
+    final_pdf congelado de LAB); nunca regenera ni muta."""
+    from app.services.lab_work_orders import get_pdf
+
+    _link, members = require_linked_lab_group(db, service_order_id)
+    if not any(item.id == work_order_id for item in members):
+        raise HTTPException(status_code=404, detail="OT no encontrada en el servicio MYC Mobile vinculado")
+    return get_pdf(db, work_order_id)

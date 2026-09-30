@@ -102,6 +102,7 @@ from app.services.service_order_mobile_execution import (
     get_mobile_execution_field_sheet,
     get_mobile_execution_field_sheet_pdf,
     get_mobile_execution_projection,
+    get_mobile_execution_work_order_pdf,
 )
 from app.services.service_order_lab_links import (
     get_active_lab_link,
@@ -1063,6 +1064,23 @@ def get_service_order_mobile_execution_field_sheet_pdf(
     current_user: User = Depends(require_permission("field_sheets.read")),
 ) -> Response:
     content, filename = get_mobile_execution_field_sheet_pdf(db, service_order_id, field_sheet_id)
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@router.get("/{service_order_id}/mobile-execution/work-orders/{work_order_id}/pdf")
+def get_service_order_mobile_execution_work_order_pdf(
+    service_order_id: int,
+    work_order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.read")),
+) -> Response:
+    """PDF oficial congelado de una OT LAB del grupo vinculado (mismo documento
+    que Mobile, ``LabWorkOrder.final_pdf``)."""
+    content, filename = get_mobile_execution_work_order_pdf(db, service_order_id, work_order_id)
     return Response(
         content=content,
         media_type="application/pdf",

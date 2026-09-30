@@ -87,6 +87,10 @@ class Lab:
         self.db.add(order)
         self.db.flush()
         order.root_work_order_id = root.id if root else order.id
+        if status in {"completed", "partially_closed"}:
+            # PDF oficial congelado al cierre (LabWorkOrder.final_pdf).
+            order.final_pdf = f"%PDF-1.4 OT {folio}".encode()
+            order.final_pdf_generated_at = datetime.now(timezone.utc)
         if root is not None:
             order.signature_session_id = root.signature_session_id
         elif status in {"completed", "partially_closed", "received_signed", "in_progress", "ready_to_close"}:
@@ -360,3 +364,43 @@ def test_replace_and_unlink_preserve_history_and_projection_follows_active_link(
     assert http.get(_url(ctx, "/mobile-execution"), headers=headers).json()["linked"] is False
     history = http.get(_url(ctx, "/lab-link/history"), headers=headers).json()
     assert [item["status"] for item in history] == ["unlinked", "replaced"]
+
+
+# ------------------------------------------------------------ OT OFICIAL
+
+
+def test_official_work_order_pdf_is_served_frozen_only_within_linked_group(ctx):
+    _link(ctx)
+    http, headers = ctx["http"], ctx["headers"]["Comercial"]
+    projection = http.get(_url(ctx, "/mobile-execution"), headers=headers).json()
+    assert [wo["has_final_pdf"] for wo in projection["work_orders"]] == [True, True]
+    with ctx["factory"]() as db:
+        before = (db.get(LabWorkOrder, ctx["root"]).final_pdf, db.get(LabWorkOrder, ctx["root"]).updated_at)
+    response = http.get(_url(ctx, f"/mobile-execution/work-orders/{ctx['root']}/pdf"), headers=headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.content == b"%PDF-1.4 OT 6438"
+    assert 'filename="OT-6438-r1.pdf"' in response.headers["content-disposition"]
+    with ctx["factory"]() as db:
+        assert (db.get(LabWorkOrder, ctx["root"]).final_pdf, db.get(LabWorkOrder, ctx["root"]).updated_at) == before
+    # OT de otro root / ETS sin vínculo.
+    with ctx["factory"]() as db:
+        foreign = Lab(db, db.get(User, ctx["users"]["Administrador"]), ctx["storage"]).work_order(6700)
+        db.commit()
+        foreign_id = foreign.id
+    assert http.get(_url(ctx, f"/mobile-execution/work-orders/{foreign_id}/pdf"), headers=headers).status_code == 404
+    unlinked = http.get(_url(ctx, f"/mobile-execution/work-orders/{ctx['root']}/pdf", "other"), headers=headers)
+    assert unlinked.status_code == 409 and unlinked.json()["detail"]["code"] == "LAB_LINK_REQUIRED"
+    assert http.get(_url(ctx, f"/mobile-execution/work-orders/{ctx['root']}/pdf"),
+                    headers=ctx["headers"]["Administrador"]).status_code == 200
+
+
+def test_official_work_order_pdf_unavailable_before_final(ctx):
+    _link(ctx)
+    with ctx["factory"]() as db:
+        db.get(LabWorkOrder, ctx["child"]).status = "in_progress"
+        db.commit()
+    http, headers = ctx["http"], ctx["headers"]["Comercial"]
+    projection = http.get(_url(ctx, "/mobile-execution"), headers=headers).json()
+    assert [wo["has_final_pdf"] for wo in projection["work_orders"]] == [True, False]
+    assert http.get(_url(ctx, f"/mobile-execution/work-orders/{ctx['child']}/pdf"), headers=headers).status_code == 409
