@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 export default function EtsMobileModal({ children, onClose, title, subtitle, eyebrow = 'MYC Mobile' }) {
   return createPortal(
     <div className="modal-backdrop" role="presentation">
-      <section aria-modal="true" className="client-modal quotation-detail-modal ets-mobile-execution-modal" role="dialog">
+      <section aria-modal="true" className="client-modal quotation-detail-modal ets-lab-modal" role="dialog">
         <div className="quotation-detail-header">
           <div>
             <p>{eyebrow}</p>
@@ -20,10 +20,4 @@ export default function EtsMobileModal({ children, onClose, title, subtitle, eye
     </div>,
     document.body
   );
-}
-
-export function openPdfBlob(blob) {
-  const url = URL.createObjectURL(blob);
-  window.open(url, '_blank', 'noopener');
-  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

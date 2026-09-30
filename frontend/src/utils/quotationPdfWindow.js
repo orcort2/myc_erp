@@ -1,9 +1,14 @@
 // Reserve the tab during the click, before awaiting the authenticated request.
-export async function openQuotationPdfWindow(loadPdf, { print = false, onError } = {}) {
+// Shared by every authenticated PDF viewer/printer of the ERP (quotations and
+// the official LAB documents shown in the ETS); it never prints HTML.
+export async function openQuotationPdfWindow(
+  loadPdf,
+  { print = false, onError, blockedMessage = 'Permite las ventanas emergentes para abrir el PDF de la cotización.' } = {},
+) {
   // Keep the navigation handle, but immediately detach the opener.
   const pdfWindow = window.open('about:blank', '_blank');
   if (!pdfWindow) {
-    throw new Error('Permite las ventanas emergentes para abrir el PDF de la cotización.');
+    throw new Error(blockedMessage);
   }
   pdfWindow.opener = null;
   let objectUrl;

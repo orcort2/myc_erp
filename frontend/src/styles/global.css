@@ -9085,62 +9085,65 @@ textarea {
   overflow-wrap: anywhere;
   white-space: normal;
 }
-/* Ejecución técnica MYC Mobile (vista administrativa READ-ONLY del ETS).
-   Clases propias: no reutiliza los grids rígidos legacy de Hojas de Campo
-   (.ets-field-sheet-work-order__summary / .ets-field-sheet-equipment-row).
-   El layout responde al ancho del contenedor (modal/pestaña) mediante
-   container queries, no al viewport. */
-.ets-mobile-execution-modal { width: min(1100px, 96vw); max-width: min(1100px, 96vw); }
-.ets-mobile-execution,
-.ets-mobile-capture { display: grid; gap: 12px; container-type: inline-size; min-width: 0; }
-.ets-mobile-execution__header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+/* Ejecución técnica LAB dentro del ERP (vista administrativa READ-ONLY del ETS).
+   La presentación reutiliza el design system del ERP (quotation-section,
+   section-heading, read-only-grid, glass-card-mini, ets-metric-strip,
+   quotation-status, table-button, toolbar-actions). Las clases .ets-lab-*
+   sólo resuelven layout con variables del ERP; no modifican clases legacy
+   (p. ej. las de Hojas de Campo) y responden al ancho del contenedor
+   (container queries), no al viewport. */
+.ets-lab-modal { width: min(1120px, 96vw); max-width: min(1120px, 96vw); }
+.ets-lab-execution,
+.ets-lab-capture,
+.ets-lab-detail { display: grid; gap: 12px; min-width: 0; container-type: inline-size; }
+.ets-lab-execution__heading { margin-bottom: 0; flex-wrap: wrap; }
+.ets-lab-work-order { display: grid; gap: 12px; min-width: 0; margin-bottom: 0; }
+.ets-lab-work-order__title { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px 12px; }
+.ets-lab-work-order__title > div { display: grid; gap: 2px; min-width: 0; }
+.ets-lab-work-order__title h3,
+.ets-lab-work-order__title span { overflow-wrap: anywhere; }
+.ets-lab-work-order__title .quotation-status { white-space: nowrap; }
+.ets-lab-work-order__subtitle {
+  margin: 4px 0 0;
+  color: var(--myc-primary);
+  font-size: 12.5px;
+  font-weight: 850;
+  text-transform: uppercase;
 }
-.ets-mobile-execution__header > div:first-child { display: grid; gap: 2px; min-width: 0; }
-
-.ets-mobile-work-order {
+.ets-lab-work-order__actions {
   display: grid;
-  gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid rgba(127, 127, 127, 0.25);
-  border-radius: 12px;
-  min-width: 0;
-}
-.ets-mobile-work-order__header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 8px 12px;
-}
-.ets-mobile-work-order__title { display: grid; gap: 2px; min-width: 0; }
-.ets-mobile-work-order__title strong,
-.ets-mobile-work-order__title span,
-.ets-mobile-work-order__title small { overflow-wrap: anywhere; }
-.ets-mobile-work-order__status { justify-self: end; white-space: nowrap; }
-.ets-mobile-work-order__actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
-.ets-mobile-work-order__actions .table-button { width: auto; white-space: nowrap; }
-.ets-mobile-work-order__equipment { display: grid; gap: 8px; min-width: 0; }
-
-.ets-mobile-equipment-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 2.4fr) minmax(0, auto);
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  gap: 10px 16px;
   align-items: start;
-  gap: 8px 16px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(127, 127, 127, 0.06);
-  min-width: 0;
 }
-.ets-mobile-equipment-card__identity { display: grid; gap: 2px; min-width: 0; }
-.ets-mobile-equipment-card__identity > span { overflow-wrap: anywhere; opacity: 0.8; }
-.ets-mobile-equipment-card__link,
-.ets-mobile-equipment-card__inline-link {
-  display: grid;
-  gap: 1px;
+.ets-lab-action-group { display: grid; gap: 6px; min-width: 0; }
+.ets-lab-action-group .toolbar-actions { justify-content: flex-start; }
+.ets-lab-action-group--admin { padding-left: 16px; border-left: 1px solid var(--myc-divider); }
+.ets-lab-action-group__label {
+  color: var(--myc-soft-text);
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+.ets-lab-unavailable { justify-self: start; }
+/* Algunas secciones del ERP estiran .table-button a 100%; en estas barras de
+   acciones cada botón conserva su ancho natural y la barra hace wrap. */
+.ets-lab-execution .toolbar-actions .table-button,
+.ets-lab-capture .toolbar-actions .table-button,
+.ets-lab-detail .toolbar-actions .table-button { width: auto; flex: 0 0 auto; white-space: nowrap; }
+.ets-lab-equipment-list,
+.ets-lab-document-list { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.glass-card-mini.ets-lab-equipment-card {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 2.6fr) minmax(0, auto);
+  align-items: start;
+  gap: 10px 16px;
+}
+.glass-card-mini.ets-lab-document { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; }
+.ets-lab-equipment-card__identity { display: grid; gap: 2px; min-width: 0; }
+.ets-lab-equipment-card__identity > span { overflow-wrap: anywhere; }
+.ets-lab-equipment-card__actions { justify-content: flex-end; }
+.ets-lab-link,
+.ets-lab-inline-link {
   padding: 0;
   border: 0;
   background: none;
@@ -9149,67 +9152,38 @@ textarea {
   text-align: left;
   cursor: pointer;
 }
-.ets-mobile-equipment-card__link strong { overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: 3px; }
-.ets-mobile-equipment-card__link small,
-.ets-mobile-equipment-card__inline-link { color: var(--accent, #1d4ed8); }
-.ets-mobile-equipment-card__inline-link { display: inline; text-decoration: underline; }
-.ets-mobile-equipment-card__link:focus-visible,
-.ets-mobile-equipment-card__inline-link:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
-.ets-mobile-equipment-card__meta {
+.ets-lab-link { display: grid; gap: 1px; }
+.ets-lab-link strong { color: var(--myc-navy); font-size: 15px; overflow-wrap: anywhere; }
+.ets-lab-link small,
+.ets-lab-inline-link { color: var(--myc-primary); font-weight: 850; text-decoration: underline; text-underline-offset: 3px; }
+.ets-lab-link:focus-visible,
+.ets-lab-inline-link:focus-visible { outline: 2px solid var(--myc-primary); outline-offset: 2px; }
+.read-only-grid.ets-lab-readonly-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr));
-  gap: 6px 12px;
-  margin: 0;
-  min-width: 0;
-}
-.ets-mobile-equipment-card__meta dt { font-size: 0.75rem; opacity: 0.7; }
-.ets-mobile-equipment-card__meta dd { margin: 0; overflow-wrap: anywhere; }
-.ets-mobile-equipment-card__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: flex-end;
-  align-items: center;
-  min-width: 0;
-}
-.ets-mobile-equipment-card__actions .table-button { width: auto; white-space: nowrap; }
-
-@container (max-width: 720px) {
-  .ets-mobile-equipment-card { grid-template-columns: minmax(0, 1fr); }
-  .ets-mobile-equipment-card__actions { justify-content: flex-start; }
-}
-@container (max-width: 520px) {
-  .ets-mobile-work-order__header { grid-template-columns: minmax(0, 1fr) auto; }
-  .ets-mobile-work-order__actions { grid-column: 1 / -1; justify-content: flex-start; }
-}
-
-.ets-mobile-readonly { display: grid; gap: 14px; container-type: inline-size; min-width: 0; }
-.ets-mobile-readonly__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
+  grid-template-columns: repeat(auto-fill, minmax(min(190px, 100%), 1fr));
   gap: 8px;
+  min-width: 0;
 }
-.ets-mobile-readonly__section { display: grid; gap: 8px; min-width: 0; }
-.ets-mobile-readonly__section h3 { margin: 0; }
-.ets-mobile-readonly__group { display: grid; gap: 6px; min-width: 0; }
-.ets-mobile-readonly__group h4 { margin: 0; font-size: 0.9rem; opacity: 0.85; }
-.ets-mobile-readonly__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr));
-  gap: 8px 16px;
-  margin: 0;
+.read-only-grid.ets-lab-readonly-grid--compact { grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr)); }
+.read-only-grid.ets-lab-readonly-grid--compact article { padding: 8px 10px; gap: 3px; }
+.read-only-grid.ets-lab-readonly-grid strong { overflow-wrap: anywhere; }
+.ets-lab-detail__toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.ets-lab-detail__section { display: grid; gap: 10px; min-width: 0; margin-bottom: 0; }
+.ets-lab-detail__group { display: grid; gap: 6px; min-width: 0; }
+.ets-lab-detail__group h4 { margin: 0; color: var(--myc-primary); font-size: 12.5px; font-weight: 850; text-transform: uppercase; }
+.ets-lab-table-wrap { overflow-x: auto; max-width: 100%; }
+.ets-lab-table { width: 100%; border-collapse: collapse; font-size: 13px; color: var(--myc-text); }
+.ets-lab-table th { color: var(--myc-primary); font-weight: 850; text-align: left; }
+.ets-lab-table th,
+.ets-lab-table td { padding: 5px 8px; border-bottom: 1px solid var(--myc-divider); white-space: nowrap; }
+.ets-lab-revisions { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.ets-lab-revisions li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.ets-lab-capture__blockers { display: grid; gap: 4px; margin: 0; padding-left: 18px; }
+
+@container (max-width: 760px) {
+  .glass-card-mini.ets-lab-equipment-card,
+  .glass-card-mini.ets-lab-document { grid-template-columns: minmax(0, 1fr); }
+  .ets-lab-equipment-card__actions { justify-content: flex-start; }
+  .ets-lab-work-order__actions { grid-template-columns: minmax(0, 1fr); }
+  .ets-lab-action-group--admin { padding-left: 0; border-left: 0; padding-top: 8px; border-top: 1px solid var(--myc-divider); }
 }
-.ets-mobile-readonly__grid dt { font-size: 0.78rem; opacity: 0.7; }
-.ets-mobile-readonly__grid dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.ets-mobile-readonly__table-wrap { overflow-x: auto; max-width: 100%; }
-.ets-mobile-readonly__table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-.ets-mobile-readonly__table th,
-.ets-mobile-readonly__table td { padding: 4px 8px; border-bottom: 1px solid rgba(127, 127, 127, 0.25); text-align: left; white-space: nowrap; }
-.ets-mobile-readonly__revisions { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.ets-mobile-readonly__revisions li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
-.ets-mobile-capture__state { font-weight: 700; letter-spacing: 0.04em; }
-.ets-mobile-capture__state.is-ready { color: #1a7f37; }
-.ets-mobile-capture__state.is-blocked { color: #b42318; }
-.ets-mobile-capture__blockers { display: grid; gap: 4px; margin: 0; padding-left: 18px; }

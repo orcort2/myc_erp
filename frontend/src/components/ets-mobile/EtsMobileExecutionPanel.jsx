@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 
 import {
   cancelServiceOrderMobileWorkOrder,
-  downloadServiceOrderMobileFieldSheetPdf,
   getServiceOrderMobileExecution,
   linkServiceOrderLab,
   replaceServiceOrderLab,
@@ -10,24 +9,34 @@ import {
   searchServiceOrderLabCandidates,
   unlinkServiceOrderLab,
 } from '../../services/api.js';
+import { formatDate } from '../../utils/formatters.js';
 import EtsMobileCorrectionDialog from './EtsMobileCorrectionDialog.jsx';
 import EtsMobileEquipmentDetail from './EtsMobileEquipmentDetail.jsx';
-import EtsMobileModal, { openPdfBlob } from './EtsMobileModal.jsx';
+import EtsMobileModal from './EtsMobileModal.jsx';
+import {
+  downloadLabPdf,
+  fieldSheetPdfLoader,
+  printLabPdf,
+  viewLabPdf,
+  workOrderPdfLoader,
+} from './labDocumentActions.js';
 import {
   LAB_FIELD_SHEET_STATUS_LABELS,
   LAB_FOLIO_STATUS_LABELS,
   LAB_SERVICE_TYPE_LABELS,
   LAB_WORK_ORDER_STATUS_LABELS,
   correctionModeFor,
+  describeWorkOrderHeader,
   getMobileExecutionPermissions,
   summarizeMobileExecution,
 } from './mobileExecutionPresentation.js';
 
-// Vista administrativa READ-ONLY de la ejecución técnica MYC Mobile de un ETS.
-// El staff ERP puede VER; no existe ningún input que edite datos técnicos LAB.
-// El detalle de equipo es el componente único EtsMobileEquipmentDetail.
-// Clases propias (.ets-mobile-work-order / .ets-mobile-equipment-card): no
-// reutiliza los grids rígidos del flujo legacy de Hojas de Campo.
+// Vista administrativa READ-ONLY de la ejecución técnica LAB dentro del ERP.
+// Usa el lenguaje visual del ERP (quotation-section, section-heading,
+// read-only-grid, ets-metric-strip, quotation-status, table-button,
+// toolbar-actions); las clases .ets-lab-* sólo resuelven layout. No existe
+// ningún input que edite datos técnicos LAB. El detalle de equipo es el
+// componente único EtsMobileEquipmentDetail.
 
 function LinkPicker({ serviceOrderId, mode, onDone, onCancel }) {
   const [query, setQuery] = useState('');
@@ -137,53 +146,43 @@ export default function EtsMobileExecutionPanel({ serviceOrderId, user, onLinkCh
     onLinkChanged?.();
   }
 
-  async function unlink() {
-    const reason = window.prompt('Motivo para desvincular el servicio MYC Mobile');
-    if (!reason?.trim()) return;
+  async function run(action) {
+    setError('');
     try {
-      await unlinkServiceOrderLab(serviceOrderId, reason.trim());
-      await afterLinkChange('Servicio MYC Mobile desvinculado; el historial se conserva.');
+      await action();
     } catch (requestError) {
       setError(requestError.message);
     }
   }
 
-  async function viewPdf(fieldSheetId) {
-    try {
-      const { blob } = await downloadServiceOrderMobileFieldSheetPdf(serviceOrderId, fieldSheetId);
-      openPdfBlob(blob);
-    } catch (requestError) {
-      setError(requestError.message);
-    }
+  async function unlink() {
+    const reason = window.prompt('Motivo para desvincular el servicio MYC Mobile');
+    if (!reason?.trim()) return;
+    await run(async () => {
+      await unlinkServiceOrderLab(serviceOrderId, reason.trim());
+      await afterLinkChange('Servicio MYC Mobile desvinculado; el historial se conserva.');
+    });
   }
 
   async function cancelWorkOrder(workOrder) {
     const reason = window.prompt(`Motivo para cancelar la OT ${workOrder.folio} en MYC Mobile`);
     if (!reason?.trim()) return;
-    try {
-      applyProjection(
-        await cancelServiceOrderMobileWorkOrder(serviceOrderId, workOrder.id, reason.trim()),
-        `OT ${workOrder.folio} cancelada; su historial técnico se conserva.`,
-      );
-    } catch (requestError) {
-      setError(requestError.message);
-    }
+    await run(async () => applyProjection(
+      await cancelServiceOrderMobileWorkOrder(serviceOrderId, workOrder.id, reason.trim()),
+      `OT ${workOrder.folio} cancelada; su historial técnico se conserva.`,
+    ));
   }
 
   async function restoreWorkOrder(workOrder) {
-    try {
-      applyProjection(
-        await restoreServiceOrderMobileWorkOrder(serviceOrderId, workOrder.id),
-        `OT ${workOrder.folio} restaurada a su estado anterior.`,
-      );
-    } catch (requestError) {
-      setError(requestError.message);
-    }
+    await run(async () => applyProjection(
+      await restoreServiceOrderMobileWorkOrder(serviceOrderId, workOrder.id),
+      `OT ${workOrder.folio} restaurada a su estado anterior.`,
+    ));
   }
 
   const totals = summarizeMobileExecution(projection);
   return (
-    <section className="ets-mobile-execution" aria-label="Ejecución técnica MYC Mobile">
+    <section className="ets-lab-execution" aria-label="Ejecución técnica MYC Mobile">
       {error ? <div className="form-error" role="alert">{error}</div> : null}
       {notice ? <div className="form-notice" role="status">{notice}</div> : null}
       {!projection && !error ? <p className="muted">Consultando MYC Mobile…</p> : null}
@@ -202,91 +201,123 @@ export default function EtsMobileExecutionPanel({ serviceOrderId, user, onLinkCh
 
       {projection?.linked ? (
         <>
-          <div className="ets-mobile-execution__header">
+          <div className="section-heading ets-lab-execution__heading">
             <div>
-              <strong>Servicio MYC Mobile · OT raíz {projection.root_folio}</strong>
-              <span>
-                {totals.workOrders} OT · {totals.equipment} equipo(s) · {totals.completedSheets} hoja(s) completada(s) ·{' '}
-                {totals.finalPdfs} PDF final(es)
-              </span>
+              <p>Servicio MYC Mobile</p>
+              <h2>OT raíz {projection.root_folio}</h2>
             </div>
             {permissions.canManageLink ? (
-              <div className="ets-mobile-equipment-card__actions">
+              <div className="toolbar-actions">
                 <button className="table-button" onClick={() => setPicker('replace')} type="button">Cambiar vínculo</button>
                 <button className="table-button" onClick={unlink} type="button">Desvincular</button>
               </div>
             ) : null}
           </div>
-          {projection.work_orders.map((workOrder) => (
-            <article className="ets-mobile-work-order" key={workOrder.id}>
-              <header className="ets-mobile-work-order__header">
-                <div className="ets-mobile-work-order__title">
-                  <small>{workOrder.is_root ? 'OT raíz' : 'OT del grupo'}</small>
-                  <strong>OT {workOrder.folio}</strong>
-                  <span>{workOrder.client_name}</span>
+          <div className="ets-metric-strip">
+            <span className="ets-metric-badge"><strong>{totals.workOrders}</strong>OT</span>
+            <span className="ets-metric-badge"><strong>{totals.equipment}</strong>Equipos</span>
+            <span className="ets-metric-badge"><strong>{totals.completedSheets}</strong>Hojas completadas</span>
+            <span className="ets-metric-badge"><strong>{totals.finalPdfs}</strong>Hojas con PDF final</span>
+          </div>
+          {projection.work_orders.map((workOrder) => {
+            const header = describeWorkOrderHeader(workOrder);
+            const otLoader = workOrderPdfLoader(serviceOrderId, workOrder.id);
+            return (
+              <article className="quotation-section ets-lab-work-order" key={workOrder.id}>
+                <div className="quotation-section__title ets-lab-work-order__title">
+                  <div>
+                    <p>{header.role}</p>
+                    <h3>OT {workOrder.folio}</h3>
+                    <span>{workOrder.client_name}</span>
+                  </div>
+                  <mark className={`quotation-status status-${workOrder.status}`}>{header.statusLabel}</mark>
                 </div>
-                <mark className={`quotation-status status-${workOrder.status} ets-mobile-work-order__status`}>
-                  {LAB_WORK_ORDER_STATUS_LABELS[workOrder.status] || workOrder.status}
-                </mark>
-                {permissions.canCancelWorkOrders ? (
-                  <div className="ets-mobile-work-order__actions">
-                    {workOrder.status === 'cancelled' ? (
-                      <button className="table-button" onClick={() => restoreWorkOrder(workOrder)} type="button">Restaurar OT</button>
+                <div className="ets-metric-strip">
+                  <span className="ets-metric-badge"><strong>{header.receptionDate ? formatDate(header.receptionDate) : '-'}</strong>Recepción</span>
+                  <span className="ets-metric-badge"><strong>{header.departureDate ? formatDate(header.departureDate) : '-'}</strong>Salida</span>
+                  <span className="ets-metric-badge"><strong>{header.equipmentCount}</strong>Equipos</span>
+                  <span className="ets-metric-badge"><strong>{header.completedSheets}</strong>Hojas completadas</span>
+                  <span className="ets-metric-badge"><strong>{header.finalSheetPdfs}</strong>PDF finales</span>
+                </div>
+                <div className="ets-lab-work-order__actions">
+                  <div className="ets-lab-action-group" role="group" aria-label="Documentos">
+                    <span className="ets-lab-action-group__label">Documentos</span>
+                    {header.hasFinalPdf ? (
+                      <div className="toolbar-actions">
+                        <button className="table-button" onClick={() => run(() => viewLabPdf(otLoader, (e) => setError(e.message)))} type="button">Ver OT</button>
+                        <button className="table-button" onClick={() => run(() => printLabPdf(otLoader, (e) => setError(e.message)))} type="button">Imprimir OT</button>
+                        <button className="table-button" onClick={() => run(() => downloadLabPdf(otLoader, `OT-${workOrder.folio}.pdf`))} type="button">Descargar OT</button>
+                      </div>
                     ) : (
-                      <button className="table-button" onClick={() => cancelWorkOrder(workOrder)} type="button">Cancelar OT</button>
+                      <span className="ets-metric-badge ets-lab-unavailable">OT final no disponible</span>
                     )}
                   </div>
-                ) : null}
-              </header>
-              <div className="ets-mobile-work-order__equipment">
-                {workOrder.equipment.length ? workOrder.equipment.map((equipment) => {
-                  const sheet = equipment.field_sheet;
-                  const correctionMode = correctionModeFor(workOrder, equipment);
-                  return (
-                    <article className="ets-mobile-equipment-card" key={equipment.id}>
-                      <div className="ets-mobile-equipment-card__identity">
-                        {permissions.canReadFieldSheets ? (
-                          <button
-                            className="ets-mobile-equipment-card__link"
-                            onClick={() => setDetailEquipmentId(equipment.id)}
-                            type="button"
-                          >
-                            <strong>{equipment.position}. {equipment.instrument}</strong>
-                            <small>Ver detalle</small>
-                          </button>
+                  {permissions.canCancelWorkOrders ? (
+                    <div className="ets-lab-action-group ets-lab-action-group--admin" role="group" aria-label="Administración">
+                      <span className="ets-lab-action-group__label">Administración</span>
+                      <div className="toolbar-actions">
+                        {workOrder.status === 'cancelled' ? (
+                          <button className="table-button" onClick={() => restoreWorkOrder(workOrder)} type="button">Restaurar OT</button>
                         ) : (
-                          <strong>{equipment.position}. {equipment.instrument}</strong>
+                          <button className="table-button" onClick={() => cancelWorkOrder(workOrder)} type="button">Cancelar OT</button>
                         )}
-                        <span>{[equipment.brand, equipment.model].filter(Boolean).join(' · ')}</span>
                       </div>
-                      <dl className="ets-mobile-equipment-card__meta">
-                        <div><dt>Serie</dt><dd>{equipment.serial_number}</dd></div>
-                        <div><dt>Identificación</dt><dd>{equipment.identification}</dd></div>
-                        <div><dt>Servicio</dt><dd>{LAB_SERVICE_TYPE_LABELS[equipment.service_type] || '-'}</dd></div>
-                        <div><dt>Folio</dt><dd>{equipment.certificate_folio || '-'}</dd></div>
-                        <div><dt>Estado folio</dt><dd>{LAB_FOLIO_STATUS_LABELS[equipment.folio_status] || equipment.folio_status}</dd></div>
-                        <div><dt>Hoja</dt><dd>{sheet ? `R${sheet.revision_number} · ${LAB_FIELD_SHEET_STATUS_LABELS[sheet.status] || sheet.status}` : 'Sin hoja'}</dd></div>
-                      </dl>
-                      <div className="ets-mobile-equipment-card__actions">
-                        {permissions.canReadFieldSheets && sheet?.has_final_pdf ? (
-                          <button className="table-button" onClick={() => viewPdf(sheet.id)} type="button">Ver PDF final</button>
-                        ) : null}
-                        {permissions.canRequestCorrection && correctionMode ? (
-                          <button
-                            className="table-button"
-                            onClick={() => setCorrectionTarget({ equipment, workOrderFolio: workOrder.folio, mode: correctionMode })}
-                            type="button"
-                          >
-                            Enviar a corrección
-                          </button>
-                        ) : null}
-                      </div>
-                    </article>
-                  );
-                }) : <div className="clients-empty">Esta OT no tiene equipos activos.</div>}
-              </div>
-            </article>
-          ))}
+                    </div>
+                  ) : null}
+                </div>
+                <h4 className="ets-lab-work-order__subtitle">Equipos</h4>
+                <div className="ets-lab-equipment-list">
+                  {workOrder.equipment.length ? workOrder.equipment.map((equipment) => {
+                    const sheet = equipment.field_sheet;
+                    const correctionMode = correctionModeFor(workOrder, equipment);
+                    return (
+                      <article className="glass-card-mini ets-lab-equipment-card" key={equipment.id}>
+                        <div className="ets-lab-equipment-card__identity">
+                          {permissions.canReadFieldSheets ? (
+                            <button className="ets-lab-link" onClick={() => setDetailEquipmentId(equipment.id)} type="button">
+                              <strong>{equipment.position}. {equipment.instrument}</strong>
+                              <small>Ver detalle</small>
+                            </button>
+                          ) : (
+                            <strong>{equipment.position}. {equipment.instrument}</strong>
+                          )}
+                          <span>{[equipment.brand, equipment.model].filter(Boolean).join(' · ')}</span>
+                        </div>
+                        <div className="read-only-grid ets-lab-readonly-grid ets-lab-readonly-grid--compact">
+                          <article><span>Serie</span><strong>{equipment.serial_number}</strong></article>
+                          <article><span>Identificación</span><strong>{equipment.identification}</strong></article>
+                          <article><span>Servicio</span><strong>{LAB_SERVICE_TYPE_LABELS[equipment.service_type] || '-'}</strong></article>
+                          <article><span>Folio</span><strong>{equipment.certificate_folio || '-'}</strong></article>
+                          <article><span>Estado folio</span><strong>{LAB_FOLIO_STATUS_LABELS[equipment.folio_status] || equipment.folio_status}</strong></article>
+                          <article><span>Hoja</span><strong>{sheet ? `R${sheet.revision_number} · ${LAB_FIELD_SHEET_STATUS_LABELS[sheet.status] || sheet.status}` : 'Sin hoja'}</strong></article>
+                        </div>
+                        <div className="toolbar-actions ets-lab-equipment-card__actions">
+                          {permissions.canReadFieldSheets && sheet?.has_final_pdf ? (
+                            <button
+                              className="table-button"
+                              onClick={() => run(() => viewLabPdf(fieldSheetPdfLoader(serviceOrderId, sheet.id), (e) => setError(e.message)))}
+                              type="button"
+                            >
+                              Ver hoja
+                            </button>
+                          ) : null}
+                          {permissions.canRequestCorrection && correctionMode ? (
+                            <button
+                              className="table-button"
+                              onClick={() => setCorrectionTarget({ equipment, workOrderFolio: workOrder.folio, mode: correctionMode })}
+                              type="button"
+                            >
+                              Enviar a corrección
+                            </button>
+                          ) : null}
+                        </div>
+                      </article>
+                    );
+                  }) : <div className="clients-empty">Esta OT no tiene equipos activos.</div>}
+                </div>
+              </article>
+            );
+          })}
         </>
       ) : null}
 

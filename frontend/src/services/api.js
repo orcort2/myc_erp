@@ -1240,6 +1240,11 @@ export async function getServiceOrderMobileFieldSheet(serviceOrderId, equipmentI
   return request(`/service-orders/${serviceOrderId}/mobile-execution/equipment/${equipmentId}/field-sheet`);
 }
 
+// PDF oficial congelado de una OT LAB del grupo vinculado (LabWorkOrder.final_pdf).
+export async function downloadServiceOrderMobileWorkOrderPdf(serviceOrderId, workOrderId) {
+  return downloadRequest(`/service-orders/${serviceOrderId}/mobile-execution/work-orders/${workOrderId}/pdf`);
+}
+
 export async function downloadServiceOrderMobileFieldSheetPdf(serviceOrderId, fieldSheetId) {
   return downloadRequest(`/service-orders/${serviceOrderId}/mobile-execution/field-sheets/${fieldSheetId}/pdf`);
 }

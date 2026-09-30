@@ -3,6 +3,9 @@ import test from 'node:test';
 
 import { getMobileCaptureStageStatus } from '../../utils/etsStages.js';
 import {
+  captureGroupDocuments,
+  countCaptureDocuments,
+  describeWorkOrderHeader,
   captureStateLabel,
   correctionModeFor,
   describeCaptureValues,
@@ -58,7 +61,7 @@ test('Captura LAB: LISTA/BLOQUEADA y bloqueos estructurados legibles', () => {
   );
   for (const code of [
     'LAB_CERTIFICATE_FOLIO_MISSING', 'LAB_CERTIFICATE_FOLIO_NOT_READY', 'LAB_FIELD_SHEET_MISSING',
-    'LAB_FINAL_PDF_MISSING', 'LAB_WORK_ORDER_NOT_FINAL',
+    'LAB_FINAL_PDF_MISSING', 'LAB_WORK_ORDER_NOT_FINAL', 'LAB_WORK_ORDER_FINAL_PDF_MISSING',
   ]) {
     assert.notEqual(describeCaptureBlocker({ code }), code);
   }
@@ -177,4 +180,31 @@ test('results_rows: columnas de plantilla, row_data dinámico y columnas estánd
   assert.deepEqual(free.rows[0].cells, ['P1', 'g', '20']);
   const cells = describeResultSections(sheet).flatMap((section) => section.rows.flatMap((row) => row.cells));
   assert.ok(cells.every((cell) => typeof cell === 'string' && !cell.startsWith('{')));
+});
+
+test('cabecera de OT y documentos de Captura (OT final + hojas)', () => {
+  const header = describeWorkOrderHeader({
+    is_root: true, status: 'completed', reception_date: '2026-09-01', departure_date: null, has_final_pdf: true,
+    equipment: [{ field_sheet: { status: 'completed', has_final_pdf: true } }, { field_sheet: { status: 'draft', has_final_pdf: false } }],
+  });
+  assert.deepEqual(header, {
+    role: 'OT raíz', statusLabel: 'Cerrada', receptionDate: '2026-09-01', departureDate: null,
+    equipmentCount: 2, completedSheets: 1, finalSheetPdfs: 1, hasFinalPdf: true,
+  });
+  assert.equal(describeWorkOrderHeader({ status: 'in_progress', equipment: [] }).hasFinalPdf, false);
+  const group = {
+    work_order_id: 9, work_order_folio: 6438, has_final_pdf: true,
+    equipment: [
+      { equipment_id: 1, position: 1, certificate_folio: 'MYCA-09-26-4721', field_sheet_id: 5, field_sheet_has_final_pdf: true },
+      { equipment_id: 2, position: 2, certificate_folio: null, field_sheet_id: null, field_sheet_has_final_pdf: false },
+    ],
+  };
+  assert.deepEqual(captureGroupDocuments(group).map((doc) => [doc.kind, doc.label, doc.available]), [
+    ['work_order', 'OT final 6438', true],
+    ['field_sheet', 'Hoja de Campo MYCA-09-26-4721', true],
+    ['field_sheet', 'Hoja de Campo equipo 2', false],
+  ]);
+  assert.equal(countCaptureDocuments({ groups: [group, { ...group, has_final_pdf: false, equipment: [] }] }), 2);
+  assert.equal(describeCaptureBlocker({ code: 'LAB_WORK_ORDER_FINAL_PDF_MISSING', work_order_folio: 6439 }),
+    'OT 6439: OT cerrada sin PDF final oficial');
 });

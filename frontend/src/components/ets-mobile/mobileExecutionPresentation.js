@@ -50,6 +50,7 @@ export const CAPTURE_BLOCKER_LABELS = {
   LAB_LINK_REQUIRED: 'Vincula el servicio MYC Mobile del ETS',
   LAB_NO_ACTIVE_EQUIPMENT: 'El servicio MYC Mobile no tiene equipos activos',
   LAB_WORK_ORDER_NOT_FINAL: 'OT sin cierre técnico en MYC Mobile',
+  LAB_WORK_ORDER_FINAL_PDF_MISSING: 'OT cerrada sin PDF final oficial',
   LAB_CERTIFICATE_FOLIO_MISSING: 'Sin folio de certificado',
   LAB_CERTIFICATE_FOLIO_NOT_READY: 'Folio no reservado/autorizado',
   LAB_FIELD_SHEET_MISSING: 'Sin Hoja de Campo',
@@ -85,6 +86,48 @@ export function summarizeMobileExecution(projection) {
     completedSheets: equipment.filter((item) => item.field_sheet?.status === 'completed').length,
     finalPdfs: equipment.filter((item) => item.field_sheet?.has_final_pdf).length,
   };
+}
+
+// Cabecera ERP de una OT LAB: métricas de solo lectura derivadas de la proyección.
+export function describeWorkOrderHeader(workOrder) {
+  const equipment = Array.isArray(workOrder?.equipment) ? workOrder.equipment : [];
+  return {
+    role: workOrder?.is_root ? 'OT raíz' : 'OT del grupo',
+    statusLabel: LAB_WORK_ORDER_STATUS_LABELS[workOrder?.status] || workOrder?.status || '-',
+    receptionDate: workOrder?.reception_date || null,
+    departureDate: workOrder?.departure_date || null,
+    equipmentCount: equipment.length,
+    completedSheets: equipment.filter((item) => item.field_sheet?.status === 'completed').length,
+    finalSheetPdfs: equipment.filter((item) => item.field_sheet?.has_final_pdf).length,
+    hasFinalPdf: Boolean(workOrder?.has_final_pdf),
+  };
+}
+
+// Documentos del handoff por OT (Captura): OT final + Hojas de Campo finales.
+export function captureGroupDocuments(group) {
+  const documents = [{
+    key: `ot-${group.work_order_id}`,
+    kind: 'work_order',
+    label: `OT final ${group.work_order_folio}`,
+    available: Boolean(group.has_final_pdf),
+  }];
+  for (const item of group.equipment || []) {
+    documents.push({
+      key: `sheet-${item.equipment_id}`,
+      kind: 'field_sheet',
+      label: `Hoja de Campo ${item.certificate_folio || `equipo ${item.position}`}`,
+      available: Boolean(item.field_sheet_has_final_pdf && item.field_sheet_id),
+      fieldSheetId: item.field_sheet_id || null,
+      equipmentId: item.equipment_id,
+    });
+  }
+  return documents;
+}
+
+export function countCaptureDocuments(summary) {
+  return (summary?.groups || [])
+    .flatMap(captureGroupDocuments)
+    .filter((document) => document.available).length;
 }
 
 export function captureStateLabel(summary) {

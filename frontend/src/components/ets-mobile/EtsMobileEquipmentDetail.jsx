@@ -1,12 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 
-import {
-  downloadServiceOrderMobileFieldSheetPdf,
-  getServiceOrderMobileFieldSheet,
-} from '../../services/api.js';
+import { getServiceOrderMobileFieldSheet } from '../../services/api.js';
 import { formatDateTime } from '../../utils/formatters.js';
 import EtsMobileCorrectionDialog from './EtsMobileCorrectionDialog.jsx';
-import EtsMobileModal, { openPdfBlob } from './EtsMobileModal.jsx';
+import EtsMobileModal from './EtsMobileModal.jsx';
+import { fieldSheetPdfLoader, viewLabPdf } from './labDocumentActions.js';
 import {
   LAB_FIELD_SHEET_STATUS_LABELS,
   correctionModeFor,
@@ -23,13 +21,14 @@ import {
 // "Ejecución técnica MYC Mobile" y para Captura. Sin inputs ni PATCH: la
 // única acción es administrativa ("Enviar a corrección", según permiso).
 
+// Patrón ERP read-only-grid (article/span/strong); sin inputs.
 function ReadOnlyGrid({ rows }) {
   return (
-    <dl className="ets-mobile-readonly__grid">
+    <div className="read-only-grid ets-lab-readonly-grid">
       {rows.map(([label, value]) => (
-        <div key={label}><dt>{label}</dt><dd>{value}</dd></div>
+        <article key={label}><span>{label}</span><strong>{value}</strong></article>
       ))}
-    </dl>
+    </div>
   );
 }
 
@@ -53,8 +52,7 @@ export default function EtsMobileEquipmentDetail({ serviceOrderId, equipmentId, 
 
   async function viewPdf(fieldSheetId) {
     try {
-      const { blob } = await downloadServiceOrderMobileFieldSheetPdf(serviceOrderId, fieldSheetId);
-      openPdfBlob(blob);
+      await viewLabPdf(fieldSheetPdfLoader(serviceOrderId, fieldSheetId), (problem) => setError(problem.message));
     } catch (requestError) {
       setError(requestError.message);
     }
@@ -79,10 +77,10 @@ export default function EtsMobileEquipmentDetail({ serviceOrderId, equipmentId, 
       {notice ? <div className="form-notice" role="status">{notice}</div> : null}
       {!detail && !error ? <p className="muted">Cargando…</p> : null}
       {detail ? (
-        <div className="ets-mobile-readonly" data-readonly="true">
-          <div className="ets-mobile-readonly__toolbar">
+        <div className="ets-lab-detail" data-readonly="true">
+          <div className="ets-lab-detail__toolbar">
             <p className="muted">Vista administrativa. Los datos técnicos sólo se capturan y corrigen en MYC Mobile.</p>
-            <div className="ets-mobile-equipment-card__actions">
+            <div className="toolbar-actions">
               {currentRevision?.has_final_pdf ? (
                 <button className="table-button" onClick={() => viewPdf(currentRevision.id)} type="button">Ver PDF final</button>
               ) : null}
@@ -94,35 +92,35 @@ export default function EtsMobileEquipmentDetail({ serviceOrderId, equipmentId, 
             </div>
           </div>
 
-          <section className="ets-mobile-readonly__section">
-            <h3>Equipo</h3>
+          <section className="quotation-section ets-lab-detail__section">
+            <div className="quotation-section__title"><div><p>Equipo</p><h3>Identidad y recepción</h3></div></div>
             <ReadOnlyGrid rows={describeEquipmentReadOnly(equipment)} />
           </section>
-          <section className="ets-mobile-readonly__section">
-            <h3>Cliente documental</h3>
+          <section className="quotation-section ets-lab-detail__section">
+            <div className="quotation-section__title"><div><p>Cliente documental</p><h3>Destinatario del certificado</h3></div></div>
             <ReadOnlyGrid rows={describeDocumentaryClient(equipment)} />
           </section>
 
-          <section className="ets-mobile-readonly__section">
-            <h3>Hoja de Campo</h3>
+          <section className="quotation-section ets-lab-detail__section">
+            <div className="quotation-section__title"><div><p>Hoja de Campo</p><h3>Datos técnicos capturados en MYC Mobile</h3></div></div>
             {!sheet ? <p className="muted">El equipo todavía no tiene Hoja de Campo vigente.</p> : null}
             {describeFieldSheetSections(sheet).map((section) => (
-              <div className="ets-mobile-readonly__group" key={section.title}>
+              <div className="ets-lab-detail__group" key={section.title}>
                 <h4>{section.title}</h4>
                 <ReadOnlyGrid rows={section.rows} />
               </div>
             ))}
             {describeCaptureValues(sheet).length ? (
-              <div className="ets-mobile-readonly__group">
+              <div className="ets-lab-detail__group">
                 <h4>Datos capturados</h4>
                 <ReadOnlyGrid rows={describeCaptureValues(sheet)} />
               </div>
             ) : null}
             {describeResultSections(sheet).map((section) => (
-              <div className="ets-mobile-readonly__group" key={section.key}>
+              <div className="ets-lab-detail__group" key={section.key}>
                 <h4>{section.title}</h4>
-                <div className="ets-mobile-readonly__table-wrap">
-                  <table className="ets-mobile-readonly__table">
+                <div className="ets-lab-table-wrap">
+                  <table className="ets-lab-table">
                     <thead>
                       <tr><th>#</th>{section.columns.map((column) => <th key={column.key}>{column.label}</th>)}</tr>
                     </thead>
@@ -140,9 +138,9 @@ export default function EtsMobileEquipmentDetail({ serviceOrderId, equipmentId, 
             ))}
           </section>
 
-          <section className="ets-mobile-readonly__section">
-            <h3>Revisiones</h3>
-            <ul className="ets-mobile-readonly__revisions">
+          <section className="quotation-section ets-lab-detail__section">
+            <div className="quotation-section__title"><div><p>Revisiones</p><h3>Historial y PDF final</h3></div></div>
+            <ul className="ets-lab-revisions">
               {detail.revisions.map((revision) => (
                 <li key={revision.id}>
                   <span>
