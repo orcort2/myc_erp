@@ -49,6 +49,7 @@ def test_capture_summary_complete_group_is_ready_and_ignores_tombstone(ctx):
         ({"pdf_file": "missing"}, "LAB_FINAL_PDF_MISSING"),
         ({"pdf_file": "tampered"}, "LAB_FINAL_PDF_HASH_MISMATCH"),
         ({"work_order_status": "in_progress"}, "LAB_WORK_ORDER_NOT_FINAL"),
+        ({"work_order_final_pdf": None}, "LAB_WORK_ORDER_FINAL_PDF_MISSING"),
     ],
 )
 def test_capture_blockers_partially_incomplete_group_stays_blocked(ctx, mutation, code):
@@ -68,6 +69,8 @@ def test_capture_blockers_partially_incomplete_group_stays_blocked(ctx, mutation
                 path.unlink() if value == "missing" else path.write_bytes(b"alterado")
             elif key == "work_order_status":
                 db.get(LabWorkOrder, ctx["child"]).status = value
+            elif key == "work_order_final_pdf":
+                db.get(LabWorkOrder, ctx["child"]).final_pdf = value
             else:
                 setattr(equipment, key, value)
         db.commit()
@@ -95,8 +98,11 @@ def test_capture_package_is_pdf_only_with_lab_folio_and_has_no_side_effects(ctx)
     # Estructura plana: una carpeta por OT; sin carpeta ETS ni carpeta por folio.
     assert names == [
         "OT-6438/Hoja_Campo_MYCT-09-2026-64381.pdf",
+        "OT-6438/OT-6438.pdf",
         "OT-6439/Hoja_Campo_MYCT-09-2026-64391.pdf",
+        "OT-6439/OT-6439.pdf",
     ]
+    assert archive.read("OT-6438/OT-6438.pdf") == b"%PDF-1.4 OT 6438"  # final_pdf persistido
     assert response.headers["content-disposition"] == f'attachment; filename="{order_folio}.zip"'
     assert all(name.endswith(".pdf") for name in names)  # sin XLSX/Master
     assert archive.read(names[0]) == expected  # PDF congelado, nunca regenerado
@@ -126,8 +132,9 @@ def test_capture_package_physical_case_single_ot_exact_namelist(ctx):
     _link(ctx)
     response = ctx["http"].get(_url(ctx, "/capture-package"), headers=ctx["headers"]["Captura"])
     assert response.status_code == 200, response.text
-    assert zipfile.ZipFile(io.BytesIO(response.content)).namelist() == [
+    assert sorted(zipfile.ZipFile(io.BytesIO(response.content)).namelist()) == [
         "OT-6438/Hoja_Campo_MYCA-09-26-4721.pdf",
+        "OT-6438/OT-6438.pdf",
     ]
 
 

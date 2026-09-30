@@ -1,8 +1,8 @@
 """Estrategia LAB del handoff documental a Captura (ETS ejecutado en MYC Mobile).
 
 "Captura" en el ERP es un handoff DOCUMENTAL, no captura técnica: el paquete
-es PDF-only y contiene exclusivamente las Hojas de Campo finales congeladas
-por LAB. No incluye XLSX/Master ni plantilla, no genera certificados, no
+es PDF-only y contiene exclusivamente, por OT, el PDF final oficial de la OT
+(``LabWorkOrder.final_pdf``) y las Hojas de Campo finales congeladas por LAB. No incluye XLSX/Master ni plantilla, no genera certificados, no
 reserva ni consume folios y no crea Equipment ERP.
 
 ServiceOrder → ServiceOrderLabLink → grupo LAB → equipo activo → FieldSheet
@@ -25,15 +25,21 @@ from sqlalchemy.orm import Session
 from app.models.lab_work_order import LabWorkOrder, LabWorkOrderEquipment
 from app.models.service_order import ServiceOrder
 from app.services.lab_work_orders import equipment_certificate_folio_resolved
-from app.services.service_order_mobile_execution import active_lab_link, linked_lab_group
+from app.services.service_order_mobile_execution import (
+    active_lab_link,
+    linked_lab_group,
+    work_order_final_pdf_available,
+)
 from app.services.storage_service import resolve_storage_path
 
 LAB_FINAL_WORK_ORDER_STATUSES = {"completed", "partially_closed"}
+WORK_ORDER_LEVEL_CODES = {"LAB_WORK_ORDER_NOT_FINAL", "LAB_WORK_ORDER_FINAL_PDF_MISSING"}
 
 BLOCKER_MESSAGES = {
     "LAB_LINK_REQUIRED": "El ETS no tiene un servicio MYC Mobile vinculado",
     "LAB_NO_ACTIVE_EQUIPMENT": "El servicio MYC Mobile vinculado no tiene equipos activos",
     "LAB_WORK_ORDER_NOT_FINAL": "La OT todavía no tiene cierre técnico en MYC Mobile",
+    "LAB_WORK_ORDER_FINAL_PDF_MISSING": "La OT cerrada no tiene PDF final congelado",
     "LAB_CERTIFICATE_FOLIO_MISSING": "El equipo no tiene folio de certificado",
     "LAB_CERTIFICATE_FOLIO_NOT_READY": "El folio de certificado no está reservado/autorizado",
     "LAB_FIELD_SHEET_MISSING": "El equipo no tiene Hoja de Campo",
@@ -105,11 +111,13 @@ def lab_package_summary(db: Session, order: ServiceOrder) -> dict:
     )
     for work_order in members:
         work_order_final = work_order.status in LAB_FINAL_WORK_ORDER_STATUSES
+        work_order_pdf = work_order_final_pdf_available(work_order)
         group = {
             "work_order_id": work_order.id,
             "work_order_folio": work_order.folio,
             "status": work_order.status,
             "final": work_order_final,
+            "has_final_pdf": work_order_pdf,
             "ready": 0,
             "pending": 0,
             "equipment": [],
@@ -119,10 +127,18 @@ def lab_package_summary(db: Session, order: ServiceOrder) -> dict:
                 "LAB_WORK_ORDER_NOT_FINAL",
                 work_order_id=work_order.id, work_order_folio=work_order.folio, status=work_order.status,
             ))
+        elif not work_order_pdf:
+            # El handoff documental requiere la OT final además de las hojas.
+            summary["blockers"].append(_blocker(
+                "LAB_WORK_ORDER_FINAL_PDF_MISSING",
+                work_order_id=work_order.id, work_order_folio=work_order.folio, status=work_order.status,
+            ))
         for equipment in work_order.active_equipment:
             codes = _equipment_blockers(equipment)
             if not work_order_final:
                 codes = ["LAB_WORK_ORDER_NOT_FINAL", *codes]
+            elif not work_order_pdf:
+                codes = ["LAB_WORK_ORDER_FINAL_PDF_MISSING", *codes]
             ready = not codes
             group["ready" if ready else "pending"] += 1
             group["equipment"].append({
@@ -132,14 +148,22 @@ def lab_package_summary(db: Session, order: ServiceOrder) -> dict:
                 "identification": equipment.identification,
                 "certificate_folio": equipment.certificate_folio,
                 "folio_status": equipment.folio_status,
+                "field_sheet_id": (
+                    equipment.current_field_sheet.id if equipment.current_field_sheet else None
+                ),
                 "field_sheet_status": (
                     equipment.current_field_sheet.status if equipment.current_field_sheet else None
+                ),
+                "field_sheet_has_final_pdf": bool(
+                    equipment.current_field_sheet
+                    and equipment.current_field_sheet.final_pdf_path
+                    and equipment.current_field_sheet.final_pdf_sha256
                 ),
                 "ready": ready,
                 "blockers": codes,
             })
             for code in codes:
-                if code == "LAB_WORK_ORDER_NOT_FINAL":
+                if code in WORK_ORDER_LEVEL_CODES:  # ya reportado una vez por OT
                     continue
                 summary["blockers"].append(_blocker(
                     code,
@@ -164,7 +188,8 @@ def _folder(value: str) -> str:
 
 
 def lab_service_order_package(db: Session, order: ServiceOrder) -> tuple[bytes, str]:
-    """ZIP PDF-only: OT-<folio OT>/Hoja_Campo_<certificate_folio>.pdf.
+    """ZIP PDF-only: por OT, su PDF final oficial y sus Hojas de Campo finales:
+    OT-<folio>/OT-<folio>.pdf y OT-<folio>/Hoja_Campo_<certificate_folio>.pdf.
 
     El ZIP ya se nombra con el folio ETS: no hay carpeta exterior del ETS ni
     carpeta intermedia por folio de certificado (el folio va en el nombre).
@@ -187,6 +212,8 @@ def lab_service_order_package(db: Session, order: ServiceOrder) -> tuple[bytes, 
     buffer = BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for work_order in members:
+            # LabWorkOrder.final_pdf persistido al cierre; nunca se regenera.
+            archive.writestr(f"OT-{work_order.folio}/OT-{work_order.folio}.pdf", work_order.final_pdf)
             for equipment in work_order.active_equipment:
                 sheet = equipment.current_field_sheet
                 path = resolve_storage_path(sheet.final_pdf_path)
