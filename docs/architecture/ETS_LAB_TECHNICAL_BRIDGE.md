@@ -306,6 +306,7 @@ contrato abierto a futuras verticales Mobile sin asumir que todo servicio es cal
 | --- | --- | --- | --- |
 | GET | `/mobile-execution` | `service_orders.read` | Grupo/OT/equipo (identidad, `report_number`, `is_good_condition`, observaciones de recepción, `service_type`, empresa vinculada, cliente documental `order`/`different` con snapshots, `certificate_folio`, `folio_status`) y resumen de hoja (id, revisión, estado, plantilla, PDF final, timestamps). Sin valores técnicos; tombstones sólo contados. Sin vínculo: `linked=false`. |
 | GET | `/mobile-execution/equipment/{eq}/field-sheet` | `service_orders.read` + `field_sheets.read` | Detalle de la revisión vigente (`FieldSheetRead`) e historial de revisiones; 409 `LAB_LINK_REQUIRED`, 404 fuera del grupo o tombstone. |
+| GET | `/mobile-execution/work-orders/{wo}/pdf` | `service_orders.read` | PDF oficial congelado de la OT (`LabWorkOrder.final_pdf`, `OT-<folio>-r<rev>.pdf`) reutilizando `lab_work_orders.get_pdf`; 404 si la OT no pertenece al grupo vinculado, 409 sin vínculo o antes del cierre. La proyección expone `has_final_pdf`/`final_pdf_generated_at` por OT. |
 | GET | `/mobile-execution/field-sheets/{sheet}/pdf` | `service_orders.read` + `field_sheets.read` | PDF final congelado (vigente o histórico) tras validar SHA-256; nunca regenera. |
 
 ### Matriz de acciones administrativas LAB (auditoría)
@@ -363,19 +364,23 @@ Readiness por equipo activo: `certificate_folio` presente y resuelto
 (`equipment_certificate_folio_resolved`, la misma regla del cierre LAB), hoja vigente
 `completed`, `final_pdf_path` + `final_pdf_sha256`, archivo presente y hash coincidente;
 además, cada OT no cancelada del grupo debe estar técnicamente final
-(`completed`/`partially_closed`). Contenido incompleto bloquea aunque la OT esté cerrada.
+(`completed`/`partially_closed`) y conservar su PDF oficial `LabWorkOrder.final_pdf`
+(si falta: `LAB_WORK_ORDER_FINAL_PDF_MISSING`, una vez por OT; sus equipos cuentan como
+pendientes). Contenido incompleto bloquea aunque la OT esté cerrada.
 No se exigen Master, `certificate_master_*` ni plantilla.
 
 - `GET capture-package-summary` → `source="lab"`, `ready`, `ready_total`,
   `pending_total`, `root_folio`, `groups` y `blockers` estructurados:
   `LAB_LINK_REQUIRED`, `LAB_NO_ACTIVE_EQUIPMENT`, `LAB_WORK_ORDER_NOT_FINAL`,
+  `LAB_WORK_ORDER_FINAL_PDF_MISSING`,
   `LAB_CERTIFICATE_FOLIO_MISSING`, `LAB_CERTIFICATE_FOLIO_NOT_READY`,
   `LAB_FIELD_SHEET_MISSING`, `LAB_FIELD_SHEET_NOT_COMPLETED`, `LAB_FINAL_PDF_MISSING`,
   `LAB_FINAL_PDF_HASH_MISMATCH`. Sin efectos: no muta el lifecycle del ETS.
-- `GET capture-package` → ZIP todo-o-nada nombrado `<folio ETS>.zip` con estructura
-  plana `OT-<folio OT>/Hoja_Campo_<certificate_folio>.pdf` (sin carpeta ETS ni carpeta
-  por folio; nombres sanitizados; p. ej. `OT-6438/Hoja_Campo_MYCA-09-26-4721.pdf`) con
-  los archivos congelados (nunca regenerados, SHA-256 validado); 409 `LAB_CAPTURE_PACKAGE_BLOCKED` con bloqueos.
+- `GET capture-package` → ZIP todo-o-nada nombrado `<folio ETS>.zip`; por OT su PDF
+  oficial y sus Hojas de Campo finales: `OT-<folio>/OT-<folio>.pdf`
+  (`LabWorkOrder.final_pdf` persistido) y `OT-<folio>/Hoja_Campo_<certificate_folio>.pdf`
+  (p. ej. `OT-6438/OT-6438.pdf` y `OT-6438/Hoja_Campo_MYCA-09-26-4721.pdf`), sin carpeta
+  ETS ni por folio, nombres sanitizados, nunca regenerados (SHA-256 validado en hojas); 409 `LAB_CAPTURE_PACKAGE_BLOCKED` con bloqueos.
   No incluye XLSX/Master, no crea Certificate, no reserva ni consume folios y no crea
   Equipment ERP.
 - Paquete por OT ERP y carga XLSX responden 409 estructurado
@@ -420,9 +425,8 @@ BLOQUEADA, bloqueos y la descarga PDF; los ETS históricos/mixtos conservan su U
   VALIDANDO, `ready` → LISTA, en otro caso BLOQUEADA. "Actualizar", correcciones,
   cancelaciones y cambios de vínculo refrescan ese mismo loader. No muta el ETS.
   Los ETS legacy siguen con `getCaptureStageStatus`.
-- Vista administrativa con clases propias (`.ets-mobile-work-order*`,
-  `.ets-mobile-equipment-card*`, `minmax(0, …)` y container queries por ancho del
-  contenedor); las clases legacy de Hojas de Campo no se modificaron.
+- Layout con clases propias `.ets-lab-*` (antes `.ets-mobile-*`), `minmax(0, …)` y
+  container queries por ancho del contenedor; las clases legacy no se modificaron.
 - La identidad del equipo ("1. BÁSCULA · Ver detalle") y el estado de la hoja en Captura
   abren el MISMO detalle read-only (`EtsMobileEquipmentDetail`): equipo, cliente
   documental, datos de hoja (fechas, lugar, ubicación, unidades, método, división
@@ -431,6 +435,20 @@ BLOQUEADA, bloqueos y la descarga PDF; los ETS históricos/mixtos conservan su U
   `row_data` dinámico), revisiones vigente/histórica con PDF final. Sin inputs ni PATCH.
   "Enviar a corrección" aparece en el detalle con `work_orders.reopen` y modo válido y
   abre el diálogo único existente.
+
+### Representación documental ERP-native (2026-09-29)
+
+La OT LAB es un documento de primer nivel en el ERP: cada OT muestra, separados,
+"Documentos" (Ver / Imprimir / Descargar OT sobre el PDF oficial congelado, o "OT final
+no disponible") y "Administración" (cancelar/restaurar, según permiso). Ver e imprimir
+reutilizan el helper autenticado de ventanas PDF del ERP (`quotationPdfWindow.js`), que
+abre el PDF oficial en el visor del navegador; nunca se imprime el DOM ni HTML. La
+cabecera de OT muestra folio, raíz/miembro, estado, cliente, recepción, salida, equipos,
+hojas completadas y PDF finales. Captura lista por OT sus documentos (OT final + Hojas
+de Campo) con Ver OT / Ver detalle equipo / Ver hoja. La presentación usa el design
+system del ERP (`quotation-section`, `section-heading`, `read-only-grid`,
+`glass-card-mini`, `ets-metric-strip`, `quotation-status`, `table-button`,
+`toolbar-actions`); las clases `.ets-lab-*` sólo resuelven layout.
 
 ### Navegación futura "Servicios" (preparación, no implementada)
 

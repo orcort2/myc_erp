@@ -710,6 +710,13 @@ ETS_LAB_PHASE3_FILES.update({
     'frontend/src/utils/etsStages.js': ('Estados de etapas ETS', 'Calcula etapas Equipos/Hojas/Captura/Calidad/Certificados del pipeline ERP y la etapa Captura de ETS MYC Mobile a partir del resumen LAB (VALIDANDO/LISTA/BLOQUEADA) sin mutar el ETS.', 'JavaScript puro', 'ServiceOrdersPage y CertificatesPage', 'Alto'),
 })
 FORCE_RECLASSIFY.update(ETS_LAB_PHASE3_FILES)
+ETS_LAB_PHASE3_FILES.update({
+    'frontend/src/components/ets-mobile/labDocumentActions.js': ('Acciones documentales PDF LAB', 'Ver, imprimir y descargar el PDF oficial de OT LAB y los PDF finales de Hojas de Campo desde el ETS reutilizando el helper autenticado de ventanas PDF; nunca imprime DOM/HTML.', 'api.js, quotationPdfWindow', 'Componentes ets-mobile', 'Alto'),
+    'frontend/src/utils/quotationPdfWindow.js': ('Ventana PDF autenticada del ERP', 'Reserva la pestaña en el clic, carga el PDF autenticado como blob, opcionalmente dispara la impresión del visor y libera la URL; compartido por Cotizaciones y documentos oficiales LAB del ETS (mensaje de bloqueo configurable).', 'Web APIs', 'QuotationsPage y labDocumentActions', 'Alto'),
+    'backend/app/services/lab_capture_packages.py': ('Captura LAB-backed PDF-only', 'Readiness por OT (cierre técnico y PDF oficial LabWorkOrder.final_pdf) y por equipo activo (folio LAB resuelto, hoja completed, PDF final con hash válido); ZIP OT-<folio>/OT-<folio>.pdf + OT-<folio>/Hoja_Campo_<folio>.pdf sin XLSX, Master, Certificate, folios ni Equipment; sin efectos en GET.', 'Proyección LAB, regla de folio LAB, storage_service', 'capture_packages (estrategia B) y pruebas', 'Crítico'),
+    'backend/app/services/service_order_mobile_execution.py': ('Proyección READ-ONLY ETS ↔ LAB', 'Resuelve ETS → ServiceOrderLabLink activo → raíz → grupo LAB → equipo activo → FieldSheet vigente consultando LAB directamente; sirve el PDF final congelado de hojas (SHA-256) y el PDF oficial de OT del grupo vía get_pdf; nunca crea ni copia Equipment, ServiceWorkOrder, FieldSheet ni snapshots.', 'SQLAlchemy, modelos ETS/LAB, lab_work_orders.get_pdf, storage_service', 'Router ETS, Captura LAB, acciones administrativas y pruebas', 'Crítico'),
+})
+FORCE_RECLASSIFY.update(ETS_LAB_PHASE3_FILES)
 
 
 def words(path: Path) -> str:

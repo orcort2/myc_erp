@@ -8,6 +8,18 @@
 
 # Estado operativo actual del ERP MYC
 
+## Representación documental LAB en el ERP (2026-09-29)
+
+- Preflight limpio: HEAD = origin = `29d788924639c485ff6ea466e35be02291bc9ad0`.
+- PDF oficial de OT LAB accesible desde el ETS (`/mobile-execution/work-orders/{id}/pdf`,
+  reutiliza `get_pdf`, sin regenerar). Captura LAB incluye por OT `OT-<folio>.pdf` +
+  Hojas de Campo y bloquea con `LAB_WORK_ORDER_FINAL_PDF_MISSING`. Inventario API: 551.
+- Vistas Ejecución/Captura/detalle alineadas al design system del ERP (`.ets-lab-*`
+  sólo layout); geometría verificada con el CSS real a 1080/300 px.
+- Backend focalizado 44 passed; frontend 113/114 (fallo preexistente
+  `notificationNavigation`); build correcto. Sin migraciones ni cambios en Mobile,
+  vínculo, folios, corrección, entregas, Certificate, XLSX o Calidad.
+
 ## Cierre UX ETS ↔ LAB Fase 3 (2026-09-29)
 
 - Preflight limpio: HEAD = origin = `6a0e53e5f86680bd9f375a8b37393e686f2bb3bb`.

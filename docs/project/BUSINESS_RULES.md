@@ -22,8 +22,9 @@
 - Cancelar/restaurar OT LAB desde el ERP usa el dominio (`lab_work_orders.cancel`). El
   ERP no ofrece DELETE físico de OT/equipo/hoja LAB.
 - Captura LAB está LISTA sólo si cada equipo activo tiene folio resuelto, hoja vigente
-  `completed`, PDF final con SHA-256 válido y cada OT no cancelada es técnicamente final;
-  el paquete es PDF-only, todo-o-nada y sin efectos (no Certificate, folio ni Equipment).
+  `completed`, PDF final con SHA-256 válido y cada OT no cancelada es técnicamente final
+  y conserva su PDF oficial; el paquete (por OT: OT final + Hojas de Campo finales) es
+  PDF-only, todo-o-nada y sin efectos (no Certificate, folio ni Equipment).
 - `expected_certificate_master_id` es LEGACY: Calibración/Verificación se dan de alta sin
   Master; editar un concepto con Master histórico inválido procede si no se cambia el Master.
 
