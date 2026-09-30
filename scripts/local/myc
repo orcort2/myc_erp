@@ -1,0 +1,325 @@
+#!/usr/bin/env bash
+
+set -u
+
+SOURCE="${BASH_SOURCE[0]}"
+
+while [ -L "$SOURCE" ]; do
+  SOURCE_DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+
+  case "$SOURCE" in
+    /*) ;;
+    *) SOURCE="$SOURCE_DIR/$SOURCE" ;;
+  esac
+done
+
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+SCRIPT_PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." >/dev/null 2>&1 && pwd)"
+
+if CURRENT_GIT_ROOT="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null)"; then
+  if [ -f "$CURRENT_GIT_ROOT/backend/requirements.txt" ] && [ -d "$CURRENT_GIT_ROOT/frontend" ]; then
+    PROJECT_ROOT="$CURRENT_GIT_ROOT"
+  else
+    PROJECT_ROOT="$SCRIPT_PROJECT_ROOT"
+  fi
+else
+  PROJECT_ROOT="$SCRIPT_PROJECT_ROOT"
+fi
+BACKEND_DIR="$PROJECT_ROOT/backend"
+FRONTEND_DIR="$PROJECT_ROOT/frontend"
+MOBILE_DIR="$PROJECT_ROOT/myc-mobile"
+
+BACKEND_HOST="127.0.0.1"
+BACKEND_PORT="8000"
+FRONTEND_HOST="127.0.0.1"
+FRONTEND_PORT="5173"
+
+BACKEND_PID=""
+FRONTEND_PID=""
+
+print_header() {
+  printf '\n========================================\n'
+  printf '%s\n' "$1"
+  printf '========================================\n\n'
+}
+
+ok() {
+  printf '[OK] %s\n' "$1"
+}
+
+warn() {
+  printf '[WARN] %s\n' "$1"
+}
+
+fail() {
+  printf '[FAIL] %s\n' "$1"
+}
+
+find_python() {
+  if [ -x "$PROJECT_ROOT/.venv/bin/python" ]; then
+    printf '%s\n' "$PROJECT_ROOT/.venv/bin/python"
+    return 0
+  fi
+
+  if [ -x "$PROJECT_ROOT/venv/bin/python" ]; then
+    printf '%s\n' "$PROJECT_ROOT/venv/bin/python"
+    return 0
+  fi
+
+  if [ -x "$BACKEND_DIR/.venv/bin/python" ]; then
+    printf '%s\n' "$BACKEND_DIR/.venv/bin/python"
+    return 0
+  fi
+
+  if [ -x "$BACKEND_DIR/venv/bin/python" ]; then
+    printf '%s\n' "$BACKEND_DIR/venv/bin/python"
+    return 0
+  fi
+
+  return 1
+}
+
+port_pid() {
+  lsof -tiTCP:"$1" -sTCP:LISTEN 2>/dev/null | head -1
+}
+
+check_port_free() {
+  local port="$1"
+  local label="$2"
+  local pid
+
+  pid="$(port_pid "$port")"
+
+  if [ -n "$pid" ]; then
+    fail "$label: puerto $port ocupado por PID $pid"
+    return 1
+  fi
+
+  ok "$label: puerto $port disponible"
+  return 0
+}
+
+doctor() {
+  local errors=0
+  local python_bin=""
+
+  print_header "MYC SYSTEM - DOCTOR"
+
+  printf 'Proyecto : %s\n\n' "$PROJECT_ROOT"
+
+  if git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    ok "Git repository"
+    printf '     Rama: %s\n' "$(git -C "$PROJECT_ROOT" branch --show-current 2>/dev/null || true)"
+    printf '     HEAD: %s\n' "$(git -C "$PROJECT_ROOT" rev-parse --short HEAD 2>/dev/null || true)"
+  else
+    fail "Git repository"
+    errors=$((errors + 1))
+  fi
+
+  if [ -f "$BACKEND_DIR/.env" ]; then
+    ok "backend/.env"
+  else
+    fail "backend/.env ausente"
+    errors=$((errors + 1))
+  fi
+
+  if [ -f "$FRONTEND_DIR/.env.local" ] || [ -f "$FRONTEND_DIR/.env.dev" ]; then
+    ok "frontend env local"
+  else
+    fail "frontend .env.local/.env.dev ausente"
+    errors=$((errors + 1))
+  fi
+
+  if [ -f "$MOBILE_DIR/.env" ]; then
+    ok "myc-mobile/.env"
+  else
+    warn "myc-mobile/.env ausente"
+  fi
+
+  if python_bin="$(find_python)"; then
+    ok "Python virtualenv"
+    printf '     %s\n' "$python_bin"
+    printf '     %s\n' "$("$python_bin" --version 2>&1)"
+  else
+    fail "No se encontro .venv/venv utilizable"
+    errors=$((errors + 1))
+  fi
+
+  if [ -n "$python_bin" ]; then
+    if "$python_bin" -c 'import fastapi, sqlalchemy, alembic, uvicorn' >/dev/null 2>&1; then
+      ok "Dependencias backend"
+    else
+      fail "Dependencias backend incompletas"
+      errors=$((errors + 1))
+    fi
+  fi
+
+  if command -v node >/dev/null 2>&1; then
+    ok "Node $(node --version)"
+  else
+    fail "Node no disponible"
+    errors=$((errors + 1))
+  fi
+
+  if command -v npm >/dev/null 2>&1; then
+    ok "npm $(npm --version)"
+  else
+    fail "npm no disponible"
+    errors=$((errors + 1))
+  fi
+
+  if [ -d "$FRONTEND_DIR/node_modules" ]; then
+    ok "frontend/node_modules"
+  else
+    fail "frontend/node_modules ausente"
+    errors=$((errors + 1))
+  fi
+
+  if [ -x "$FRONTEND_DIR/node_modules/.bin/vite" ]; then
+    ok "Vite frontend"
+  else
+    fail "Vite frontend no disponible"
+    errors=$((errors + 1))
+  fi
+
+  if [ -d "$MOBILE_DIR/node_modules" ]; then
+    ok "myc-mobile/node_modules"
+  else
+    warn "myc-mobile/node_modules ausente"
+  fi
+
+  if command -v soffice >/dev/null 2>&1; then
+    ok "LibreOffice/soffice"
+    soffice --version 2>/dev/null | head -1 | sed 's/^/     /'
+  elif [ -x "/Applications/LibreOffice.app/Contents/MacOS/soffice" ]; then
+    ok "LibreOffice/soffice"
+    "/Applications/LibreOffice.app/Contents/MacOS/soffice" --version 2>/dev/null | head -1 | sed 's/^/     /'
+  else
+    warn "LibreOffice no encontrado en PATH ni /Applications"
+  fi
+
+  check_port_free "$BACKEND_PORT" "Backend" || errors=$((errors + 1))
+  check_port_free "$FRONTEND_PORT" "Frontend" || errors=$((errors + 1))
+
+  printf '\n'
+
+  if [ "$errors" -eq 0 ]; then
+    ok "Doctor finalizado sin bloqueos"
+    return 0
+  fi
+
+  fail "Doctor encontro $errors bloqueo(s)"
+  return 1
+}
+
+cleanup() {
+  trap - INT TERM EXIT
+
+  if [ -n "$BACKEND_PID" ] && kill -0 "$BACKEND_PID" 2>/dev/null; then
+    kill "$BACKEND_PID" 2>/dev/null || true
+  fi
+
+  if [ -n "$FRONTEND_PID" ] && kill -0 "$FRONTEND_PID" 2>/dev/null; then
+    kill "$FRONTEND_PID" 2>/dev/null || true
+  fi
+
+  wait "$BACKEND_PID" 2>/dev/null || true
+  wait "$FRONTEND_PID" 2>/dev/null || true
+}
+
+prefix_stream() {
+  local prefix="$1"
+
+  while IFS= read -r line; do
+    printf '[%s] %s\n' "$prefix" "$line"
+  done
+}
+
+local_env() {
+  local python_bin
+
+  if ! python_bin="$(find_python)"; then
+    fail "No se encontro entorno Python"
+    return 1
+  fi
+
+  if ! check_port_free "$BACKEND_PORT" "Backend"; then
+    return 1
+  fi
+
+  if ! check_port_free "$FRONTEND_PORT" "Frontend"; then
+    return 1
+  fi
+
+  if [ ! -x "$FRONTEND_DIR/node_modules/.bin/vite" ]; then
+    fail "Vite no esta instalado en frontend/node_modules"
+    printf 'Ejecuta: cd "%s" && npm ci\n' "$FRONTEND_DIR"
+    return 1
+  fi
+
+  print_header "MYC SYSTEM - ENTORNO LOCAL"
+
+  printf 'Proyecto : %s\n' "$PROJECT_ROOT"
+  printf 'Backend  : http://%s:%s\n' "$BACKEND_HOST" "$BACKEND_PORT"
+  printf 'Frontend : http://localhost:%s\n' "$FRONTEND_PORT"
+  printf '\nPython   : %s\n\n' "$python_bin"
+
+  trap cleanup INT TERM EXIT
+
+  printf 'Iniciando backend...\n'
+
+  (
+    cd "$BACKEND_DIR" || exit 1
+    exec "$python_bin" -m uvicorn app.main:app \
+      --reload \
+      --host "$BACKEND_HOST" \
+      --port "$BACKEND_PORT"
+  ) > >(prefix_stream "BACKEND") 2>&1 &
+
+  BACKEND_PID=$!
+
+  printf 'Iniciando frontend...\n'
+
+  (
+    cd "$FRONTEND_DIR" || exit 1
+    exec npm run dev:local -- --port "$FRONTEND_PORT"
+  ) > >(prefix_stream "FRONTEND") 2>&1 &
+
+  FRONTEND_PID=$!
+
+  while true; do
+    if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+      fail "Backend termino inesperadamente"
+      return 1
+    fi
+
+    if ! kill -0 "$FRONTEND_PID" 2>/dev/null; then
+      fail "Frontend termino inesperadamente"
+      return 1
+    fi
+
+    sleep 1
+  done
+}
+
+usage() {
+  cat <<EOF_USAGE
+Uso:
+  myc doctor
+  myc local
+EOF_USAGE
+}
+
+case "${1:-}" in
+  doctor)
+    doctor
+    ;;
+  local)
+    local_env
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac
