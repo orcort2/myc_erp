@@ -8,6 +8,7 @@ import { emailStatusLabels } from '../utils/quotationEmail.js';
 function QuotationEmailHistory({ quotationId, refreshKey = 0, canResend = false, onResend = () => {} }) {
   const [deliveries, setDeliveries] = useState([]);
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
@@ -15,6 +16,8 @@ function QuotationEmailHistory({ quotationId, refreshKey = 0, canResend = false,
       setError('');
     } catch (requestError) {
       setError(requestError.message);
+    } finally {
+      setIsLoading(false);
     }
   }, [quotationId]);
 
@@ -29,7 +32,8 @@ function QuotationEmailHistory({ quotationId, refreshKey = 0, canResend = false,
         <h3>Envíos por correo</h3>
       </div>
       {error ? <div className="form-error">{error}</div> : null}
-      {deliveries.length === 0 && !error ? <div className="clients-empty">Esta cotización aún no se ha enviado por correo.</div> : null}
+      {isLoading ? <div className="clients-empty">Cargando correos…</div> : null}
+      {!isLoading && deliveries.length === 0 && !error ? <div className="clients-empty">Esta cotización aún no se ha enviado por correo.</div> : null}
       <div className="quotation-history-list">
         {deliveries.map((delivery) => (
           <article className="quotation-email-delivery" key={delivery.id}>
@@ -49,7 +53,7 @@ function QuotationEmailHistory({ quotationId, refreshKey = 0, canResend = false,
               ) : null}
             </div>
             {delivery.status === 'failed' && canResend ? (
-              <button className="table-button" onClick={onResend} type="button">
+              <button className="table-button" onClick={() => onResend(delivery)} type="button">
                 Reenviar
               </button>
             ) : null}

@@ -487,7 +487,8 @@ function QuotationsPage({ user = null }) {
   const [isDetailSaving, setIsDetailSaving] = useState(false);
   const [isDetailAutosaving, setIsDetailAutosaving] = useState(false);
   const [autosaveStatus, setAutosaveStatus] = useState('');
-  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
+  // null = closed; otherwise the modal opens (optionally preloaded with a failed attempt's recipients).
+  const [emailModal, setEmailModal] = useState(null);
   const [emailHistoryKey, setEmailHistoryKey] = useState(0);
   const [isTemplateSaving, setIsTemplateSaving] = useState(false);
   const [savingDraftIds, setSavingDraftIds] = useState(new Set());
@@ -840,6 +841,7 @@ function QuotationsPage({ user = null }) {
   }
 
   function closeQuotationDetail() {
+    setEmailModal(null);
     setIsDetailOpen(false);
     setSelectedQuotation(null);
     setDetailForm(emptyQuotationForm);
@@ -2368,7 +2370,7 @@ function QuotationsPage({ user = null }) {
                   Imprimir
                 </button>
                 {canEmailQuotations ? (
-                  <button className="table-button" onClick={() => setIsEmailModalOpen(true)} type="button">
+                  <button className="table-button" onClick={() => setEmailModal({})} type="button">
                     Enviar por correo
                   </button>
                 ) : null}
@@ -2432,7 +2434,7 @@ function QuotationsPage({ user = null }) {
                       <h3>Ficha editable</h3>
                     </div>
                     <div className="quotation-commercial-grid">
-                      <article className="quotation-client-card">
+                      <article className="quotation-client-card quotation-commercial-grid__wide">
                         <span>Cliente</span>
                         <strong>{getClientDisplayName(clientsById.get(Number(detailForm.clientId)) ?? clientsById.get(selectedQuotation.client_id))}</strong>
                         <button
@@ -2447,7 +2449,7 @@ function QuotationsPage({ user = null }) {
                           Elegir cliente
                         </button>
                       </article>
-                      <label>
+                      <label className="quotation-commercial-grid__wide">
                         Contacto de la cotización
                         <select
                           disabled={isQuotationTerminal(selectedQuotation)}
@@ -2944,20 +2946,13 @@ function QuotationsPage({ user = null }) {
             {quotationDetailTab === 'emails' ? (
               <QuotationEmailHistory
                 canResend={canEmailQuotations}
-                onResend={() => setIsEmailModalOpen(true)}
+                onResend={(delivery) => setEmailModal({ initialTo: delivery.to, initialCc: delivery.cc })}
                 quotationId={selectedQuotation.id}
                 refreshKey={emailHistoryKey}
               />
             ) : null}
 
-            {isEmailModalOpen ? (
-              <QuotationEmailModal
-                folio={selectedQuotation.folio}
-                onClose={() => setIsEmailModalOpen(false)}
-                onSent={() => setEmailHistoryKey((current) => current + 1)}
-                quotationId={selectedQuotation.id}
-              />
-            ) : null}
+
 
             {quotationDetailTab === 'history' ? (
               <section className="quotation-section">
@@ -3009,6 +3004,18 @@ function QuotationsPage({ user = null }) {
             ) : null}
           </section>
         </div>
+      ) : null}
+
+      {emailModal && selectedQuotation ? (
+        <QuotationEmailModal
+          folio={selectedQuotation.folio}
+          initialCc={emailModal.initialCc ?? null}
+          initialTo={emailModal.initialTo ?? null}
+          key={`${selectedQuotation.id}-${(emailModal.initialTo ?? []).join('|')}`}
+          onClose={() => setEmailModal(null)}
+          onSent={() => setEmailHistoryKey((current) => current + 1)}
+          quotationId={selectedQuotation.id}
+        />
       ) : null}
 
       {isClientPickerOpen ? (

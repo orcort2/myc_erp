@@ -10,7 +10,11 @@ import { contactIdAfterClientChange, contactIdPayload, contactOptionsForClient }
 import {
   addManualRecipient,
   buildSendPayload,
+  canSendEmail,
+  createVersionGate,
   isValidEmail,
+  selectInCc,
+  selectInTo,
   sendResultMessage,
   toggleRecipient
 } from './quotationEmail.js';
@@ -22,6 +26,7 @@ const panel = source('../components/ClientContactsPanel.jsx');
 const modal = source('../components/QuotationEmailModal.jsx');
 const history = source('../components/QuotationEmailHistory.jsx');
 const api = source('../services/api.js');
+const css = source('../styles/global.css');
 
 const xyz = {
   id: 1,
@@ -134,7 +139,7 @@ test('history is contextual and "Reenviar" re-runs the contextual flow (no gener
   assert.match(api, /\/quotations\/\$\{quotationId\}\/email\/deliveries/);
   assert.match(history, /delivery\.status === 'failed' && canResend/);
   assert.match(history, /Reenviar/);
-  assert.match(quotationsPage, /onResend=\{\(\) => setIsEmailModalOpen\(true\)\}/);
+  assert.match(quotationsPage, /onResend=\{\(delivery\) => setEmailModal\(\{ initialTo: delivery\.to, initialCc: delivery\.cc \}\)\}/);
   assert.doesNotMatch(history + modal + api, /\/email\/deliveries\/\$\{[^}]+\}\/retry/);
   assert.match(quotationsPage, /\['emails', 'Correos'\]/);
 });
@@ -167,4 +172,87 @@ test('manual recipients, read-only sandboxed preview and non-delivery wording su
   assert.match(modal, /PDF oficial/);
   assert.equal(sendResultMessage({ sent: true }), 'El relay aceptó el correo para envío.');
   assert.doesNotMatch(modal + history, /cliente recibi[óo]|entregado|le[ií]do/i);
+});
+
+// ---- preview consistency (race + stale preview) --------------------------------
+test('an older preview answer never overwrites the newest one', async () => {
+  const gate = createVersionGate();
+  let shown = null;
+  const answer = (label, version, delay) =>
+    new Promise((resolve) => setTimeout(resolve, delay)).then(() => {
+      if (gate.isCurrent(version)) shown = label;
+    });
+  const a = gate.next(); // TO = Ana (slow)
+  const b = gate.next(); // TO = Luis (fast, finishes first)
+  await Promise.all([answer('Ana', a, 20), answer('Luis', b, 1)]);
+  assert.equal(shown, 'Luis');
+  gate.invalidate(); // modal closed / selection emptied
+  assert.equal(gate.isCurrent(b), false);
+  assert.match(modal, /if \(!gate\.current\.isCurrent\(version\)\) return;/);
+  assert.match(modal, /useRef\(createVersionGate\(\)\)/);
+});
+
+test('Enviar is disabled while loading, refreshing, sending, stale or without TO', () => {
+  const ok = { isLoading: false, isSending: false, isRefreshingPreview: false, previewCurrent: true, to: ['a@x.com'] };
+  assert.equal(canSendEmail(ok), true);
+  for (const patch of [{ isLoading: true }, { isSending: true }, { isRefreshingPreview: true }, { previewCurrent: false }, { to: [] }]) {
+    assert.equal(canSendEmail({ ...ok, ...patch }), false, JSON.stringify(patch));
+  }
+});
+
+test('a failed preview refresh keeps the old preview unsendable and states are separated', () => {
+  const refresh = modal.slice(modal.indexOf('async function refreshPreview'), modal.indexOf('function changeSelection'));
+  assert.match(refresh, /setPreviewCurrent\(false\)/);
+  const catchBlock = refresh.slice(refresh.indexOf('catch'));
+  assert.doesNotMatch(catchBlock.slice(0, catchBlock.indexOf('finally')), /setPreviewCurrent\(true\)/);
+  assert.match(modal, /const \[isLoading, setIsLoading\]/);
+  assert.match(modal, /const \[isRefreshingPreview, setIsRefreshingPreview\]/);
+  assert.match(modal, /const \[isSending, setIsSending\]/);
+  assert.match(modal, /disabled=\{isSending\} onClick=\{onClose\}/); // closing is only blocked while sending
+  assert.match(modal, /disabled=\{!canSend\}/);
+});
+
+test('an address is never selected in TO and CC at once', () => {
+  assert.deepEqual(selectInTo(['a@x.com'], ['b@x.com', 'C@x.com'], 'c@x.com'), { to: ['a@x.com', 'c@x.com'], cc: ['b@x.com'] });
+  assert.deepEqual(selectInCc(['a@x.com'], [], 'A@x.com'), { to: ['a@x.com'], cc: [] });
+  assert.deepEqual(selectInCc(['a@x.com'], [], 'z@x.com'), { to: ['a@x.com'], cc: ['z@x.com'] });
+  assert.match(modal, /blocked=\{to\}/);
+});
+
+test('loading states: contacts and email history do not flash their empty states', () => {
+  assert.match(panel, /const \[isLoading, setIsLoading\] = useState\(true\)/);
+  assert.match(panel, /isLoading \? \(\s*<div className="clients-empty">Cargando contactos/);
+  assert.match(history, /const \[isLoading, setIsLoading\] = useState\(true\)/);
+  assert.match(history, /!isLoading && deliveries\.length === 0 && !error/);
+});
+
+test('Reenviar keeps the previous recipients but still regenerates everything (new delivery)', () => {
+  assert.match(history, /onResend\(delivery\)/);
+  assert.match(quotationsPage, /initialTo=\{emailModal\.initialTo \?\? null\}/);
+  assert.match(modal, /initialTo\?\.length \? \{ to: initialTo, cc: initialCc \?\? \[\] \}/);
+  assert.match(modal, /previewQuotationEmail\(quotationId, request\)/);
+});
+
+test('email modal is a sibling of the quotation detail modal, not nested in it', () => {
+  const detailStart = quotationsPage.indexOf('{isDetailOpen && selectedQuotation ? (');
+  const modalStart = quotationsPage.indexOf('<QuotationEmailModal');
+  const closing = quotationsPage.indexOf('      ) : null}\n\n      {emailModal && selectedQuotation ? (');
+  assert.ok(detailStart > 0 && closing > detailStart && modalStart > closing);
+});
+
+test('layout: contacts fill the modal width, document flow in the email modal, wide commercial cells', () => {
+  assert.match(css, /\.client-contacts-panel \{[^}]*grid-column: 1 \/ -1;/);
+  assert.doesNotMatch(css, /quotation-email__layout|quotation-email__column|5fr\) minmax\(0, 7fr/);
+  assert.match(css, /\.quotation-email__recipients-grid \{[^}]*repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(css, /\.quotation-commercial-grid__wide \{\s*grid-column: span 2;/);
+  assert.match(css, /\.quotation-commercial-grid select,\s*\.quotation-notes-field textarea/);
+  assert.match(quotationsPage, /quotation-client-card quotation-commercial-grid__wide/);
+  assert.match(css, /height: clamp\(360px, 46vh, 520px\)/);
+  assert.match(css, /\.quotation-email__subject \{\s*margin: 0;/);
+  assert.doesNotMatch(panel, /✉|☎/);
+});
+
+test('preview stays sandboxed and read-only', () => {
+  assert.match(modal, /<iframe[^>]*sandbox=""/);
+  assert.doesNotMatch(modal, /dangerouslySetInnerHTML/);
 });

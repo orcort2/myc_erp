@@ -18,12 +18,14 @@ function ClientContactsPanel({ clientId, canEdit = true, onChanged = () => {} })
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
     listClientContacts(clientId)
       .then((items) => active && setContacts(items))
-      .catch((requestError) => active && setError(requestError.message));
+      .catch((requestError) => active && setError(requestError.message))
+      .finally(() => active && setIsLoading(false));
     return () => {
       active = false;
     };
@@ -140,7 +142,9 @@ function ClientContactsPanel({ clientId, canEdit = true, onChanged = () => {} })
         </div>
       ) : null}
 
-      {contacts.length === 0 ? (
+      {isLoading ? (
+        <div className="clients-empty">Cargando contactos…</div>
+      ) : contacts.length === 0 ? (
         <div className="clients-empty">Este cliente aún no tiene contactos registrados.</div>
       ) : (
         <ul className="client-contacts-panel__list">
@@ -154,8 +158,8 @@ function ClientContactsPanel({ clientId, canEdit = true, onChanged = () => {} })
               </div>
               <div className="client-contact-card__data">
                 <span>{contact.position || 'Sin puesto'}</span>
-                <span>✉ {contact.email || 'Sin correo'}</span>
-                <span>☎ {contact.phone || 'Sin teléfono'}</span>
+                <span>{contact.email || 'Sin correo'}</span>
+                <span>{contact.phone || 'Sin teléfono'}</span>
               </div>
               {canEdit ? (
                 <div className="client-contact-card__actions">
