@@ -671,6 +671,19 @@ venv.
 - Pendientes: EMAIL-2/3/4, UI de plantillas, validar `billing_emails` (TD-EMAIL-1),
   probar el relay real de Google Workspace en despliegue.
 
+## EMAIL-2: recuperación de contraseña (sin commit)
+
+- `POST /api/auth/forgot-password` y `/reset-password` (públicos; inventario API 560),
+  `PasswordResetToken`, `users.auth_version` y migración `b2d5f8a1c3e7`
+  (down `a1c4e7b9d2f6`, único head). Pendiente `alembic upgrade head` local.
+- Reset: token hash SHA-256, TTL 30 min, one-shot atómico; incrementa
+  `auth_version`, revoca sesiones Mobile y biometría (no dispositivos de
+  confianza). Frontend `/forgot-password` y `/reset-password`.
+- Config: `PUBLIC_APP_BASE_URL` (fallback `PORTAL_PUBLIC_BASE_URL`),
+  `PASSWORD_RESET_EXPIRE_MINUTES`, `PASSWORD_RESET_COOLDOWN_SECONDS`.
+- Pendientes: rate limit anónimo/IP (TD-EMAIL-2), `auth_version` en otros
+  cambios de credencial, definir `PUBLIC_APP_BASE_URL` en despliegue.
+
 ## Autoridades documentales
 
 `project/DOCUMENTATION_INDEX.md` rige la jerarquía. La autoridad Developer

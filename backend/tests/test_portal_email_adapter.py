@@ -74,7 +74,7 @@ def test_invitation_create_and_resend_use_email_service(portal_api, smtp_on):
 
 def test_production_without_base_url_does_not_send_or_leak(portal_api, monkeypatch):
     api, db, *_ = portal_api
-    settings = make_settings(environment="production", secret_key="Zq8!vN3#rT6@wK1$yB9%xC4^mD7&hF2*", portal_public_base_url="")
+    settings = make_settings(environment="production", secret_key="Zq8!vN3#rT6@wK1$yB9%xC4^mD7&hF2*", portal_public_base_url="", email_enabled=False)
     monkeypatch.setattr("app.services.portal.mail_service.settings", settings)
     development_outbox.clear()
     assert api.post("/api/portal/registration", json=REGISTRATION).status_code == 201

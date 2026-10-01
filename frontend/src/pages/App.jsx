@@ -8,6 +8,7 @@ import { clearPortalTokens, clearTokens, getAccessToken, getClientPortalProfile,
 import BillingPage from './BillingPage.jsx';
 import { formatModuleDateTime } from '../utils/formatters.js';
 import { getCurrentPath, navigate } from '../utils/routing.js';
+import { isPasswordRecoveryPath, recoveryRoute } from '../utils/passwordReset.js';
 import CertificatesPage from './CertificatesPage.jsx';
 import ClientsPage from './ClientsPage.jsx';
 import CapturePage from './CapturePage.jsx';
@@ -16,6 +17,8 @@ import DocumentLibraryPage from './DocumentLibraryPage.jsx';
 import EquipmentPage from './EquipmentPage.jsx';
 import FlowTestPage from './FlowTestPage.jsx';
 import LoginPage from './LoginPage.jsx';
+import ForgotPasswordPage from './ForgotPasswordPage.jsx';
+import ResetPasswordPage from './ResetPasswordPage.jsx';
 import ModulePage from './ModulePage.jsx';
 import CommunicationsPage from './CommunicationsPage.jsx';
 import ProceduresPage from './ProceduresPage.jsx';
@@ -59,7 +62,7 @@ export function App() {
     async function checkSession() {
       const portalPath = path.startsWith('/portal');
       const publicPortalPath = path === '/portal/login' || path === '/portal/registro' || path === '/portal/verificar-correo' || path.startsWith('/portal/invitacion/');
-      if (publicPortalPath) {
+      if (publicPortalPath || isPasswordRecoveryPath(path)) {
         if (isMounted) setIsCheckingSession(false);
         return;
       }
@@ -132,6 +135,14 @@ export function App() {
 
   if (path === '/login') {
     return <LoginPage onAuthenticated={setUser} />;
+  }
+
+  if (recoveryRoute(path) === '/forgot-password') {
+    return <ForgotPasswordPage />;
+  }
+
+  if (recoveryRoute(path) === '/reset-password') {
+    return <ResetPasswordPage />;
   }
 
   if (path === '/portal/login' || path === '/portal/registro' || path === '/portal/verificar-correo' || path.startsWith('/portal/invitacion/')) {

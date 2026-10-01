@@ -4,10 +4,10 @@ from alembic.script import ScriptDirectory
 from app.models.email import EmailDelivery, EmailTemplate
 
 
-def test_single_alembic_head_is_the_email_migration():
+def test_email_migration_keeps_its_place_in_the_chain():
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert script.get_heads() == ["a1c4e7b9d2f6"]
     assert script.get_revision("a1c4e7b9d2f6").down_revision == "e8f1a3c5d7b9"
+    assert len(script.get_heads()) == 1
 
 
 def test_model_matches_migration_contract():
