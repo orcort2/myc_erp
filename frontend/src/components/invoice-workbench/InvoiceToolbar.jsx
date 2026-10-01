@@ -27,7 +27,7 @@ export default function InvoiceToolbar({
         </button>
 
         {onGoToInvoice ? <button className="primary-button" disabled={isSaving} onClick={onGoToInvoice} type="button">Ir a factura</button> : null}
-        {!onGoToInvoice ? <><button className="primary-button" disabled={isSaving || !canIssue || !onIssue} onClick={onIssue} type="button">{isSaving ? 'Emitiendo CFDI…' : 'Emitir CFDI de prueba'}</button>{issueBlockedReason ? <small>{issueBlockedReason}</small> : null}</> : null}
+        {!onGoToInvoice ? <><button className="primary-button" disabled={isSaving || !canIssue || !onIssue} onClick={onIssue} type="button">{isSaving ? 'Generando CFDI…' : 'Generar CFDI'}</button>{issueBlockedReason ? <small>{issueBlockedReason}</small> : null}</> : null}
 
         <button
           className="table-button table-button--danger"

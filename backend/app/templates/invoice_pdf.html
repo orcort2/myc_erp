@@ -96,6 +96,17 @@
       margin-top: 2px;
     }
 
+    .draft-badge {
+      border: 1.5px solid #b42318;
+      color: #b42318;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .8px;
+      margin: 6px 8px;
+      padding: 4px 6px;
+      text-align: center;
+    }
+
     .invoice-meta__row {
       align-items: flex-start;
       border-top: 1px solid #d2e6e7;
@@ -439,19 +450,29 @@
 
     <section class="invoice-meta">
       <div class="invoice-meta__title">
+        {% if is_stamped %}
         <strong>Factura electrónica</strong>
         <span>Representación impresa de un CFDI</span>
+        {% else %}
+        <strong>Borrador de factura</strong>
+        <span>Documento sin timbrar</span>
+        {% endif %}
       </div>
+      {% if not is_stamped %}
+      <div class="draft-badge">BORRADOR · SIN TIMBRAR</div>
+      {% endif %}
 
       <div class="invoice-meta__row">
         <span>Serie / folio</span>
         <strong>{{ invoice.series }}-{{ invoice.folio }}</strong>
       </div>
 
+      {% if is_stamped %}
       <div class="invoice-meta__row">
         <span>Folio fiscal (UUID)</span>
         <strong>{{ fiscal.uuid or "Pendiente" }}</strong>
       </div>
+      {% endif %}
 
       <div class="invoice-meta__row">
         <span>Lugar de expedición</span>
@@ -468,10 +489,12 @@
         <strong>{{ fiscal.voucher_type.code or fiscal.cfdi_type or "I" }}{% if fiscal.voucher_type.name %} - {{ fiscal.voucher_type.name }}{% endif %}</strong>
       </div>
 
+      {% if is_stamped %}
       <div class="invoice-meta__row">
         <span>Fecha y hora de certificación</span>
         <strong>{{ fiscal.stamped_at|date(true) }}</strong>
       </div>
+      {% endif %}
     </section>
   </header>
 
@@ -642,6 +665,7 @@
   </section>
   {% endif %}
 
+  {% if is_stamped %}
   <section class="fiscal-detail">
     <aside class="qr-card">
       {% if qr_uri %}
@@ -674,13 +698,18 @@
       </div>
     </article>
   </section>
+  {% endif %}
 
   <footer class="legal">
+    {% if is_stamped %}
     <strong>Este documento es una representación impresa de un CFDI.</strong>
     <span>
       CFDI con UUID:
       {{ fiscal.uuid or "Pendiente de certificación" }}
     </span>
+    {% else %}
+    <strong>Documento preliminar. No constituye un CFDI timbrado.</strong>
+    {% endif %}
   </footer>
 </body>
 </html>

@@ -25,12 +25,12 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | Sección | Archivos |
 | --- | ---: |
 | Backend | 549 |
-| Frontend | 223 |
-| Scripts | 52 |
-| Recursos | 4 |
+| Frontend | 224 |
+| Scripts | 53 |
+| Recursos | 3 |
 | Configuración | 267 |
 | Documentación | 181 |
-| Pruebas | 119 |
+| Pruebas | 120 |
 
 ## Convenciones
 
@@ -684,6 +684,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | frontend/src/components/invoice-workbench/InvoiceWorkbenchModal.jsx | frontend/src/components | Componente React | Implementa InvoiceWorkbenchModal: estructura visual, interacción y/o estado reutilizable del flujo que nombra. | Páginas React, api.js, constantes y estilos relacionados | Páginas y componentes que importan este módulo | Alto | Estable |
 | frontend/src/components/invoice-workbench/InvoiceWorkbenchSidebar.jsx | frontend/src/components | Componente React | Implementa InvoiceWorkbenchSidebar: estructura visual, interacción y/o estado reutilizable del flujo que nombra. | Páginas React, api.js, constantes y estilos relacionados | Páginas y componentes que importan este módulo | Alto | Estable |
 | frontend/src/components/invoice-workbench/SatCatalogField.jsx | frontend/src/components | Componente React | Implementa SatCatalogField: estructura visual, interacción y/o estado reutilizable del flujo que nombra. | Páginas React, api.js, constantes y estilos relacionados | Páginas y componentes que importan este módulo | Alto | Estable |
+| frontend/src/components/invoice-workbench/cfdiLabels.test.js | frontend/src/components | Lógica de componente | Implementa CFDILabels.test: estructura visual, interacción y/o estado reutilizable del flujo que nombra. | Páginas React, api.js, constantes y estilos relacionados | Páginas y componentes que importan este módulo | Alto | Experimental |
 | frontend/src/components/invoice-workbench/invoice-workbench.css | frontend/src/components | Estilos de componente | Implementa invoice workbench: estructura visual, interacción y/o estado reutilizable del flujo que nombra. | Páginas React, api.js, constantes y estilos relacionados | Páginas y componentes que importan este módulo | Alto | Estable |
 | frontend/src/components/invoice-workbench/invoicePaymentForm.js | Facturación / Pagos | Lógica pura de formulario | Inicializa, valida y serializa el pago sin valores calculados de saldo; determina si draft/prepago sin UUID continúa emitible. | Contratos Invoice/InvoicePaymentCreate | InvoicePaymentModal, InvoiceDetailView, BillingPage y EtsBillingTab | Alto | Estable |
 | frontend/src/components/invoice-workbench/invoicePaymentForm.test.js | Facturación / Pagos | Prueba frontend | Cubre importe inicial, cero/negativo/exceso, payload exacto y timbrado habilitable después de pago previo. | Node test e invoicePaymentForm | Desarrollo y CI frontend | Alto | Estable |
@@ -832,6 +833,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | scripts/doctor.sh | Toolkit/Infraestructura | Diagnóstico operativo | Verifica estructura, entorno, PostgreSQL, backend, Alembic, Node y frontend; muestra además disponibilidad, ruta y versión de LibreOffice. | Toolkit común, venv, backend CLI y herramientas locales | Desarrollo, operación y CI | Alto | Estable |
 | scripts/generate_api_access_inventory.py | scripts | Script operativo | Introspecta `app.routes`, valida que 306/306 operaciones estén clasificadas y genera o comprueba el CSV canónico de acceso sin usar grep como fuente. | app.main y security.api_access | Desarrollo, auditoría y futuras gates CI | Alto | Estable |
 | scripts/generate_project_file_registry.py | scripts | Generador de inventario | Regenera el inventario desde rutas existentes, excluye artefactos y conserva las filas previamente auditadas para no perder la revisión humana. | Git, árbol del repositorio y PROJECT_FILE_REGISTRY | Agentes Codex y mantenedores | Alto | Estable |
+| scripts/local/myc | scripts/local | Script operativo | Automatiza la operación de myc; debe ejecutarse como herramienta controlada del repositorio. | Configuración, herramientas locales y backend | Desarrollo, operación o CI según el comando | Medio | Estable |
 | scripts/myc | scripts | Script operativo | Automatiza la operación de myc; debe ejecutarse como herramienta controlada del repositorio. | Configuración, herramientas locales y backend | Desarrollo, operación o CI según el comando | Medio | Estable |
 | scripts/myc.sh | scripts | Script operativo | Automatiza la operación de myc; debe ejecutarse como herramienta controlada del repositorio. | Configuración, herramientas locales y backend | Desarrollo, operación o CI según el comando | Medio | Estable |
 | scripts/render-field-sheet-lab-pdfs.sh | scripts | Script operativo | Automatiza la operación de render field sheet lab PDF; debe ejecutarse como herramienta controlada del repositorio. | Configuración, herramientas locales y backend | Desarrollo, operación o CI según el comando | Medio | Estable |
@@ -883,7 +885,6 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | backend/resources/sat/CHECKSUMS.txt | backend/resources/sat | Recurso oficial | Conserva la fuente o metadato oficial de CHECKSUMS para importación y trazabilidad SAT. | Importador SAT y servicios de catálogos | Scripts y servicios SAT | Alto | Estable |
 | backend/resources/sat/RELEASE_SOURCE.txt | backend/resources/sat | Recurso oficial | Conserva la fuente o metadato oficial de RELEASE SOURCE para importación y trazabilidad SAT. | Importador SAT y servicios de catálogos | Scripts y servicios SAT | Alto | Estable |
 | backend/resources/sat/VERSION.txt | backend/resources/sat | Recurso oficial | Conserva la fuente o metadato oficial de VERSION para importación y trazabilidad SAT. | Importador SAT y servicios de catálogos | Scripts y servicios SAT | Alto | Estable |
-| backend/resources/sat/catalogo sat.xlsx | backend/resources/sat | Recurso oficial | Conserva la fuente o metadato oficial de catalogo SAT para importación y trazabilidad SAT. | Importador SAT y servicios de catálogos | Scripts y servicios SAT | Alto | Estable |
 
 ## Configuración
 
@@ -1400,6 +1401,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | backend/tests/test_developer_broker_named_pipe.py | backend/tests/test_developer_broker_named_pipe.py | Prueba automatizada | DEV-1B (cross-platform, con puerto Win32 falso explícito): nombre de pipe, framing, flags, composición exacta de las máscaras DACL, sanitización de logs, política de SIDs, guardia de plataforma, builder FastAPI sin fallback TCP, identidad antes de escribir, cierre de handles, no fuga de errores de SO, listener, host y escaneo de red. No prueba Named Pipes reales. | `app.developer_broker`, `app.services.developer_broker` | pytest en CI y desarrollo | Alto | En revisión |
 | backend/tests/test_developer_broker_windows.py | backend/tests/test_developer_broker_windows.py | Prueba automatizada | DEV-1B (sólo Windows, omitida en otras plataformas): health por Named Pipe real, request/response atravesando el pipe, HMAC incorrecto, pipe inexistente, timeout real, frames excedidos/truncados, segunda primera-instancia, creación real de instancias posteriores bajo la DACL explícita, DACL real, SID del servidor esperado e incorrecto sin escritura; rechazo remoto omitido explícitamente (requiere otro host). | pywin32, `app.developer_broker` | pytest en Windows | Alto | En revisión |
 | backend/tests/test_equipment_certificate_context.py | Equipos/ETS | Prueba de integración | Demuestra que un equipo conserva el Master congelado y genera snapshot/certificado esperado aunque después cambien nombre y Master del catálogo; protege también la semántica de estados finalizados. | SQLite en memoria, modelos/servicios de Catálogo, ETS, Equipos, documentos y Certificados | Suite unittest, CI y validación de regresiones de Equipos | Alto | Estable |
+| backend/tests/test_facturama_environment.py | backend/tests/test_facturama_environment.py | Prueba automatizada | Verifica el contrato operativo de test facturama environment y previene regresiones del flujo asociado. | Módulos backend bajo prueba y fixtures | pytest/unittest en CI y desarrollo | Medio | En desarrollo |
 | backend/tests/test_facturama_infrastructure.py | backend/tests/test_facturama_infrastructure.py | Prueba automatizada | Verifica el contrato operativo de test facturama infrastructure y previene regresiones del flujo asociado. | Módulos backend bajo prueba y fixtures | pytest/unittest en CI y desarrollo | Medio | En desarrollo |
 | backend/tests/test_facturama_invoice_mapper.py | backend/tests/test_facturama_invoice_mapper.py | Prueba automatizada | Verifica el contrato operativo de test facturama invoice mapper y previene regresiones del flujo asociado. | Módulos backend bajo prueba y fixtures | pytest/unittest en CI y desarrollo | Medio | En desarrollo |
 | backend/tests/test_facturama_reconciliation.py | backend/tests/test_facturama_reconciliation.py | Prueba automatizada | Verifica el contrato operativo de test facturama reconciliation y previene regresiones del flujo asociado. | Módulos backend bajo prueba y fixtures | pytest/unittest en CI y desarrollo | Medio | En desarrollo |
