@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>Factura {{ invoice.series }}-{{ invoice.folio }}</title>
+  <title>{{ "Factura " ~ (fiscal.identifier or fiscal.uuid) if is_stamped else "Borrador " ~ invoice.folio }}</title>
 
   <style>
     @page {
@@ -27,18 +27,21 @@
       margin: 0;
     }
 
+    .document { border: 1px solid #9fbfc2; }
+
     .header {
       align-items: flex-start;
       display: flex;
       justify-content: space-between;
-      margin-bottom: 14px;
+      margin: 0;
+      break-inside: avoid;
     }
 
     .brand {
       align-items: center;
       display: flex;
-      gap: 12px;
-      width: 59%;
+      padding: 12px;
+      width: 61%;
     }
 
     .brand img {
@@ -70,10 +73,9 @@
     }
 
     .invoice-meta {
-      border: 1px solid #9fc9cb;
-      border-radius: 8px;
+      border-left: 1px solid #9fbfc2;
       overflow: hidden;
-      width: 38%;
+      width: 39%;
     }
 
     .invoice-meta__title {
@@ -129,18 +131,15 @@
     }
 
     .parties {
-      display: grid;
-      gap: 10px;
-      grid-template-columns: 1fr;
-      margin-bottom: 12px;
+      margin: 0;
+      break-inside: avoid;
     }
 
     .party-card,
     .fiscal-band,
     .notes,
     .stamps {
-      border: 1px solid #b8d5d7;
-      border-radius: 8px;
+      border-top: 1px solid #9fbfc2;
     }
 
     .party-card {
@@ -151,7 +150,7 @@
 
     .party-card__label {
       background: #0b6d70;
-      border-radius: 0 0 6px 0;
+
       color: #fff;
       font-size: 8px;
       font-weight: 700;
@@ -193,7 +192,15 @@
       width: 100%;
     }
 
-    .items { margin: 4px 0 11px; }
+    .items { margin: 0; table-layout: fixed; }
+    .items thead { display: table-header-group; }
+    .items tr { break-inside: avoid; }
+    .items th, .items td { overflow-wrap: anywhere; }
+    .items th:nth-child(1) { width: 10%; }
+    .items th:nth-child(2) { width: 8%; }
+    .items th:nth-child(3) { width: 8%; }
+    .items th:nth-child(4) { width: 12%; }
+    .items th:nth-child(6), .items th:nth-child(7) { width: 14%; }
 
     .items th {
       background: #073f48;
@@ -212,7 +219,7 @@
 
     .items .numeric {
       text-align: right;
-      white-space: nowrap;
+      white-space: normal;
     }
 
     .items .description { width: 34%; }
@@ -234,16 +241,15 @@
     }
 
     .summary {
-      align-items: flex-start;
+      align-items: stretch;
       display: flex;
-      gap: 8px;
-      margin: 0 0 11px;
+      border-top: 1px solid #9fbfc2;
+      break-inside: avoid;
+      margin: 0;
       width: 100%;
     }
 
     .amount-words {
-      border: 1px solid #b8d5d7;
-      border-radius: 8px;
       flex: 1 1 auto;
       min-width: 0;
       padding: 10px;
@@ -267,12 +273,11 @@
     }
 
     .totals {
-      border: 1px solid #b8d5d7;
-      border-radius: 8px;
-      flex: 0 0 300px;
+      border-left: 1px solid #9fbfc2;
+      flex: 0 0 240px;
       margin-left: auto;
       overflow: hidden;
-      width: 300px;
+      width: 240px;
     }
 
     .totals div {
@@ -294,7 +299,8 @@
     .fiscal-band {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      margin-bottom: 7px;
+      margin: 0;
+      break-inside: avoid;
       overflow: hidden;
     }
 
@@ -326,11 +332,12 @@
       font-weight: 700;
       line-height: 1.2;
       margin-top: 1px;
-      white-space: nowrap;
+      white-space: normal;
     }
 
     .notes {
-      margin-bottom: 10px;
+      margin: 0;
+      break-inside: avoid;
       padding: 10px;
       text-align: center;
     }
@@ -340,14 +347,12 @@
     .fiscal-detail {
       align-items: stretch;
       display: grid;
-      gap: 10px;
-      grid-template-columns: 112px 1fr;
+      border-top: 1px solid #9fbfc2;
+      grid-template-columns: 120px minmax(0, 1fr);
       page-break-inside: avoid;
     }
 
     .qr-card {
-      border: 1px solid #b8d5d7;
-      border-radius: 8px;
       padding: 8px;
       text-align: center;
     }
@@ -365,8 +370,11 @@
     }
 
     .stamps {
+      border-top: 0;
+      border-left: 1px solid #9fbfc2;
+      min-width: 0;
       padding: 10px;
-      word-break: break-all;
+      overflow-wrap: anywhere;
     }
 
     .certificate-strip {
@@ -397,8 +405,9 @@
 
     .legal {
       border-top: 1px solid #b8d5d7;
-      margin-top: 12px;
-      padding-top: 8px;
+      margin: 0;
+      padding: 8px;
+      break-inside: avoid;
       text-align: center;
     }
 
@@ -424,6 +433,7 @@
 </head>
 
 <body>
+  <main class="document">
   <header class="header">
     <section class="brand">
       {% if logo_uri %}
@@ -462,9 +472,15 @@
       <div class="draft-badge">BORRADOR · SIN TIMBRAR</div>
       {% endif %}
 
+      {% if is_stamped %}
       <div class="invoice-meta__row">
-        <span>Serie / folio</span>
-        <strong>{{ invoice.series }}-{{ invoice.folio }}</strong>
+        <span>Serie / Folio</span>
+        <strong>{{ fiscal.identifier or "No disponible en XML" }}</strong>
+      </div>
+      {% endif %}
+      <div class="invoice-meta__row">
+        <span>Referencia interna MYC</span>
+        <strong>{{ invoice.folio }}</strong>
       </div>
 
       {% if is_stamped %}
@@ -539,7 +555,7 @@
         {% for row in item_rows %}
         {% set item = row.item %}
         <tr>
-          <td>{{ item.quotation_item_id or item.id or loop.index }}</td>
+          <td>{{ row.no_identification or "—" }}</td>
           <td>{{ item.quantity }}</td>
 
           <td>
@@ -711,5 +727,6 @@
     <strong>Documento preliminar. No constituye un CFDI timbrado.</strong>
     {% endif %}
   </footer>
+  </main>
 </body>
 </html>

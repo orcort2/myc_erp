@@ -1,3 +1,4 @@
+import { toInvoiceSettingsPayload } from './invoiceSettings.js';
 import { useEffect, useMemo, useState } from 'react';
 
 import {
@@ -526,7 +527,7 @@ export default function useInvoiceWorkbenchController({
       const documentFile = await downloadInstitutionalInvoicePdf(invoice.id);
       saveDownloadedFile(
         documentFile,
-        `Factura_MYC_${invoice.series}-${invoice.folio}.pdf`
+        'Factura_MYC.pdf'
       );
     } catch (requestError) {
       setError(requestError.message);
@@ -543,7 +544,7 @@ export default function useInvoiceWorkbenchController({
       const documentFile = await downloadInvoiceFiscalXml(invoice.id);
       saveDownloadedFile(
         documentFile,
-        `Factura_MYC_${invoice.series}-${invoice.folio}.xml`
+        'Factura_MYC.xml'
       );
     } catch (requestError) {
       setError(requestError.message);
@@ -557,7 +558,7 @@ export default function useInvoiceWorkbenchController({
     setError('');
     setNotice('');
     try {
-      await updateInvoiceSettings(settings);
+      await updateInvoiceSettings(toInvoiceSettingsPayload(settings));
       setNotice('Configuración guardada.');
       await loadBillingData();
     } catch (requestError) {

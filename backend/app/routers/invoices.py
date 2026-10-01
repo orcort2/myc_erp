@@ -25,6 +25,7 @@ from app.services.invoice_pdfs import (
     generate_invoice_payment_receipt_pdf,
     generate_invoice_pdf,
     get_invoice_fiscal_xml,
+    invoice_document_filename,
 )
 from app.services.invoices import (
     change_invoice_status,
@@ -201,7 +202,9 @@ def facturama_document_route(invoice_id: int, kind: str, db: Session = Depends(g
     if kind not in {"xml", "pdf"}:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Documento no encontrado")
-    content, filename, media_type = read_document(get_invoice(db, invoice_id), kind)
+    invoice = get_invoice(db, invoice_id)
+    content, _, media_type = read_document(invoice, kind)
+    filename = invoice_document_filename(invoice, kind)
     return Response(content=content, media_type=media_type, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
