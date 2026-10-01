@@ -627,6 +627,42 @@ export async function deleteClientCertificateProfile(clientId, profileId) {
   });
 }
 
+export function listClientContacts(clientId) {
+  return request(`/clients/${clientId}/contacts`);
+}
+
+export function createClientContact(clientId, payload) {
+  return request(`/clients/${clientId}/contacts`, { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export function updateClientContact(clientId, contactId, payload) {
+  return request(`/clients/${clientId}/contacts/${contactId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+}
+
+export function deactivateClientContact(clientId, contactId) {
+  return request(`/clients/${clientId}/contacts/${contactId}`, { method: 'DELETE' });
+}
+
+export function restoreClientContact(clientId, contactId) {
+  return request(`/clients/${clientId}/contacts/${contactId}/restore`, { method: 'POST' });
+}
+
+// Quotation email (EMAIL-3): only recipients are sent; subject/body/PDF are built by the backend.
+export function previewQuotationEmail(quotationId, { to, cc } = {}) {
+  return request(`/quotations/${quotationId}/email/preview`, {
+    method: 'POST',
+    body: JSON.stringify({ ...(to ? { to } : {}), ...(cc ? { cc } : {}) })
+  });
+}
+
+export function sendQuotationEmail(quotationId, { to, cc }) {
+  return request(`/quotations/${quotationId}/email/send`, { method: 'POST', body: JSON.stringify({ to, cc }) });
+}
+
+export function listQuotationEmailDeliveries(quotationId) {
+  return request(`/quotations/${quotationId}/email/deliveries`);
+}
+
 export async function previewClientImport(file) {
   const formData = new FormData();
   formData.append('file', file);

@@ -5,10 +5,10 @@ from app.models.password_reset_token import PasswordResetToken
 from app.models.user import User
 
 
-def test_single_head_is_the_password_reset_migration():
+def test_password_reset_migration_keeps_its_place_in_a_single_chain():
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert script.get_heads() == ["b2d5f8a1c3e7"]
     assert script.get_revision("b2d5f8a1c3e7").down_revision == "a1c4e7b9d2f6"
+    assert len(script.get_heads()) == 1
 
 
 def test_model_contract():

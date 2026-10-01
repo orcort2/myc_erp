@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.catalog_item import CatalogItem
-from app.models.client import Client
+from app.models.client import Client, ClientContact
 from app.models.linked_company import LinkedCompany
 from app.models.quotation import Quotation, QuotationItem, QuotationSnapshot
 from app.models.service_execution import (
@@ -111,6 +111,43 @@ def _ensure_client_exists(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Cliente no encontrado",
         )
+
+
+def _validate_quotation_contact(
+    db: Session,
+    client_id: int,
+    contact_id: int,
+    *,
+    require_active: bool,
+) -> None:
+    """The contact must belong to the quotation's client (never trust the payload)."""
+    contact = db.scalar(
+        select(ClientContact).where(
+            ClientContact.id == contact_id,
+            ClientContact.client_id == client_id,
+        )
+    )
+    if contact is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="El contacto no pertenece al cliente de la cotizacion",
+        )
+    if require_active and not contact.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="El contacto esta inactivo y no puede asignarse",
+        )
+
+
+def _contact_belongs_to_client(db: Session, client_id: int, contact_id: int | None) -> bool:
+    if contact_id is None:
+        return False
+    return db.scalar(
+        select(ClientContact.id).where(
+            ClientContact.id == contact_id,
+            ClientContact.client_id == client_id,
+        )
+    ) is not None
 
 
 def _get_catalog_item(
@@ -774,6 +811,10 @@ def _quotation_snapshot_data(
                 quotation.advisor_id
             ),
 
+            "contact_id": (
+                quotation.contact_id
+            ),
+
             "issued_on": (
                 quotation.issued_on
             ),
@@ -1081,6 +1122,9 @@ def get_quotation(
                 Quotation.advisor
             ),
             selectinload(
+                Quotation.contact
+            ),
+            selectinload(
                 Quotation.service_orders
             ),
         )
@@ -1116,12 +1160,21 @@ def create_quotation(
         or date.today()
     )
 
+    if payload.contact_id is not None:
+        _validate_quotation_contact(
+            db,
+            payload.client_id,
+            payload.contact_id,
+            require_active=True,
+        )
+
     quotation = Quotation(
         folio=_next_quotation_folio(
             db,
             issued_on,
         ),
         client_id=payload.client_id,
+        contact_id=payload.contact_id,
         advisor_id=(
             user_id
             or payload.advisor_id
@@ -1230,6 +1283,24 @@ def update_quotation(
             updates["client_id"],
         )
 
+    # Contact consistency: it must belong to the (possibly new) client.
+    effective_client_id = updates.get("client_id", quotation.client_id)
+    if updates.get("contact_id") is not None:
+        _validate_quotation_contact(
+            db,
+            effective_client_id,
+            updates["contact_id"],
+            # A historical, now inactive contact may be kept; only new
+            # assignments must be active.
+            require_active=updates["contact_id"] != quotation.contact_id,
+        )
+    elif "contact_id" not in updates and not _contact_belongs_to_client(
+        db, effective_client_id, quotation.contact_id
+    ):
+        # Client changed (or stale reference): never keep another client's contact.
+        if quotation.contact_id is not None:
+            updates["contact_id"] = None
+
     previous_values = {
         key: getattr(
             quotation,
@@ -1246,6 +1317,8 @@ def update_quotation(
         )
 
     db.flush()
+    # Never serve a stale contact relationship after contact_id/client changed.
+    db.expire(quotation, ["contact"])
 
     if updates:
         _write_snapshot(
@@ -1375,6 +1448,15 @@ def restore_quotation_snapshot(
         quotation.client_id = int(
             data["client_id"]
         )
+
+    # Restoring a version never leaves a contact from another client.
+    restored_contact_id = data.get("contact_id", quotation.contact_id)
+    quotation.contact_id = (
+        restored_contact_id
+        if _contact_belongs_to_client(db, quotation.client_id, restored_contact_id)
+        else None
+    )
+    db.expire(quotation, ["contact"])
 
     quotation.issued_on = (
         _date_from_snapshot(

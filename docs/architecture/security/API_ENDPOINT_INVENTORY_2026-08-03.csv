@@ -122,6 +122,11 @@ GET,/api/clients/{client_id}/certificate-profiles,clients,get_certificate_profil
 POST,/api/clients/{client_id}/certificate-profiles,clients,post_certificate_profile,authenticated_permission,access_jwt,clients.update,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 DELETE,/api/clients/{client_id}/certificate-profiles/{profile_id},clients,delete_certificate_profile,authenticated_permission,access_jwt,clients.update,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 PATCH,/api/clients/{client_id}/certificate-profiles/{profile_id},clients,patch_certificate_profile,authenticated_permission,access_jwt,clients.update,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+GET,/api/clients/{client_id}/contacts,clients,get_client_contacts,authenticated_permission,access_jwt,clients.read,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+POST,/api/clients/{client_id}/contacts,clients,post_client_contact,authenticated_permission,access_jwt,clients.update,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+DELETE,/api/clients/{client_id}/contacts/{contact_id},clients,deactivate_contact,authenticated_permission,access_jwt,clients.update,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+PATCH,/api/clients/{client_id}/contacts/{contact_id},clients,patch_client_contact,authenticated_permission,access_jwt,clients.update,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+POST,/api/clients/{client_id}/contacts/{contact_id}/restore,clients,restore_contact,authenticated_permission,access_jwt,clients.update,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 GET,/api/clients/{client_id}/delete-eligibility,clients,get_delete_eligibility,authenticated_permission,access_jwt,clients.read,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/clients/{client_id}/restore,clients,restore_client_by_id,authenticated_permission,access_jwt,clients.update,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/clients/{client_id}/tax-constancy,clients,post_tax_constancy,authenticated_permission,access_jwt,clients.update,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
@@ -374,6 +379,9 @@ GET,/api/quotations/{quotation_id},quotations,get_quotation_by_id,authenticated_
 PATCH,/api/quotations/{quotation_id},quotations,patch_quotation,authenticated_permission,access_jwt,quotations.update,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/quotations/{quotation_id}/accept,quotations,accept_quotation,authenticated_permission,access_jwt,quotations.create,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/quotations/{quotation_id}/cancel,quotations,cancel_quotation,authenticated_permission,access_jwt,quotations.create,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+GET,/api/quotations/{quotation_id}/email/deliveries,quotations,get_quotation_email_deliveries,authenticated_permission,access_jwt,email.deliveries.read,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+POST,/api/quotations/{quotation_id}/email/preview,quotations,preview_email_for_quotation,authenticated_permission,access_jwt,quotations.email.send,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+POST,/api/quotations/{quotation_id}/email/send,quotations,send_email_for_quotation,authenticated_permission,access_jwt,quotations.email.send,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/quotations/{quotation_id}/expire,quotations,expire_quotation,authenticated_permission,access_jwt,quotations.create,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/quotations/{quotation_id}/items,quotations,post_quotation_item,authenticated_permission,access_jwt,quotations.create,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 DELETE,/api/quotations/{quotation_id}/items/{item_id},quotations,delete_quotation_item,authenticated_permission,access_jwt,quotations.update,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011

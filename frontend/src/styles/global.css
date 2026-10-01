@@ -4000,6 +4000,7 @@ tablas y acordeones operativos que
 }
 
 .quotation-commercial-grid input,
+.quotation-commercial-grid select,
 .quotation-notes-field textarea {
   background: rgba(255, 255, 255, 0.58);
   border: 1px solid rgba(8, 117, 111, 0.18);
@@ -4011,9 +4012,20 @@ tablas y acordeones operativos que
   width: 100%;
 }
 
-.quotation-commercial-grid input {
+.quotation-commercial-grid input,
+.quotation-commercial-grid select {
   min-height: 42px;
   padding: 0 12px;
+}
+
+.quotation-commercial-grid input:focus,
+.quotation-commercial-grid select:focus {
+  border-color: var(--myc-primary);
+  box-shadow: 0 0 0 3px rgba(70, 216, 196, 0.16);
+}
+
+.quotation-commercial-grid__wide {
+  grid-column: span 2;
 }
 
 .quotation-notes-field textarea {
@@ -5102,6 +5114,10 @@ tablas y acordeones operativos que
   .quotation-summary,
 .quotation-commercial-grid {
     grid-template-columns: 1fr;
+  }
+
+  .quotation-commercial-grid__wide {
+    grid-column: 1 / -1;
   }
 
   .quotation-actions {
@@ -9085,6 +9101,124 @@ textarea {
   overflow-wrap: anywhere;
   white-space: normal;
 }
+/* EMAIL-3: client contacts panel, quotation contact select, email modal and history */
+.client-contacts-panel { display: grid; gap: 14px; grid-column: 1 / -1; min-width: 0; width: 100%; }
+.client-contacts-panel__intro { align-items: flex-start; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
+.client-contacts-panel__intro > div { flex: 1 1 260px; min-width: 0; }
+.client-contacts-panel__intro h3, .client-contacts-panel__intro p { margin: 0; }
+.client-contacts-panel__form {
+  background: rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(8, 117, 111, 0.1);
+  border-radius: var(--myc-radius-md);
+  display: grid;
+  gap: 12px 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 14px;
+}
+.client-contacts-panel__form label { display: grid; gap: 6px; min-width: 0; }
+.client-contacts-panel__form input { min-width: 0; width: 100%; }
+.client-contacts-panel__form-actions { display: flex; flex-wrap: wrap; gap: 8px; grid-column: 1 / -1; justify-content: flex-end; }
+.client-contacts-panel__list { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.client-contact-card {
+  background: rgba(255, 255, 255, 0.32);
+  border: 1px solid rgba(8, 117, 111, 0.15);
+  border-radius: 7px;
+  display: grid;
+  gap: 4px 16px;
+  grid-template-areas: "head actions" "data actions";
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+  padding: 11px 12px;
+}
+.client-contact-card.is-inactive { background: var(--myc-surface-3); border-style: dashed; }
+.client-contact-card__head { align-items: center; display: flex; gap: 10px; grid-area: head; min-width: 0; }
+.client-contact-card__head strong { min-width: 0; overflow-wrap: anywhere; }
+.client-contact-card__head mark { flex: none; font-size: 11px; font-weight: 700; opacity: 0.85; padding: 2px 8px; }
+.client-contact-card__data { color: var(--myc-muted); display: flex; flex-wrap: wrap; gap: 2px 12px; grid-area: data; min-width: 0; }
+.client-contact-card__data span { overflow-wrap: anywhere; }
+.client-contact-card__actions { align-self: center; display: flex; flex-wrap: wrap; gap: 8px; grid-area: actions; justify-content: flex-end; }
+
+.quotation-email-modal {
+  display: grid;
+  gap: 16px;
+  max-height: calc(100vh - 32px);
+  max-width: 960px;
+  overflow-y: auto;
+  padding: 22px;
+  width: min(960px, calc(100vw - 32px));
+}
+.quotation-email__recipients-grid { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.quotation-email__recipients {
+  background: var(--myc-surface-2);
+  border: 1px solid var(--myc-line);
+  border-radius: var(--myc-radius-md);
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+  padding: 12px 14px;
+}
+.quotation-email__recipients legend { font-weight: 800; padding: 0 6px; }
+.quotation-email__recipient { align-items: flex-start; cursor: pointer; display: grid; gap: 8px; grid-template-columns: auto minmax(0, 1fr); }
+.quotation-email__recipient input { margin-top: 3px; }
+.quotation-email__recipient-text { display: grid; min-width: 0; }
+.quotation-email__recipient-text strong, .quotation-email__recipient-text span { overflow-wrap: anywhere; }
+.quotation-email__recipient-text small { color: var(--myc-muted); }
+.quotation-email__manual { display: flex; flex-wrap: wrap; gap: 8px; }
+.quotation-email__manual input { flex: 1 1 180px; min-width: 0; }
+.quotation-email__message { display: grid; gap: 12px; min-width: 0; }
+.quotation-email__label { color: var(--myc-muted); font-size: 12px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
+.quotation-email__subject {
+  margin: 0;
+  background: var(--myc-surface-2);
+  border: 1px solid var(--myc-line);
+  border-radius: var(--myc-radius-md);
+  overflow-wrap: anywhere;
+  padding: 10px 12px;
+}
+.quotation-email__frame {
+  background: #fff;
+  border: 1px solid var(--myc-line);
+  border-radius: var(--myc-radius-md);
+  height: clamp(360px, 46vh, 520px);
+  width: 100%;
+}
+.quotation-email__attachment {
+  align-items: center;
+  background: var(--myc-surface-2);
+  border: 1px solid var(--myc-line);
+  border-radius: var(--myc-radius-md);
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+}
+.quotation-email__attachment strong, .quotation-email__attachment span { overflow-wrap: anywhere; }
+.quotation-email__actions {
+  border-top: 1px solid var(--myc-line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 14px;
+}
+
+.quotation-email-delivery { align-items: flex-start; display: flex; gap: 12px; justify-content: space-between; min-width: 0; }
+.quotation-email-delivery__body { display: grid; flex: 1 1 auto; gap: 4px; min-width: 0; }
+.quotation-email-delivery__body span, .quotation-email-delivery__body strong { overflow-wrap: anywhere; }
+.quotation-email-delivery__top { align-items: baseline; display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: space-between; }
+.quotation-email-delivery__error { color: var(--myc-danger); }
+.quotation-email-delivery > button { flex: none; }
+
+@media (max-width: 760px) {
+  .client-contacts-panel__form { grid-template-columns: minmax(0, 1fr); }
+  .client-contact-card { grid-template-areas: "head" "data" "actions"; grid-template-columns: minmax(0, 1fr); }
+  .client-contact-card__actions { justify-content: flex-start; }
+  .quotation-email__recipients-grid { grid-template-columns: minmax(0, 1fr); }
+  .quotation-email__frame { height: 320px; }
+  .quotation-email__actions > button { flex: 1 1 100%; }
+  .quotation-email-delivery { flex-direction: column; }
+}
+
 /* Ejecución técnica LAB dentro del ERP (vista administrativa READ-ONLY del ETS).
    La presentación reutiliza el design system del ERP (quotation-section,
    section-heading, read-only-grid, glass-card-mini, ets-metric-strip,

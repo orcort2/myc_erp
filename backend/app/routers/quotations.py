@@ -12,6 +12,12 @@ from app.schemas.quotation import (
     QuotationStatusChange,
     QuotationUpdate,
 )
+from app.schemas.email import (
+    QuotationEmailDeliveryRead,
+    QuotationEmailPreview,
+    QuotationEmailRequest,
+    QuotationEmailSendResult,
+)
 from app.schemas.service_execution import (
     QuotationItemDecisionCreate,
     QuotationItemDecisionRead,
@@ -29,10 +35,16 @@ from app.services.quotations import (
     update_quotation,
     update_quotation_item,
 )
+from app.services.quotation_email import (
+    list_quotation_email_deliveries,
+    preview_quotation_email,
+    send_quotation_email,
+)
 from app.services.quotation_pdfs import generate_quotation_pdf
 from app.services.service_execution import decide_quotation_item
 from app.models.user import User
-from app.services.auth import get_current_user, require_permission
+from app.services.auth import get_current_user, require_permission, user_has_permission
+from fastapi import HTTPException
 
 
 router = APIRouter(prefix="/quotations", tags=["quotations"])
@@ -103,6 +115,40 @@ def patch_quotation(
     current_user: User = Depends(get_current_user),
 ) -> QuotationRead:
     return update_quotation(db, quotation_id, payload, user_id=current_user.id)
+
+
+@router.post("/{quotation_id}/email/preview", response_model=QuotationEmailPreview)
+def preview_email_for_quotation(
+    quotation_id: int,
+    payload: QuotationEmailRequest | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("quotations.email.send")),
+) -> QuotationEmailPreview:
+    payload = payload or QuotationEmailRequest()
+    return preview_quotation_email(db, quotation_id, to=payload.to, cc=payload.cc)
+
+
+@router.post("/{quotation_id}/email/send", response_model=QuotationEmailSendResult)
+def send_email_for_quotation(
+    quotation_id: int,
+    payload: QuotationEmailRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("quotations.email.send")),
+) -> QuotationEmailSendResult:
+    """Emails the official PDF. Unlike ``/send`` this never changes the quotation status."""
+    return send_quotation_email(db, quotation_id, to=payload.to or [], cc=payload.cc, actor=current_user)
+
+
+@router.get("/{quotation_id}/email/deliveries", response_model=list[QuotationEmailDeliveryRead])
+def get_quotation_email_deliveries(
+    quotation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("email.deliveries.read")),
+) -> list[QuotationEmailDeliveryRead]:
+    # Contextual history: needs the quotation's own read permission too.
+    if not user_has_permission(current_user, "quotations.read"):
+        raise HTTPException(status_code=403, detail="Permiso insuficiente")
+    return list_quotation_email_deliveries(db, quotation_id)
 
 
 @router.get("/{quotation_id}/snapshots", response_model=list[QuotationSnapshotRead])

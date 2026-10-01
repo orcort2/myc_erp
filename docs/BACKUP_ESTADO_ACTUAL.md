@@ -684,6 +684,16 @@ venv.
 - Pendientes: rate limit anónimo/IP (TD-EMAIL-2), `auth_version` en otros
   cambios de credencial, definir `PUBLIC_APP_BASE_URL` en despliegue.
 
+## EMAIL-3: contactos de cliente y correo de cotizaciones (sin commit)
+
+- Endpoints `/api/clients/{id}/contacts` (5) y `/api/quotations/{id}/email/{preview,send,deliveries}` (3);
+  inventario API 568. `Quotation.contact_id` y migración `c3e6a9b2d4f8`
+  (down `b2d5f8a1c3e7`, único head). Pendiente `alembic upgrade head` local.
+- Frontend: pestaña Contactos del cliente, selector de contacto principal,
+  modal "Enviar por correo" y pestaña Correos en la cotización.
+- El envío por correo no cambia `quotation.status`. Pendientes: EMAIL-4 (facturas),
+  TD-EMAIL-3 (PDF histórico), UI de plantillas.
+
 ## Autoridades documentales
 
 `project/DOCUMENTATION_INDEX.md` rige la jerarquía. La autoridad Developer

@@ -57,7 +57,7 @@ export function getFirstValidationTab(errors) {
   return 'general';
 }
 
-export function toClientPayload(form) {
+export function toClientPayload(form, { includeContacts = true } = {}) {
   const legalName =
     form.clientType === 'persona_fisica'
       ? [form.firstName.trim(), form.firstLastName.trim(), form.secondLastName.trim()].filter(Boolean).join(' ')
@@ -90,16 +90,11 @@ export function toClientPayload(form) {
     country: form.country.trim() || null,
     fiscal_country_code: form.fiscalCountryCode.trim() || null,
     fiscal_postal_code: form.fiscalPostalCode.trim() || null,
-    contacts: contactName
-      ? [
-          {
-            name: contactName,
-            email: form.email.trim() || null,
-            phone: form.phone.trim() || null,
-            position: null
-          }
-        ]
-      : []
+    // Only the optional initial contact on creation: the client's general email/phone
+    // are NOT copied into a person's contact data.
+    ...(includeContacts
+      ? { contacts: contactName ? [{ name: contactName, email: null, phone: null, position: null }] : [] }
+      : {})
   };
 
   return Object.fromEntries(

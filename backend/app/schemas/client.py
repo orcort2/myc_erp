@@ -15,10 +15,22 @@ class ClientContactCreate(ClientContactBase):
     pass
 
 
+class ClientContactUpdate(BaseModel):
+    """Partial update: only the sent fields change; ``id`` and ownership never do."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=180)
+    email: EmailStr | None = None
+    phone: str | None = Field(default=None, max_length=40)
+    position: str | None = Field(default=None, max_length=120)
+
+
 class ClientContactRead(ClientContactBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    client_id: int
     is_active: bool
     created_at: datetime
     updated_at: datetime

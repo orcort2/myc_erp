@@ -37,6 +37,15 @@ class Quotation(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         index=True,
     )
 
+    # Main interlocutor for this quotation. The person's data lives in
+    # ClientContact (single authority); history keeps the reference even if
+    # the contact is later deactivated, and deleting a contact never deletes
+    # the quotation.
+    contact_id: Mapped[int | None] = mapped_column(
+        ForeignKey("client_contacts.id", ondelete="SET NULL"),
+        index=True,
+    )
+
     status: Mapped[str] = mapped_column(
         String(40),
         default="draft",
@@ -74,6 +83,10 @@ class Quotation(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         foreign_keys=[advisor_id],
     )
 
+    contact: Mapped["ClientContact | None"] = relationship(
+        foreign_keys=[contact_id],
+    )
+
     items: Mapped[list["QuotationItem"]] = relationship(
         back_populates="quotation",
         cascade="all, delete-orphan",
@@ -93,6 +106,18 @@ class Quotation(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         if self.advisor is None or not self.advisor.is_active:
             return None
         return self.advisor.full_name or self.advisor.email
+
+    @property
+    def contact_name(self) -> str | None:
+        return self.contact.name if self.contact is not None else None
+
+    @property
+    def contact_email(self) -> str | None:
+        return self.contact.email if self.contact is not None else None
+
+    @property
+    def contact_position(self) -> str | None:
+        return self.contact.position if self.contact is not None else None
 
     @property
     def service_order_id(self) -> int | None:

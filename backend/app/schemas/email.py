@@ -70,3 +70,63 @@ class EmailTransportStatus(BaseModel):
     starttls: bool
     authentication_mode: str
     from_address: str | None
+
+
+# ---- Quotation email (EMAIL-3): contextual, built by the backend from the entity ----
+class QuotationEmailRecipient(BaseModel):
+    email: str
+    name: str | None = None
+    source: str  # quotation_contact | client_contact | client_email
+    contact_id: int | None = None
+    selected: bool = False
+
+
+class QuotationEmailAttachmentInfo(BaseModel):
+    filename: str
+    content_type: str
+    size: int | None = None
+
+
+class QuotationEmailRequest(BaseModel):
+    """Only recipients are client-controlled: never subject, body, HTML or files."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    to: list[str] | None = Field(default=None, max_length=20)
+    cc: list[str] | None = Field(default=None, max_length=20)
+
+
+class QuotationEmailPreview(BaseModel):
+    quotation_id: int
+    template_key: str
+    available_recipients: list[QuotationEmailRecipient]
+    to: list[str]
+    cc: list[str]
+    subject: str
+    body_text: str
+    body_html: str
+    attachments: list[QuotationEmailAttachmentInfo]
+
+
+class QuotationEmailSendResult(BaseModel):
+    delivery_id: int
+    status: str
+    sent: bool
+    reason: str | None = None
+
+
+class QuotationEmailDeliveryRead(BaseModel):
+    id: int
+    created_at: datetime
+    status: str
+    to: list[str]
+    cc: list[str]
+    subject: str
+    sent_at: datetime | None
+    failed_at: datetime | None
+    failure_code: str | None
+    last_error: str | None
+    attempt_count: int
+    requested_by_id: int | None
+    requested_by_name: str | None
+    attachments: list[dict]
