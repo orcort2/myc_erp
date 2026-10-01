@@ -108,6 +108,7 @@ from app.models.notification import Notification, PushDevice
 from app.models.portal_invitation import PortalInvitation
 from app.models.portal_invitation_role import PortalInvitationRole
 from app.models.portal_registration import PortalRegistration
+from app.models.email import EmailDelivery, EmailTemplate
 from app.models.quotation import (
     Quotation,
     QuotationItem,
@@ -263,6 +264,8 @@ __all__ = [
     "PortalInvitation",
     "PortalInvitationRole",
     "PortalRegistration",
+    "EmailTemplate",
+    "EmailDelivery",
     "Quotation",
     "QuotationItem",
     "QuotationItemDecision",

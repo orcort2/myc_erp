@@ -31,7 +31,10 @@ def test_inventory_has_only_the_32_governed_compatibility_gaps():
     # cancelar/restaurar OT LAB) se clasifican con la misma autoridad LAB que
     # ya exigen sus servicios de dominio en Mobile; ambos permisos ya están
     # gobernados por ROLE_PERMISSIONS y son posteriores al catálogo v1.0.
-    assert len(inventory - catalog_permissions) == 35
+    # 40 = 35 + las cinco capacidades administrativas de EMAIL-1
+    # (email.templates.read/manage, email.deliveries.read/retry,
+    # email.transport.status): posteriores al catálogo institucional v1.0.
+    assert len(inventory - catalog_permissions) == 40
     assert {"work_orders.reopen", "lab_work_orders.cancel"} <= inventory - catalog_permissions
     assert inventory <= current
     assert "portal.view" not in inventory

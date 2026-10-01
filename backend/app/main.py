@@ -29,6 +29,7 @@ from app.routers import (
     lab_clients,
     health,
     invoices,
+    email as email_router,
     integrations,
     institutional_configurations,
     metrology,
@@ -159,6 +160,7 @@ include_api_router(certificates.router, prefix="/api")
 include_api_router(communications.router, prefix="/api")
 include_api_router(invoices.router, prefix="/api")
 include_api_router(integrations.router, prefix="/api")
+include_api_router(email_router.router, prefix="/api")
 include_api_router(sat_catalogs.router, prefix="/api")
 include_api_router(institutional_configurations.router, prefix="/api")
 include_api_router(client_portal.router, prefix="/api")

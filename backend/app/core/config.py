@@ -74,6 +74,23 @@ class Settings(BaseSettings):
     facturama_sandbox_url: str = ""
     facturama_production_url: str = ""
     facturama_timeout_seconds: float = Field(default=30, gt=0)
+    # EMAIL-1: institutional SMTP. Disabled by default; the production relay
+    # (Google Workspace smtp-relay.gmail.com:587 + STARTTLS) is authorised by
+    # IP, so username/password are optional. Secrets come only from external
+    # configuration -- never from the database or any API response.
+    email_enabled: bool = False
+    smtp_host: str = ""
+    smtp_port: int = Field(default=587, gt=0, le=65535)
+    smtp_use_starttls: bool = True
+    smtp_username: str = ""
+    smtp_password: SecretStr = SecretStr("")
+    email_from_address: str = ""
+    email_from_name: str = "Metrología y Servicios MYC"
+    email_reply_to: str = ""
+    email_timeout_seconds: float = Field(default=15, gt=0)
+    # Public origin of the web app, used to build links inside emails
+    # (e.g. https://erp.example.com). No default: it is deployment-specific.
+    portal_public_base_url: str = ""
     resolution_center_organization_id: str = "myc"
     enable_api_docs: bool = False
     enable_developer_portal: bool = False
@@ -84,6 +101,17 @@ class Settings(BaseSettings):
     def validate_production_secret(self) -> "Settings":
         if self.environment.strip().lower() not in {"production", "prod"}:
             return self
+
+        if self.email_enabled:
+            # Username/password stay optional: the Google Workspace relay is IP-authorised.
+            if not self.smtp_host.strip():
+                raise ValueError("SMTP_HOST es obligatorio en producción con EMAIL_ENABLED=true.")
+            from_address = self.email_from_address.strip()
+            # Config-level sanity only; full address validation lives in the SMTP transport.
+            if not from_address or "@" not in from_address or any(c in from_address for c in " \r\n\t"):
+                raise ValueError("EMAIL_FROM_ADDRESS es obligatorio y debe ser una dirección válida en producción con EMAIL_ENABLED=true.")
+            if not self.smtp_use_starttls:
+                raise ValueError("SMTP_USE_STARTTLS es obligatorio en producción.")
 
         secret = self.secret_key.strip()
         rejected_values = {

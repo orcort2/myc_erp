@@ -656,6 +656,21 @@ venv.
 - Validaciones: tests backend de Facturama/facturas y `node --test` focal.
 - Pendiente: validar en Producción real con un CFDI controlado (no ejecutado).
 
+## EMAIL-1: infraestructura institucional de correo (sin commit)
+
+- Nuevo subsistema `backend/app/services/email/` (catálogo de plantillas,
+  renderer, `SmtpTransport`, `send_email`/`preview_email`/`retry_delivery`),
+  modelos `EmailTemplate`/`EmailDelivery`, router `/api/email` (7 operaciones;
+  inventario API 558) y permisos `email.*`, `quotations.email.send`,
+  `invoices.email.send`.
+- Migración `a1c4e7b9d2f6` (down `e8f1a3c5d7b9`), único head: tablas
+  `email_templates` y `email_deliveries`. Pendiente aplicar `alembic upgrade head`
+  en la base local; el respaldo SQL no se regeneró.
+- Portal: `mail_service.py` es adapter hacia `EmailService`; `development_outbox`
+  sólo en no producción. Config nueva: `EMAIL_*`, `SMTP_*`, `PORTAL_PUBLIC_BASE_URL`.
+- Pendientes: EMAIL-2/3/4, UI de plantillas, validar `billing_emails` (TD-EMAIL-1),
+  probar el relay real de Google Workspace en despliegue.
+
 ## Autoridades documentales
 
 `project/DOCUMENTATION_INDEX.md` rige la jerarquía. La autoridad Developer

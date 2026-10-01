@@ -383,7 +383,13 @@ def create_public_registration(
         db,
         registration.id,
     )
-    send_verification_email(email=registration.user.email, token=verification_token)
+    send_verification_email(
+        db,
+        email=registration.user.email,
+        token=verification_token,
+        recipient_name=registration.user.full_name,
+        registration_id=registration.id,
+    )
 
     return PortalRegistrationCreationResult(
         registration=registration,
@@ -607,7 +613,13 @@ def resend_registration_verification(
         db.rollback()
         raise
 
-    send_verification_email(email=registration.user.email, token=verification_token)
+    send_verification_email(
+        db,
+        email=registration.user.email,
+        token=verification_token,
+        recipient_name=registration.user.full_name,
+        registration_id=registration.id,
+    )
     return PortalRegistrationResendResult(
         registration=get_registration_or_404(
             db,

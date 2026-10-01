@@ -152,6 +152,13 @@ PATCH,/api/documents/{document_id}/archive,documents,patch_archive_document,auth
 POST,/api/documents/{document_id}/versions,documents,post_document_version,authenticated_permission,access_jwt,documents.create,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/documents/{document_id}/versions/{version_id}/activate,documents,post_activate_document_version,authenticated_permission,access_jwt,documents.create,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 GET,/api/documents/{document_id}/versions/{version_id}/download,documents,download_document_version,authenticated_permission,access_jwt,documents.read,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+GET,/api/email/deliveries,email,read_deliveries,administrative,access_jwt,email.deliveries.read,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+GET,/api/email/deliveries/{delivery_id},email,read_delivery,administrative,access_jwt,email.deliveries.read,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+POST,/api/email/deliveries/{delivery_id}/retry,email,retry_email_delivery,administrative,access_jwt,email.deliveries.retry,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+GET,/api/email/templates,email,read_templates,administrative,access_jwt,email.templates.read,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+GET,/api/email/templates/{template_key},email,read_template,administrative,access_jwt,email.templates.read,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+PATCH,/api/email/templates/{template_key},email,patch_template,administrative,access_jwt,email.templates.manage,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+GET,/api/email/transport/status,email,read_transport_status,administrative,access_jwt,email.transport.status,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 GET,/api/equipment,equipment,get_equipment_list,authenticated_permission,access_jwt,equipment.read,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/equipment,equipment,post_equipment,authenticated_permission,access_jwt,equipment.create,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 DELETE,/api/equipment/{equipment_id},equipment,delete_equipment,authenticated_permission,access_jwt,equipment.delete,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
