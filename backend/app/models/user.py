@@ -5,6 +5,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Integer,
     String,
     Table,
     event,
@@ -176,6 +177,16 @@ class User(
     must_change_password: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
+        nullable=False,
+    )
+
+    # Web session authority: JWTs carry this value; a reset bumps it, which
+    # invalidates every earlier token (legacy tokens without the claim are only
+    # valid while auth_version == 1).
+    auth_version: Mapped[int] = mapped_column(
+        Integer,
+        default=1,
+        server_default="1",
         nullable=False,
     )
 

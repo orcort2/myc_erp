@@ -65,7 +65,7 @@ def _get_user_by_email(db: Session, email: str) -> User | None:
 
 def _build_tokens(user: User) -> dict:
     role_names = [role.name for role in user.roles if role.is_active]
-    claims = {"roles": role_names, "auth_context": "internal"}
+    claims = {"roles": role_names, "auth_context": "internal", "auth_version": user.auth_version}
     return {
         "access_token": create_access_token(str(user.id), extra_claims=claims),
         "refresh_token": create_refresh_token(str(user.id), extra_claims=claims),
@@ -153,6 +153,13 @@ def authenticate_user(db: Session, payload: UserLogin) -> dict:
     return _build_tokens(user)
 
 
+def token_matches_auth_version(payload: dict, user: User) -> bool:
+    """Single rule for web JWTs. Legacy tokens (no claim) count as version 1,
+    so they stay valid only until the account's first auth_version bump."""
+    claimed = payload.get("auth_version", 1)
+    return isinstance(claimed, int) and not isinstance(claimed, bool) and claimed == user.auth_version
+
+
 def _get_user(db: Session, user_id: int) -> User:
     user = db.scalar(
         select(User)
@@ -193,7 +200,10 @@ def resolve_access_token_user(db: Session, token: str) -> User:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token invalido",
         ) from exc
-    return _get_user(db, user_id)
+    user = _get_user(db, user_id)
+    if not token_matches_auth_version(payload, user):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalido")
+    return user
 
 
 def refresh_tokens(db: Session, refresh_token: str) -> dict:
@@ -209,7 +219,10 @@ def refresh_tokens(db: Session, refresh_token: str) -> dict:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token invalido",
         ) from exc
-    return _build_tokens(_get_user(db, user_id))
+    user = _get_user(db, user_id)
+    if not token_matches_auth_version(payload, user):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token invalido")
+    return _build_tokens(user)
 
 
 def user_has_permission(user: User, permission: str) -> bool:

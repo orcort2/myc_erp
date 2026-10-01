@@ -17,7 +17,7 @@ Ningún dominio importa `smtplib`. `portal/mail_service.py` es un adapter delgad
 
 ## Configuración (sólo variables de entorno)
 
-`EMAIL_ENABLED` (false), `SMTP_HOST`, `SMTP_PORT` (587), `SMTP_USE_STARTTLS` (true), `SMTP_USERNAME`/`SMTP_PASSWORD` (opcionales: relay por IP sin AUTH), `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME`, `EMAIL_REPLY_TO`, `EMAIL_TIMEOUT_SECONDS` (15) y `PORTAL_PUBLIC_BASE_URL` (origen web para construir enlaces; sin default productivo). En producción con `EMAIL_ENABLED=true` el arranque falla si falta `SMTP_HOST` o `EMAIL_FROM_ADDRESS` (con `@` y sin espacios; la validación completa de la dirección es del transporte) o si `SMTP_USE_STARTTLS=false`. Ningún secreto se guarda en BD ni se devuelve por API.
+`EMAIL_ENABLED` (false), `SMTP_HOST`, `SMTP_PORT` (587), `SMTP_USE_STARTTLS` (true), `SMTP_USERNAME`/`SMTP_PASSWORD` (opcionales: relay por IP sin AUTH), `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME`, `EMAIL_REPLY_TO`, `EMAIL_TIMEOUT_SECONDS` (15) y `PUBLIC_APP_BASE_URL` (origen web para construir enlaces; fallback legado `PORTAL_PUBLIC_BASE_URL`; sin default productivo y obligatoria `https://` en producción con `EMAIL_ENABLED=true`). En producción con `EMAIL_ENABLED=true` el arranque falla si falta `SMTP_HOST` o `EMAIL_FROM_ADDRESS` (con `@` y sin espacios; la validación completa de la dirección es del transporte) o si `SMTP_USE_STARTTLS=false`. Ningún secreto se guarda en BD ni se devuelve por API.
 
 ## Plantillas
 
@@ -39,4 +39,4 @@ API (`/api/email`): `GET/PATCH templates`, `GET deliveries[/id]`, `POST deliveri
 
 ## Pendientes futuros
 
-EMAIL-2 (password reset), EMAIL-3 (cotizaciones), EMAIL-4 (facturas), UI de plantillas, outbox/worker asíncrono, retención de adjuntos regenerables, activación de `PORTAL_PUBLIC_BASE_URL` por despliegue.
+EMAIL-2 ya implementado (ver `PASSWORD_RESET.md`), EMAIL-3 (cotizaciones), EMAIL-4 (facturas), UI de plantillas, outbox/worker asíncrono, retención de adjuntos regenerables, activación de `PORTAL_PUBLIC_BASE_URL` por despliegue.

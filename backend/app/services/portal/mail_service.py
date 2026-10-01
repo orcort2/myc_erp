@@ -13,9 +13,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.services.email import send_email
+from app.services.email.urls import resolve_public_base_url
 
 logger = logging.getLogger(__name__)
-DEVELOPMENT_BASE_URL = "http://localhost:5173"
 
 
 @dataclass(frozen=True)
@@ -34,10 +34,7 @@ def _is_production() -> bool:
 
 
 def _base_url() -> str | None:
-    configured = settings.portal_public_base_url.strip().rstrip("/")
-    if configured:
-        return configured
-    return None if _is_production() else DEVELOPMENT_BASE_URL
+    return resolve_public_base_url(settings)
 
 
 def _deliver(db: Session, *, kind: str, template_key: str, email: str, token: str, path: str, context: dict, entity_type: str, entity_id: int | None) -> None:
@@ -45,7 +42,7 @@ def _deliver(db: Session, *, kind: str, template_key: str, email: str, token: st
         development_outbox.append(DevelopmentPortalMail(kind, email, token))
     base_url = _base_url()
     if base_url is None:
-        logger.error("PORTAL_PUBLIC_BASE_URL no está configurado; no se envió el correo %s.", template_key)
+        logger.error("PUBLIC_APP_BASE_URL no está configurado; no se envió el correo %s.", template_key)
         return
     try:
         send_email(

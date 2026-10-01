@@ -34,7 +34,7 @@ from app.core.security import (
 )
 from app.models.user import User
 from app.services.auth import effective_user_permissions, user_can_resolve_own_lab_folios
-from app.services.auth import resolve_access_token_user
+from app.services.auth import resolve_access_token_user, token_matches_auth_version
 
 
 mobile_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/mobile/v1/auth/login")
@@ -206,6 +206,10 @@ def resolve_mobile_token(
     if auth_context in {"internal", "mobile_internal"}:
         if user.account_type != PortalAccountType.INTERNAL.value:
             raise _unauthorized("El token no corresponde a un actor interno")
+        # Legacy ERP web JWTs honor the web session authority; mobile_internal
+        # tokens are bound to a MobileAuthSession, which a reset revokes.
+        if auth_context == "internal" and not token_matches_auth_version(payload, user):
+            raise _unauthorized("Token Mobile inválido")
         context = _internal_context(user)
     else:
         if user.account_type != PortalAccountType.CLIENT_PORTAL.value:

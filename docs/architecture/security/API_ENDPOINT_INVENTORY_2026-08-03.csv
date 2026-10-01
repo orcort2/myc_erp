@@ -16,11 +16,13 @@ GET,/api/activity/{entity_type}/{entity_id},activity,get_entity_activity,authent
 POST,/api/activity/{entity_type}/{entity_id}/messages,activity,post_message,authenticated_permission,access_jwt,activity.read,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/activity/{entity_type}/{entity_id}/read,activity,post_entity_read,authenticated_permission,access_jwt,activity.read,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 GET,/api/audit-logs,audit_logs,get_audit_logs,administrative,access_jwt,audit_logs.read,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+POST,/api/auth/forgot-password,auth,forgot_password,public_intentional,none,,,anonymous,yes,not_applicable,not_applicable,not_applicable,
 POST,/api/auth/login,auth,login,public_intentional,none,,,anonymous,yes,not_applicable,not_applicable,not_applicable,
 GET,/api/auth/me,auth,me,authenticated,access_jwt,,,internal_user,no,required,not_applicable,not_applicable,
 POST,/api/auth/refresh,auth,refresh,public_intentional,none,,,anonymous,yes,not_applicable,not_applicable,not_applicable,
 POST,/api/auth/register,auth,register,public_intentional,none,,,anonymous,yes,not_applicable,not_applicable,not_applicable,
 GET,/api/auth/registration-status,auth,get_registration_status,public_intentional,none,,,anonymous,yes,not_applicable,not_applicable,not_applicable,
+POST,/api/auth/reset-password,auth,reset_password_route,public_intentional,none,,,anonymous,yes,not_applicable,not_applicable,not_applicable,
 GET,/api/calibration-procedures,calibration-procedures,get_calibration_procedures,authenticated_permission,access_jwt,procedures.read,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/calibration-procedures,calibration-procedures,post_calibration_procedure,authenticated_permission,access_jwt,procedures.create,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 DELETE,/api/calibration-procedures/{procedure_id},calibration-procedures,delete_calibration_procedure,authenticated_permission,access_jwt,procedures.delete,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011

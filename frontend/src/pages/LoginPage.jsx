@@ -114,6 +114,7 @@ function LoginPage({ onAuthenticated }) {
         >
           {mode === 'login' ? 'Crear primer usuario' : 'Ya tengo usuario'}
         </button> : null}
+        {mode === 'login' ? <button className="text-button" onClick={() => navigate('/forgot-password')} type="button">¿Olvidaste tu contraseña?</button> : null}
         {mode === 'login' ? <button className="text-button" onClick={() => navigate('/portal/login')} type="button">Acceso al Portal del Cliente</button> : null}
       </section>
     </main>

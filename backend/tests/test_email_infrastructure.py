@@ -455,7 +455,7 @@ def test_production_with_email_enabled_rejects_incomplete_smtp_config(overrides)
 
 
 def test_google_relay_by_ip_without_credentials_is_valid_in_production():
-    settings = make_settings(**PROD, smtp_host="smtp-relay.gmail.com", smtp_username="", smtp_password="")
+    settings = make_settings(**PROD, smtp_host="smtp-relay.gmail.com", smtp_username="", smtp_password="", public_app_base_url="https://erp.example.test")
     assert settings.smtp_port == 587 and settings.smtp_use_starttls
 
 

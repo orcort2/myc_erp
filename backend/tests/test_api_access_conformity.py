@@ -26,7 +26,8 @@ def test_every_http_operation_has_an_explicit_access_classification():
     # DEV-1A adds GET /mobile/v1/developer/broker/health.
     # ETS/LAB Phase 1 adds six ERP link/history/candidate operations.
     # EMAIL-1 adds seven /email operations (templates, deliveries, transport status).
-    assert len(operations) == 558
+    # EMAIL-2 adds public forgot-password / reset-password.
+    assert len(operations) == 560
     assert all(classify_operation(item.method, item.path, item.tags) for item in operations)
 
 
@@ -51,6 +52,8 @@ def test_public_allowlist_is_small_and_intentional():
         ("POST", "/api/auth/register"),
         ("POST", "/api/auth/login"),
         ("POST", "/api/auth/refresh"),
+        ("POST", "/api/auth/forgot-password"),
+        ("POST", "/api/auth/reset-password"),
         ("POST", "/api/mobile/v1/auth/login"),
         ("POST", "/api/mobile/v1/auth/refresh"),
         ("POST", "/api/mobile/v1/auth/biometric/exchange"),

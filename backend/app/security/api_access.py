@@ -51,6 +51,10 @@ PUBLIC_OPERATIONS = {
     ("POST", "/api/auth/register"),
     ("POST", "/api/auth/login"),
     ("POST", "/api/auth/refresh"),
+    # EMAIL-2: password recovery is anonymous by definition; both endpoints are
+    # anti-enumeration and the reset is authenticated by a one-shot token.
+    ("POST", "/api/auth/forgot-password"),
+    ("POST", "/api/auth/reset-password"),
     ("POST", "/api/mobile/v1/auth/login"),
     ("POST", "/api/mobile/v1/auth/refresh"),
     # BIOMETRIC-2: exchange authenticates via the opaque biometric credential

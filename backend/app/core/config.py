@@ -90,7 +90,13 @@ class Settings(BaseSettings):
     email_timeout_seconds: float = Field(default=15, gt=0)
     # Public origin of the web app, used to build links inside emails
     # (e.g. https://erp.example.com). No default: it is deployment-specific.
+    # Precedence: PUBLIC_APP_BASE_URL, then the legacy PORTAL_PUBLIC_BASE_URL.
+    public_app_base_url: str = ""
     portal_public_base_url: str = ""
+    # EMAIL-2: password reset. Per-account cooldown only; anonymous/IP rate
+    # limiting belongs to the gateway (documented technical debt).
+    password_reset_expire_minutes: int = Field(default=30, gt=0)
+    password_reset_cooldown_seconds: int = Field(default=60, ge=0)
     resolution_center_organization_id: str = "myc"
     enable_api_docs: bool = False
     enable_developer_portal: bool = False
@@ -112,6 +118,10 @@ class Settings(BaseSettings):
                 raise ValueError("EMAIL_FROM_ADDRESS es obligatorio y debe ser una dirección válida en producción con EMAIL_ENABLED=true.")
             if not self.smtp_use_starttls:
                 raise ValueError("SMTP_USE_STARTTLS es obligatorio en producción.")
+            if not self.effective_public_base_url.lower().startswith("https://"):
+                raise ValueError(
+                    "PUBLIC_APP_BASE_URL (o PORTAL_PUBLIC_BASE_URL) debe ser una URL https válida en producción con EMAIL_ENABLED=true."
+                )
 
         secret = self.secret_key.strip()
         rejected_values = {
@@ -145,6 +155,11 @@ class Settings(BaseSettings):
                 "de al menos 32 caracteres y 100 bits estimados de entropía."
             )
         return self
+
+    @property
+    def effective_public_base_url(self) -> str:
+        """Public web origin for links in emails (no trailing slash, '' if unset)."""
+        return (self.public_app_base_url.strip() or self.portal_public_base_url.strip()).rstrip("/")
 
     @property
     def uses_development_secret(self) -> bool:
