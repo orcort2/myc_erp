@@ -12,10 +12,11 @@ from app.services.facturama.invoices import _mark_issued
 from app.services.invoices import list_accounts_receivable, register_invoice_payment
 
 
-def _invoice(*, status="draft", balance="100.00", paid="0.00"):
+def _invoice(*, status="draft", balance="100.00", paid="0.00", environment=None):
     return SimpleNamespace(
         id=11,
         status=status,
+        facturama_environment=environment,
         total=Decimal("100.00"),
         subtotal=Decimal("100.00"),
         tax_total=Decimal("0.00"),
@@ -86,7 +87,7 @@ def test_payment_rejects_cancelled_settled_and_overpayment(status, balance, amou
     ("100.00", "0.00", "paid"),
 ])
 def test_stamping_preserves_financial_status(paid, balance, expected):
-    invoice = _invoice(status="issuing", balance=balance, paid=paid)
+    invoice = _invoice(status="issuing", balance=balance, paid=paid, environment="sandbox")
     attempt = SimpleNamespace(
         status="issuing",
         response_json=None,
@@ -108,6 +109,7 @@ def test_stamping_preserves_financial_status(paid, balance, expected):
 
     assert invoice.status == expected
     assert invoice.cfdi_uuid == "uuid-1"
+    assert invoice.facturama_environment == "sandbox"
     assert invoice.amount_paid == Decimal(paid)
     assert invoice.balance_due == Decimal(balance)
 

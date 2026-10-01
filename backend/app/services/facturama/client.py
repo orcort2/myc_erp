@@ -83,6 +83,10 @@ class FacturamaClient:
         self._owns_client = client is None
 
     @property
+    def environment(self) -> str:
+        return self._settings.facturama_environment
+
+    @property
     def base_url(self) -> str:
         url = (
             self._settings.facturama_sandbox_url

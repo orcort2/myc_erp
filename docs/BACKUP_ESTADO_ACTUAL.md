@@ -643,6 +643,19 @@ venv.
 - El estado global y pendientes ajenos a esta entrega permanecen bajo
   `project/PROJECT_STATUS.md` y `project/TECHNICAL_DEBT.md`.
 
+## Facturación: emisión en Producción y PDF de borrador (sin commit)
+
+- `issue_invoice` ya no bloquea `FACTURAMA_ENVIRONMENT=production`; persiste el
+  ambiente real antes de llamar al PAC y `_mark_issued`/auditoría lo conservan.
+- `reconcile_invoice` falla con `facturama_environment_mismatch` (409, sin
+  peticiones ni cambios) si el ambiente persistido (NULL = sandbox legado) no
+  coincide con `FacturamaClient.environment`.
+- PDF institucional: el receptor se lee del `fiscal_snapshot`; un borrador se
+  presenta como «BORRADOR · SIN TIMBRAR» sin QR/sellos/cadena.
+- UI: «Generar CFDI» / «Generando CFDI…». Sin migraciones.
+- Validaciones: tests backend de Facturama/facturas y `node --test` focal.
+- Pendiente: validar en Producción real con un CFDI controlado (no ejecutado).
+
 ## Autoridades documentales
 
 `project/DOCUMENTATION_INDEX.md` rige la jerarquía. La autoridad Developer

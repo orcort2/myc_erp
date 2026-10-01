@@ -1,4 +1,4 @@
-"""Sandbox CFDI issuance, reconciliation and document recovery.
+"""CFDI issuance (sandbox or production), reconciliation and document recovery.
 
 The critical invariant is that a response received from the PAC is persisted
 before it is interpreted.  A CFDI must never be re-issued merely because a
@@ -139,7 +139,9 @@ def _mark_issued(
     stamped_at = _parse_provider_datetime(_find_response_value(provider_payload, "Date", "date"))
     invoice.facturama_id = str(facturama_id)
     invoice.cfdi_uuid = str(uuid)
-    invoice.facturama_environment = "sandbox"
+    environment = invoice.facturama_environment
+    if not environment:
+        raise ValueError("La factura no tiene ambiente Facturama persistido.")
     stored_response = stored_response_json or provider_payload
     invoice.facturama_response_json = stored_response
     invoice.facturama_http_status = http_status
@@ -165,7 +167,7 @@ def _mark_issued(
         new_values={
             "uuid": invoice.cfdi_uuid,
             "facturama_id": invoice.facturama_id,
-            "environment": "sandbox",
+            "environment": environment,
         },
     )
     db.commit()
@@ -294,6 +296,20 @@ async def _xml_uuid_for_reconciliation(client: FacturamaClient, facturama_id: st
     return None
 
 
+def _ensure_same_environment(invoice: Invoice, client: FacturamaClient) -> None:
+    """Refuse to query a different Facturama environment than the one used to issue."""
+    active = client.environment
+    # Rows created before the environment was persisted could only be sandbox.
+    persisted = invoice.facturama_environment or "sandbox"
+    if persisted != active:
+        _error(
+            "facturama_environment_mismatch",
+            f"La factura se emitió en el ambiente {persisted} y Facturama está configurado en {active}; no se puede conciliar.",
+        )
+    if not invoice.facturama_environment:
+        invoice.facturama_environment = persisted
+
+
 async def reconcile_invoice(
     db: Session,
     invoice_id: int,
@@ -310,6 +326,7 @@ async def reconcile_invoice(
     invoice = db.scalar(select(Invoice).where(Invoice.id == invoice_id, Invoice.is_active.is_(True)).with_for_update())
     if invoice is None:
         _error("invoice_not_found", "Factura no encontrada.", 404)
+    _ensure_same_environment(invoice, client)
     if invoice.status == "issued" and invoice.facturama_id and confirmation is None:
         return await recover_documents(db, invoice_id, user_id=user_id, client=client)
     attempt = _latest_attempt(db, invoice.id)
@@ -388,8 +405,7 @@ async def reconcile_invoice(
 
 
 async def issue_invoice(db: Session, invoice_id: int, *, user_id: int, client: FacturamaClient, settings: Settings) -> Invoice:
-    if settings.facturama_environment != "sandbox":
-        _error("facturama_production_disabled", "La emisión en producción todavía no está habilitada.")
+    environment = settings.facturama_environment
     health = await FacturamaHealthService(client, settings).check()
     if not (settings.facturama_enabled and health.status == "connected"):
         _error("facturama_unavailable", "No es posible emitir porque Facturama no está conectado.")
@@ -398,6 +414,11 @@ async def issue_invoice(db: Session, invoice_id: int, *, user_id: int, client: F
         _error("invoice_not_found", "Factura no encontrada.", 404)
     if invoice.cfdi_uuid or invoice.facturama_id or invoice.status in ISSUE_BLOCKING_STATUSES:
         _error("invoice_already_issued" if invoice.status == "issued" else "invoice_reissue_blocked", "La factura no puede reemitirse hasta concluir su conciliación.")
+    if invoice.facturama_environment and invoice.facturama_environment != environment:
+        _error(
+            "facturama_environment_mismatch",
+            f"La factura tuvo un intento en el ambiente {invoice.facturama_environment} y Facturama está configurado en {environment}; no se puede emitir.",
+        )
     if invoice.review_required:
         _error("invoice_review_required", "Confirma la revisión del borrador antes de emitir.")
     settings_row = db.scalar(select(InvoiceSettings).where(InvoiceSettings.key == "default"))
@@ -407,7 +428,7 @@ async def issue_invoice(db: Session, invoice_id: int, *, user_id: int, client: F
         _error("invoice_validation_failed", "La factura no está lista para emitir.", 422, exc.fields)
     invoice.status = "issuing"
     invoice.facturama_request_json = payload
-    invoice.facturama_environment = "sandbox"
+    invoice.facturama_environment = environment
     invoice.facturama_attempted_at = datetime.now(timezone.utc)
     attempt = FacturamaInvoiceAttempt(
         invoice_id=invoice.id,
@@ -417,7 +438,7 @@ async def issue_invoice(db: Session, invoice_id: int, *, user_id: int, client: F
         issued_by_id=user_id,
     )
     db.add(attempt)
-    write_audit_log(db, action="facturama.issue_attempt", entity="invoices", entity_id=invoice.id, user_id=user_id, new_values={"environment": "sandbox"})
+    write_audit_log(db, action="facturama.issue_attempt", entity="invoices", entity_id=invoice.id, user_id=user_id, new_values={"environment": environment})
     db.commit()
     try:
         response = await client.post("/3/cfdis", json=payload)

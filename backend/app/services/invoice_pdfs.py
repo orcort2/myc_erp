@@ -332,11 +332,15 @@ def _extract_fiscal_context(invoice) -> dict[str, Any]:
             "tax_regime": "",
         },
         "receiver": {
-            "rfc": fiscal_snapshot.get("receiver_rfc", ""),
-            "name": fiscal_snapshot.get("receiver_legal_name", ""),
-            "tax_regime": fiscal_snapshot.get("receiver_tax_regime", ""),
-            "postal_code": fiscal_snapshot.get("receiver_postal_code", ""),
-            "cfdi_use": invoice.usage_cfdi or "",
+            "rfc": fiscal_snapshot.get("receiver_rfc") or "",
+            "name": fiscal_snapshot.get("receiver_legal_name") or "",
+            "tax_regime": fiscal_snapshot.get("receiver_tax_regime_code") or "",
+            "postal_code": fiscal_snapshot.get("receiver_fiscal_postal_code") or "",
+            "cfdi_use": (
+                fiscal_snapshot.get("receiver_cfdi_use_code")
+                or invoice.usage_cfdi
+                or ""
+            ),
         },
         "certificate_number": "",
         "sat_certificate_number": "",
@@ -493,7 +497,13 @@ def _public_invoice_context(
         or emitter_data.get("tax_regime", "")
     )
 
-    receiver = invoice.fiscal_client or invoice.client
+    # The frozen fiscal snapshot is the receiver authority; the live client is
+    # only a fallback for legacy invoices that have no snapshot at all.
+    receiver = (
+        None
+        if invoice.fiscal_snapshot
+        else invoice.fiscal_client or invoice.client
+    )
     receiver_name = (
         fiscal["receiver"]["name"]
         or getattr(receiver, "legal_name", None)
@@ -618,9 +628,12 @@ def _public_invoice_context(
             }
         )
 
+    is_stamped = bool(invoice.cfdi_uuid and invoice.stamped_at)
+
     qr_url = None
     if (
-        fiscal["uuid"]
+        is_stamped
+        and fiscal["uuid"]
         and issuer_rfc
         and receiver_rfc
         and fiscal["cfdi_seal"]
@@ -637,6 +650,7 @@ def _public_invoice_context(
         "invoice": invoice,
         "settings": settings,
         "fiscal": fiscal,
+        "is_stamped": is_stamped,
         "item_rows": item_rows,
         "total_words": _amount_in_words(
             invoice.total,

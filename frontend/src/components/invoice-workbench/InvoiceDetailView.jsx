@@ -422,9 +422,9 @@ export default function InvoiceDetailView({
       {canShowIssue ? (
         <section className="invoice-case-actions">
           <div>
-            <strong>Emitir CFDI</strong>
+            <strong>Generar CFDI</strong>
             <span>
-              El servicio de timbrado validará y sellará el comprobante.
+              Facturama validará y timbrará el CFDI.
             </span>
           </div>
 
@@ -440,8 +440,8 @@ export default function InvoiceDetailView({
             type="button"
           >
             {isSaving
-              ? 'Generando comprobante…'
-              : 'Emitir CFDI de prueba'}
+              ? 'Generando CFDI…'
+              : 'Generar CFDI'}
           </button>
 
           {invoice.review_required ||
