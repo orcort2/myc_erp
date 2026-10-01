@@ -67,7 +67,14 @@ def create_invitation(db: Session, *, client_id: int, email: str, full_name: str
         db.add(PortalInvitationRole(invitation_id=invitation.id, role_id=role.id))
     write_audit_log(db, action="portal.invitation.created", entity="portal_invitations", entity_id=invitation.id, user_id=actor_id, new_values={"client_id": client_id, "email": invitation.email, "role_codes": role_codes})
     db.commit()
-    send_invitation_email(email=invitation.email, token=token)
+    send_invitation_email(
+        db,
+        email=invitation.email,
+        token=token,
+        recipient_name=invitation.full_name,
+        client_name=client.commercial_name or client.legal_name,
+        invitation_id=invitation.id,
+    )
     return serialize_invitation(_get_invitation(db, invitation.id), token)
 
 
@@ -109,7 +116,15 @@ def resend_invitation(db: Session, invitation_id: int, actor_id: int) -> dict:
     invitation.expires_at = datetime.now(timezone.utc) + timedelta(hours=72)
     write_audit_log(db, action="portal.invitation.resent", entity="portal_invitations", entity_id=invitation.id, user_id=actor_id, new_values={"expires_at": invitation.expires_at.isoformat()})
     db.commit()
-    send_invitation_email(email=invitation.email, token=token)
+    client = db.get(Client, invitation.client_id)
+    send_invitation_email(
+        db,
+        email=invitation.email,
+        token=token,
+        recipient_name=invitation.full_name,
+        client_name=(client.commercial_name or client.legal_name) if client else None,
+        invitation_id=invitation.id,
+    )
     return serialize_invitation(_get_invitation(db, invitation.id), token)
 
 

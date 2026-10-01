@@ -285,6 +285,19 @@ def _generic_resource_policy(resource: str) -> Callable[[str, str], AccessPolicy
     return build
 
 
+def _email_policy(method: str, path: str) -> AccessPolicy:
+    if path.endswith("/transport/status"):
+        return _permission("email.transport.status", administrative=True)
+    if path.endswith("/retry"):
+        return _permission("email.deliveries.retry", administrative=True)
+    if "/deliveries" in path:
+        return _permission("email.deliveries.read", administrative=True)
+    return _permission(
+        "email.templates.read" if method == "GET" else "email.templates.manage",
+        administrative=True,
+    )
+
+
 POLICY_BY_TAG: dict[str, Callable[[str, str], AccessPolicy]] = {
     "activity": lambda _method, _path: _permission("activity.read"),
     "notifications": lambda _method, _path: AccessPolicy(AccessType.AUTHENTICATED, "access_jwt"),
@@ -308,6 +321,7 @@ POLICY_BY_TAG: dict[str, Callable[[str, str], AccessPolicy]] = {
     "certificates": _certificate_policy,
     "communications": _communications_policy,
     "invoices": _invoice_policy,
+    "email": _email_policy,
     "integrations": lambda _method, _path: _permission("integrations.facturama.status"),
     "sat-catalogs": lambda method, _path: _permission("sat_catalogs.read" if method == "GET" else "sat_catalogs.manage"),
     "institutional-configuration": _settings_policy,
