@@ -25,12 +25,12 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | Sección | Archivos |
 | --- | ---: |
 | Backend | 549 |
-| Frontend | 224 |
+| Frontend | 226 |
 | Scripts | 53 |
 | Recursos | 3 |
 | Configuración | 267 |
 | Documentación | 181 |
-| Pruebas | 120 |
+| Pruebas | 121 |
 
 ## Convenciones
 
@@ -688,6 +688,8 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | frontend/src/components/invoice-workbench/invoice-workbench.css | frontend/src/components | Estilos de componente | Implementa invoice workbench: estructura visual, interacción y/o estado reutilizable del flujo que nombra. | Páginas React, api.js, constantes y estilos relacionados | Páginas y componentes que importan este módulo | Alto | Estable |
 | frontend/src/components/invoice-workbench/invoicePaymentForm.js | Facturación / Pagos | Lógica pura de formulario | Inicializa, valida y serializa el pago sin valores calculados de saldo; determina si draft/prepago sin UUID continúa emitible. | Contratos Invoice/InvoicePaymentCreate | InvoicePaymentModal, InvoiceDetailView, BillingPage y EtsBillingTab | Alto | Estable |
 | frontend/src/components/invoice-workbench/invoicePaymentForm.test.js | Facturación / Pagos | Prueba frontend | Cubre importe inicial, cero/negativo/exceso, payload exacto y timbrado habilitable después de pago previo. | Node test e invoicePaymentForm | Desarrollo y CI frontend | Alto | Estable |
+| frontend/src/components/invoice-workbench/invoiceSettings.js | frontend/src/components | Lógica de componente | Implementa invoiceSettings: estructura visual, interacción y/o estado reutilizable del flujo que nombra. | Páginas React, api.js, constantes y estilos relacionados | Páginas y componentes que importan este módulo | Alto | Estable |
+| frontend/src/components/invoice-workbench/invoiceSettings.test.js | frontend/src/components | Lógica de componente | Implementa invoiceSettings.test: estructura visual, interacción y/o estado reutilizable del flujo que nombra. | Páginas React, api.js, constantes y estilos relacionados | Páginas y componentes que importan este módulo | Alto | Estable |
 | frontend/src/components/invoice-workbench/invoiceWorkbenchDraft.js | frontend/src/components | Lógica de componente | Implementa invoiceWorkbenchDraft: estructura visual, interacción y/o estado reutilizable del flujo que nombra. | Páginas React, api.js, constantes y estilos relacionados | Páginas y componentes que importan este módulo | Alto | Estable |
 | frontend/src/components/invoice-workbench/useInvoiceWorkbenchController.js | Facturación/Frontend | Controlador Workbench | Fuente única para apertura, borrador, emisión, pagos, PDF/XML/recibo, cartera y refresco; sincroniza selected/context/listado y permite al ETS reconsultar readiness tras liquidación. | api.js, invoiceWorkbenchDraft, contexto explícito y React hooks | BillingPage y EtsBillingTab | Crítico | Estable |
 | frontend/src/components/notifications/NotificationBell.jsx | frontend/src/components | Componente React | Implementa NotificationBell: estructura visual, interacción y/o estado reutilizable del flujo que nombra. | Páginas React, api.js, constantes y estilos relacionados | Páginas y componentes que importan este módulo | Medio | Estable |
@@ -1413,6 +1415,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | backend/tests/test_invoice_documents.py | Facturación / Documentos | Prueba automatizada | Verifica nombres/MIME/content-disposition de PDF MYC, XML y recibo de pago, además de priorizar Catálogos SAT oficiales en el imprimible. | invoice_pdfs.py, router, modelos de factura y fixtures | unittest en CI y desarrollo antes de liberar Facturación | Alto | Estable |
 | backend/tests/test_invoice_listing.py | Facturación/API | Prueba automatizada | Verifica que `service_order_id` limite el listado existente y que omitirlo conserve la consulta global del Centro de Facturación. | unittest, SQLAlchemy y servicio invoices | Desarrollo y CI antes de reutilizar el Workbench | Alto | Estable |
 | backend/tests/test_invoice_payments.py | Facturación / Pagos | Prueba automatizada | Verifica pago parcial/total, rechazos, cartera, permisos efectivos y conservación del estado financiero al timbrar. | Servicios/schemas de Invoice, Facturama y auth | pytest en CI y desarrollo antes de liberar Facturación | Alto | Estable |
+| backend/tests/test_invoice_settings.py | backend/tests/test_invoice_settings.py | Prueba automatizada | Verifica el contrato operativo de test invoice settings y previene regresiones del flujo asociado. | Módulos backend bajo prueba y fixtures | pytest/unittest en CI y desarrollo | Medio | Estable |
 | backend/tests/test_lab_capture_completion_notifications.py | backend/tests/test_lab_capture_completion_notifications.py | Prueba automatizada | Verifica el contrato operativo de test lab capture completion notifications y previene regresiones del flujo asociado. | Módulos backend bajo prueba y fixtures | pytest/unittest en CI y desarrollo | Medio | Estable |
 | backend/tests/test_lab_capture_packages.py | backend/tests/test_lab_capture_packages.py | Regresión Captura LAB PDF-only | Prueba cada bloqueo estructurado, grupo parcialmente incompleto bloqueado, tombstone ignorado, ZIP sólo con PDFs LAB nombrados por folio LAB y sin Certificate/Equipment/folios/auditoría nuevos. | Pytest, FastAPI TestClient, SQLite | Gate backend | Crítico | Estable |
 | backend/tests/test_lab_certificate_folio_distribution.py | backend/tests/test_lab_certificate_folio_distribution.py | Regresión de distribución de folios de certificado | Cubre preview/distribute todo-o-nada de MYCA/MYCT pendientes de cliente operativo externo: orden por posición, idempotencia, aislamiento por operator_client_id y concurrencia real PostgreSQL sobre el ticket certificate_folio_block. | Pytest, SQLAlchemy y servicios LAB de folios | Gate backend de folios de certificado LAB | Crítico | Estable |

@@ -235,13 +235,11 @@ class ReleasedUninvoicedRow(BaseModel):
 
 
 class InvoiceSettingsUpdate(BaseModel):
-    default_series: str | None = Field(default=None, max_length=20)
-    next_sequence: int | None = Field(default=None, ge=1)
-    reset_annually: bool | None = None
+    model_config = ConfigDict(extra="forbid")
+
     default_tax_rate: Decimal | None = None
     default_currency: str | None = Field(default=None, max_length=10)
     default_credit_days: int | None = Field(default=None, ge=0)
-    allow_manual_folio: bool | None = None
     forms_of_payment: dict | None = None
     methods_of_payment: dict | None = None
     usage_cfdi_catalog: dict | None = None

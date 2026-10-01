@@ -5,8 +5,9 @@ from decimal import Decimal, ROUND_HALF_UP
 from uuid import uuid4
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.exc import IntegrityError
 
 from app.models.certificate import Certificate
 from app.models.client import Client
@@ -46,7 +47,7 @@ def _money(value: Decimal | int | float | None) -> Decimal:
     return Decimal(value or 0).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def get_invoice_settings(db: Session) -> InvoiceSettings:
+def get_invoice_settings(db: Session, *, commit: bool = True) -> InvoiceSettings:
     settings = db.scalar(select(InvoiceSettings).where(InvoiceSettings.key == "default"))
     if settings is None:
         settings = InvoiceSettings(
@@ -76,9 +77,19 @@ def get_invoice_settings(db: Session) -> InvoiceSettings:
             pdf_template_name="invoice_pdf.html",
             cfdi_future_parameters={},
         )
-        db.add(settings)
-        db.commit()
-        db.refresh(settings)
+        # A savepoint also handles two first-time callers without committing
+        # the invoice transaction or rolling back the caller's other work.
+        try:
+            with db.begin_nested():
+                db.add(settings)
+                db.flush()
+        except IntegrityError:
+            settings = db.scalar(select(InvoiceSettings).where(InvoiceSettings.key == "default"))
+            if settings is None:
+                raise
+        if commit:
+            db.commit()
+            db.refresh(settings)
     return settings
 
 
@@ -218,13 +229,18 @@ def _validate_invoice_configuration(db: Session, invoice: Invoice) -> list[str]:
     return missing
 
 
-def _next_invoice_folio(db: Session, settings: InvoiceSettings, *, issued_on: date, series: str | None = None) -> tuple[str, str]:
-    series_value = (series or settings.default_series or "F").strip().upper()
-    sequence = int(settings.next_sequence or 1)
-    # Identificador interno MYC; no es la serie ni el folio fiscal del CFDI.
-    folio = f"MYCF-{issued_on:%Y}-{sequence:04d}"
-    settings.next_sequence = sequence + 1
-    return series_value, folio
+def _next_invoice_folio(db: Session, settings: InvoiceSettings, *, issued_on: date) -> tuple[str, str]:
+    # UPDATE locks the row and increments in the database, even when this
+    # Session loaded settings before another transaction allocated a folio.
+    # The caller commits both the allocation and invoice, or rolls both back.
+    sequence, series = db.execute(
+        update(InvoiceSettings)
+        .where(InvoiceSettings.id == settings.id)
+        .values(next_sequence=func.coalesce(InvoiceSettings.next_sequence, 1) + 1)
+        .returning(InvoiceSettings.next_sequence, InvoiceSettings.default_series)
+        .execution_options(synchronize_session="fetch")
+    ).one()
+    return (series or "F").strip().upper(), f"MYCF-{issued_on:%Y}-{sequence - 1:04d}"
 
 
 def _build_invoice_item(db: Session, payload, *, invoice_id: int | None = None) -> InvoiceItem:
@@ -357,7 +373,7 @@ def get_invoice(db: Session, invoice_id: int) -> Invoice:
 
 
 def create_invoice(db: Session, payload: InvoiceCreate, *, user_id: int | None = None) -> Invoice:
-    settings = get_invoice_settings(db)
+    settings = get_invoice_settings(db, commit=False)
     client = _get_client(db, payload.client_id)
     fiscal_client = _get_client(db, payload.fiscal_client_id or payload.client_id)
     service_order = _get_service_order(db, payload.service_order_id)
@@ -387,11 +403,7 @@ def create_invoice(db: Session, payload: InvoiceCreate, *, user_id: int | None =
         )))
         if missing:
             raise HTTPException(status_code=409, detail=f"Datos fiscales incompletos: {', '.join(missing)}")
-    if payload.folio and settings.allow_manual_folio:
-        series_value = payload.series or settings.default_series
-        folio = payload.folio
-    else:
-        series_value, folio = _next_invoice_folio(db, settings, issued_on=issued_on, series=payload.series)
+    series_value, folio = _next_invoice_folio(db, settings, issued_on=issued_on)
     credit_days = payload.credit_days if payload.credit_days is not None else settings.default_credit_days
     invoice = Invoice(
         internal_uuid=uuid4().hex,

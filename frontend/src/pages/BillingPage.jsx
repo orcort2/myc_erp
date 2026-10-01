@@ -717,29 +717,14 @@ function BillingPage({ user = null }) {
               onSubmit={handleSaveSettings}
             >
               <label>
-                <span>Serie interna default</span>
-                <input
-                  onChange={(event) =>
-                    setSettings((current) => ({
-                      ...current,
-                      default_series: event.target.value,
-                    }))
-                  }
-                  value={settings.default_series || ''}
-                />
-                <small>Solo identifica registros internos; la emisión fiscal usa la serie MYCF.</small>
+                <span>Serie interna</span>
+                <input readOnly value={settings.default_series || ''} />
+                <small>Administrada automáticamente por el sistema. No es la serie fiscal del CFDI.</small>
               </label>
               <label>
-                <span>Siguiente folio</span>
-                <input
-                  onChange={(event) =>
-                    setSettings((current) => ({
-                      ...current,
-                      next_sequence: Number(event.target.value || 1),
-                    }))
-                  }
-                  value={settings.next_sequence || 1}
-                />
+                <span>Siguiente consecutivo interno</span>
+                <input readOnly value={settings.next_sequence || 1} />
+                <small>Administrado automáticamente por el sistema. El folio fiscal proviene del XML timbrado.</small>
               </label>
               <label>
                 <span>IVA default</span>

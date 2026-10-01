@@ -49,9 +49,13 @@ def _filename(value: str | None) -> str:
 
 
 def invoice_document_filename(invoice, extension: str) -> str:
-    series = _filename(invoice.series)
-    folio = _filename(invoice.folio)
-    return f"Factura_MYC_{series}-{folio}.{extension}"
+    """Public identity comes from stored XML; internal folios name drafts only."""
+    if invoice.cfdi_uuid and invoice.stamped_at:
+        fiscal = _extract_fiscal_context(invoice)
+        identity = fiscal["identifier"] or f"CFDI_{fiscal['uuid']}"
+    else:
+        identity = f"Borrador_{invoice.folio}"
+    return f"Factura_MYC_{_filename(identity)}.{extension}"
 
 
 def _money(value: Any) -> str:
@@ -321,6 +325,9 @@ def _extract_fiscal_context(invoice) -> dict[str, Any]:
     fiscal_snapshot = invoice.fiscal_snapshot or {}
 
     result = {
+        "series": "",
+        "folio": "",
+        "identifier": "",
         "version": "4.0",
         "cfdi_type": "I",
         "exportation": "01",
@@ -360,6 +367,9 @@ def _extract_fiscal_context(invoice) -> dict[str, Any]:
 
     result.update(
         {
+            "series": _attr(root, "Serie"),
+            "folio": _attr(root, "Folio"),
+            "identifier": "-".join(filter(None, (_attr(root, "Serie"), _attr(root, "Folio")))),
             "version": _attr(root, "Version", default=result["version"]),
             "cfdi_type": _attr(
                 root,
@@ -466,6 +476,7 @@ def _extract_fiscal_context(invoice) -> dict[str, Any]:
             "product_service": _attr(element, "ClaveProdServ"),
             "unit": _attr(element, "ClaveUnidad"),
             "tax_object": _attr(element, "ObjetoImp"),
+            "no_identification": _attr(element, "NoIdentificacion"),
         }
         for element in _find_elements(root, "Concepto")
     ]
@@ -610,6 +621,7 @@ def _public_invoice_context(
         item_rows.append(
             {
                 "item": item,
+                "no_identification": xml_concept.get("no_identification") or "",
                 "product_service": _catalog_entry(
                     db,
                     CATALOG_CANDIDATES["product_service"],
