@@ -39,4 +39,4 @@ API (`/api/email`): `GET/PATCH templates`, `GET deliveries[/id]`, `POST deliveri
 
 ## Pendientes futuros
 
-EMAIL-2 ya implementado (ver `PASSWORD_RESET.md`), EMAIL-3 (cotizaciones), EMAIL-4 (facturas), UI de plantillas, outbox/worker asíncrono, retención de adjuntos regenerables, activación de `PORTAL_PUBLIC_BASE_URL` por despliegue.
+EMAIL-2 ya implementado (ver `PASSWORD_RESET.md`), EMAIL-3 ya implementado (ver `QUOTATION_EMAIL_AND_CONTACTS.md`), EMAIL-4 (facturas), UI de plantillas, outbox/worker asíncrono, retención de adjuntos regenerables, activación de `PORTAL_PUBLIC_BASE_URL` por despliegue.

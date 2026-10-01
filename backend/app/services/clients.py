@@ -436,6 +436,35 @@ def _sync_contacts(client: Client, contacts_payload: list[dict] | None) -> None:
     client.contacts.extend(ClientContact(**contact) for contact in contacts_payload if contact.get("name"))
 
 
+def _contact_key(name: str | None, email: str | None) -> tuple[str, str]:
+    return ((name or "").strip().lower(), (email or "").strip().lower())
+
+
+def _merge_contacts(client: Client, contacts_payload: list[dict]) -> None:
+    """Embedded ``contacts`` on PATCH: preserve ids (quotations reference them).
+
+    Matches by name+email, updates in place, creates the new ones and
+    deactivates (never deletes) the contacts that are no longer listed.
+    """
+    existing = {_contact_key(item.name, item.email): item for item in client.contacts}
+    listed: set[tuple[str, str]] = set()
+    for data in contacts_payload:
+        if not data.get("name"):
+            continue
+        key = _contact_key(data["name"], data.get("email"))
+        listed.add(key)
+        current = existing.get(key)
+        if current is None:
+            client.contacts.append(ClientContact(**data))
+            continue
+        current.phone, current.position = data.get("phone"), data.get("position")
+        if not current.is_active:
+            current.is_active, current.deleted_at, current.deleted_by = True, None, None
+    for key, current in existing.items():
+        if key not in listed and current.is_active:
+            current.is_active, current.deleted_at = False, datetime.now(timezone.utc)
+
+
 def create_client(
     db: Session,
     payload: ClientCreate,
@@ -486,7 +515,7 @@ def update_client(db: Session, client_id: int, payload: ClientUpdate, *, user_id
             "fiscal_postal_code": client.fiscal_postal_code,
         })
     if payload.contacts is not None:
-        _sync_contacts(client, [contact.model_dump() for contact in payload.contacts])
+        _merge_contacts(client, [contact.model_dump() for contact in payload.contacts])
         previous_values["contacts"] = previous_contacts
         updates["contacts"] = [contact.model_dump() for contact in payload.contacts]
     write_audit_log(

@@ -5,6 +5,8 @@ import mycLogo from '../assets/myc-logo.png';
 
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import ActivityPanel from '../components/activity/ActivityPanel.jsx';
+import QuotationEmailHistory from '../components/QuotationEmailHistory.jsx';
+import QuotationEmailModal from '../components/QuotationEmailModal.jsx';
 import {
   QuotationServiceExceptionAction,
   QuotationServiceExceptionReview
@@ -57,6 +59,7 @@ import useConfirmDialog from '../utils/useConfirmDialog.js';
 import { navigate } from '../utils/routing.js';
 import { formatDate, formatMoney, getClientDisplayName, normalizeKey } from '../utils/formatters.js';
 import { validateLinkedServiceFields } from '../utils/quotationServiceExceptions.js';
+import { contactIdPayload, contactOptionsForClient } from '../utils/quotationContacts.js';
 
 const defaultQuotationTemplate = {
   name: 'Plantilla de cotizacion MYC',
@@ -484,6 +487,8 @@ function QuotationsPage({ user = null }) {
   const [isDetailSaving, setIsDetailSaving] = useState(false);
   const [isDetailAutosaving, setIsDetailAutosaving] = useState(false);
   const [autosaveStatus, setAutosaveStatus] = useState('');
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
+  const [emailHistoryKey, setEmailHistoryKey] = useState(0);
   const [isTemplateSaving, setIsTemplateSaving] = useState(false);
   const [savingDraftIds, setSavingDraftIds] = useState(new Set());
   const [savingItemIds, setSavingItemIds] = useState(new Set());
@@ -540,6 +545,9 @@ function QuotationsPage({ user = null }) {
   const canCreateQuotations = hasPermission(effectiveUser, 'quotations.create');
   const canUpdateQuotations = hasPermission(effectiveUser, 'quotations.update');
   const canReadCatalog = hasPermission(effectiveUser, 'catalog_items.read');
+  const canEmailQuotations = hasPermission(effectiveUser, 'quotations.email.send');
+  const canReadQuotationEmails =
+    hasPermission(effectiveUser, 'email.deliveries.read') && hasPermission(effectiveUser, 'quotations.read');
   const canManageCatalog = [
     'catalog_items.create',
     'catalog_items.update',
@@ -817,6 +825,7 @@ function QuotationsPage({ user = null }) {
       skipNextAutosaveRef.current = true;
       setDetailForm({
         clientId: String(detail.client_id ?? ''),
+        contactId: String(detail.contact_id ?? ''),
         validUntil: detail.valid_until ?? '',
         paymentTerms: detail.payment_terms ?? '',
         notes: detail.notes ?? ''
@@ -886,6 +895,7 @@ function QuotationsPage({ user = null }) {
     try {
       const updated = await updateQuotation(selectedQuotation.id, {
         client_id: detailForm.clientId ? Number(detailForm.clientId) : selectedQuotation.client_id,
+        contact_id: contactIdPayload(detailForm.contactId),
         valid_until: detailForm.validUntil || null,
         payment_terms: detailForm.paymentTerms.trim() || null,
         notes: detailForm.notes.trim() || null
@@ -933,6 +943,7 @@ function QuotationsPage({ user = null }) {
       skipNextAutosaveRef.current = true;
       setDetailForm({
         clientId: String(updated.client_id ?? ''),
+        contactId: String(updated.contact_id ?? ''),
         validUntil: updated.valid_until ?? '',
         paymentTerms: updated.payment_terms ?? '',
         notes: updated.notes ?? ''
@@ -966,6 +977,7 @@ function QuotationsPage({ user = null }) {
           skipNextAutosaveRef.current = true;
           setDetailForm({
             clientId: String(restored.client_id ?? ''),
+        contactId: String(restored.contact_id ?? ''),
             validUntil: restored.valid_until ?? '',
             paymentTerms: restored.payment_terms ?? '',
             notes: restored.notes ?? ''
@@ -997,6 +1009,7 @@ function QuotationsPage({ user = null }) {
           skipNextAutosaveRef.current = true;
           setDetailForm({
             clientId: String(updated.client_id ?? ''),
+        contactId: String(updated.contact_id ?? ''),
             validUntil: updated.valid_until ?? '',
             paymentTerms: updated.payment_terms ?? '',
             notes: updated.notes ?? ''
@@ -2354,6 +2367,11 @@ function QuotationsPage({ user = null }) {
                 <button className="table-button" onClick={() => openQuotationPdf('print')} type="button">
                   Imprimir
                 </button>
+                {canEmailQuotations ? (
+                  <button className="table-button" onClick={() => setIsEmailModalOpen(true)} type="button">
+                    Enviar por correo
+                  </button>
+                ) : null}
               </div>
               <button
                 className="icon-text-button"
@@ -2369,7 +2387,8 @@ function QuotationsPage({ user = null }) {
                 ['info', 'Informacion'],
                 ['items', 'Partidas'],
                 ['activity', 'Actividad'],
-                ['history', 'Historial']
+                ['history', 'Historial'],
+                ...(canReadQuotationEmails ? [['emails', 'Correos']] : [])
               ].map(([key, label]) => (
                 <button
                   aria-selected={quotationDetailTab === key}
@@ -2428,6 +2447,24 @@ function QuotationsPage({ user = null }) {
                           Elegir cliente
                         </button>
                       </article>
+                      <label>
+                        Contacto de la cotización
+                        <select
+                          disabled={isQuotationTerminal(selectedQuotation)}
+                          onChange={(event) => updateDetailForm('contactId', event.target.value)}
+                          value={detailForm.contactId ?? ''}
+                        >
+                          <option value="">Sin contacto específico</option>
+                          {contactOptionsForClient(
+                            clientsById.get(Number(detailForm.clientId)) ?? clientsById.get(selectedQuotation.client_id),
+                            detailForm.contactId
+                          ).map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                       <article>
                         <span>Emision</span>
                         <strong>{formatDate(selectedQuotation.issued_on)}</strong>
@@ -2904,6 +2941,24 @@ function QuotationsPage({ user = null }) {
               </section>
             ) : null}
 
+            {quotationDetailTab === 'emails' ? (
+              <QuotationEmailHistory
+                canResend={canEmailQuotations}
+                onResend={() => setIsEmailModalOpen(true)}
+                quotationId={selectedQuotation.id}
+                refreshKey={emailHistoryKey}
+              />
+            ) : null}
+
+            {isEmailModalOpen ? (
+              <QuotationEmailModal
+                folio={selectedQuotation.folio}
+                onClose={() => setIsEmailModalOpen(false)}
+                onSent={() => setEmailHistoryKey((current) => current + 1)}
+                quotationId={selectedQuotation.id}
+              />
+            ) : null}
+
             {quotationDetailTab === 'history' ? (
               <section className="quotation-section">
                 <div className="quotation-section__title">
@@ -2992,7 +3047,7 @@ function QuotationsPage({ user = null }) {
                     >
                       <strong>{getClientDisplayName(client)}</strong>
                       <span>{client.rfc || 'RFC sin capturar'}</span>
-                      <small>{contact?.name || client.email || contact?.email || 'Sin contacto principal'}</small>
+                      <small>{contact?.name || contact?.email || client.email || 'Sin contacto registrado'}</small>
                     </button>
                   );
                 })

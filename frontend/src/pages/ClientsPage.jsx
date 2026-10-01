@@ -6,6 +6,7 @@ import SelectionActionBar from '../components/SelectionActionBar.jsx';
 import ActivityPanel from '../components/activity/ActivityPanel.jsx';
 import PortalAccessSettingsPanel from './settings/PortalAccessSettingsPanel.jsx';
 import SatCatalogField from '../components/invoice-workbench/SatCatalogField.jsx';
+import ClientContactsPanel from '../components/ClientContactsPanel.jsx';
 import { emptyClientForm } from '../constants/forms.js';
 import { clientModalTabs, clientTemplateColumns } from '../constants/templates.js';
 import {
@@ -432,7 +433,8 @@ function ClientsPage({ user = null }) {
     setIsSaving(true);
 
     try {
-      const payload = editingClientId ? toClientPayload(form) : toClientCreatePayload(form);
+      // Contacts are managed one by one in the Contactos tab; editing never resends the list.
+      const payload = editingClientId ? toClientPayload(form, { includeContacts: false }) : toClientCreatePayload(form);
 
       let savedClient = editingClientId
         ? await updateClient(editingClientId, payload)
@@ -1236,10 +1238,12 @@ function ClientsPage({ user = null }) {
                     {validationErrors.commercialName ? <span className="field-error">{validationErrors.commercialName}</span> : null}
                   </label>
 
-                  <label>
-                    Contacto
-                    <input onChange={(event) => updateForm('contactName', event.target.value)} type="text" value={form.contactName} />
-                  </label>
+                  {!editingClientId ? (
+                    <label>
+                      Contacto inicial (opcional)
+                      <input onChange={(event) => updateForm('contactName', event.target.value)} type="text" value={form.contactName} />
+                    </label>
+                  ) : null}
 
                   <label>
                     Teléfono
@@ -1265,6 +1269,22 @@ function ClientsPage({ user = null }) {
                     </select>
                   </label>
                 </>
+              ) : null}
+
+              {clientModalTab === 'contacts' ? (
+                editingClientId ? (
+                  <ClientContactsPanel
+                    canEdit={canUpdateClients}
+                    clientId={editingClientId}
+                    onChanged={(next) =>
+                      setClients((current) =>
+                        current.map((client) => (client.id === editingClientId ? { ...client, contacts: next } : client))
+                      )
+                    }
+                  />
+                ) : (
+                  <div className="clients-empty">Guarda el cliente antes de administrar sus contactos.</div>
+                )
               ) : null}
 
               {clientModalTab === 'address' ? (

@@ -32,6 +32,7 @@ export const emptyClientForm = {
 
 export const emptyQuotationForm = {
   clientId: '',
+  contactId: '',
   validUntil: '',
   paymentTerms: '',
   notes: ''

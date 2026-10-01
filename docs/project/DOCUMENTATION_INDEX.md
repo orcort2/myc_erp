@@ -49,6 +49,7 @@ En dos documentos del mismo nivel prevalece el de fecha verificable más recient
 | --- | --- |
 | [`../architecture/INSTITUTIONAL_EMAIL.md`](../architecture/INSTITUTIONAL_EMAIL.md) | Infraestructura central de correo (EMAIL-1): capas, configuración, plantillas, estados de entrega, RBAC. |
 | [`../architecture/PASSWORD_RESET.md`](../architecture/PASSWORD_RESET.md) | Recuperación de contraseña ERP (EMAIL-2): endpoints, token hasheado, `auth_version`, revocación Mobile y URL pública. |
+| [`../architecture/QUOTATION_EMAIL_AND_CONTACTS.md`](../architecture/QUOTATION_EMAIL_AND_CONTACTS.md) | Contactos de cliente, contacto principal de cotización y envío contextual por correo (EMAIL-3). |
 | [`../architecture/CATALOGOS_SAT.md`](../architecture/CATALOGOS_SAT.md) | Fuente, importación, versionado y consumo de Catálogos SAT. |
 | [`../architecture/FIELD_SHEET_FIELD_REGISTRY.md`](../architecture/FIELD_SHEET_FIELD_REGISTRY.md) | Claves y semántica canónica de campos de Hojas de Campo. |
 | [`../architecture/FIELD_SHEET_PDF_RENDERER.md`](../architecture/FIELD_SHEET_PDF_RENDERER.md) | Autoridad única, renderer versionado, compatibilidad legacy y artefacto final inmutable de FieldSheets ERP/LAB. |

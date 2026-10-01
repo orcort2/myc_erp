@@ -8,6 +8,9 @@ from app.schemas.client import (
     ClientCertificateProfileCreate,
     ClientCertificateProfileRead,
     ClientCertificateProfileUpdate,
+    ClientContactCreate,
+    ClientContactRead,
+    ClientContactUpdate,
     ClientCreate,
     ClientDeleteEligibilityRead,
     ClientDeleteResultRead,
@@ -39,6 +42,12 @@ from app.services.clients import (
     update_client_certificate_profile,
 )
 from app.services.auth import require_permission
+from app.services.client_contacts import (
+    create_client_contact,
+    list_client_contacts,
+    set_client_contact_active,
+    update_client_contact,
+)
 
 
 router = APIRouter(prefix="/clients", tags=["clients"])
@@ -152,6 +161,53 @@ def patch_certificate_profile(
 def delete_certificate_profile(client_id: int, profile_id: int, db: Session = Depends(get_db)) -> Response:
     deactivate_client_certificate_profile(db, client_id, profile_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{client_id}/contacts", response_model=list[ClientContactRead])
+def get_client_contacts(client_id: int, db: Session = Depends(get_db)) -> list[ClientContactRead]:
+    return list_client_contacts(db, client_id)
+
+
+@router.post("/{client_id}/contacts", response_model=ClientContactRead, status_code=status.HTTP_201_CREATED)
+def post_client_contact(
+    client_id: int,
+    payload: ClientContactCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("clients.update")),
+) -> ClientContactRead:
+    return create_client_contact(db, client_id, payload, user_id=current_user.id)
+
+
+@router.patch("/{client_id}/contacts/{contact_id}", response_model=ClientContactRead)
+def patch_client_contact(
+    client_id: int,
+    contact_id: int,
+    payload: ClientContactUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("clients.update")),
+) -> ClientContactRead:
+    return update_client_contact(db, client_id, contact_id, payload, user_id=current_user.id)
+
+
+@router.delete("/{client_id}/contacts/{contact_id}", response_model=ClientContactRead)
+def deactivate_contact(
+    client_id: int,
+    contact_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("clients.update")),
+) -> ClientContactRead:
+    """Soft delete: the row and its id remain so historical quotations stay intact."""
+    return set_client_contact_active(db, client_id, contact_id, active=False, user_id=current_user.id)
+
+
+@router.post("/{client_id}/contacts/{contact_id}/restore", response_model=ClientContactRead)
+def restore_contact(
+    client_id: int,
+    contact_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("clients.update")),
+) -> ClientContactRead:
+    return set_client_contact_active(db, client_id, contact_id, active=True, user_id=current_user.id)
 
 
 @router.get("/{client_id}/delete-eligibility", response_model=ClientDeleteEligibilityRead)

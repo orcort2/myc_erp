@@ -213,6 +213,9 @@ class QuotationBase(BaseModel):
 
     advisor_id: int | None = None
 
+    # Main contact (ClientContact id); data is never duplicated here.
+    contact_id: int | None = None
+
     issued_on: date | None = None
 
     valid_until: date | None = None
@@ -232,6 +235,8 @@ class QuotationUpdate(BaseModel):
     client_id: int | None = None
 
     advisor_id: int | None = None
+
+    contact_id: int | None = None
 
     issued_on: date | None = None
 
@@ -282,6 +287,13 @@ class QuotationRead(QuotationBase):
     folio: str
 
     advisor_name: str | None = None
+
+    # Read-only projection of contact_id -> ClientContact.
+    contact_name: str | None = None
+
+    contact_email: str | None = None
+
+    contact_position: str | None = None
 
     status: str
 

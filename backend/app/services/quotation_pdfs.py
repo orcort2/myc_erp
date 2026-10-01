@@ -188,7 +188,14 @@ def _render_html(db: Session, quotation: Quotation) -> str:
     subtotal = sum((line.subtotal for line in lines), Decimal("0.00"))
     tax_total = sum((line.tax_total for line in lines), Decimal("0.00"))
     total = subtotal + tax_total
-    contact = next((contact for contact in client.contacts if contact.is_active), None)
+    # The quotation's own contact is the authority; the first active contact is
+    # only a fallback for historical quotations created before contact_id existed.
+    explicit_contact = quotation.contact is not None and quotation.contact.client_id == quotation.client_id
+    contact = (
+        quotation.contact
+        if explicit_contact
+        else next((contact for contact in client.contacts if contact.is_active), None)
+    )
 
     env = Environment(
         loader=FileSystemLoader(str(TEMPLATE_DIR)),
@@ -201,6 +208,7 @@ def _render_html(db: Session, quotation: Quotation) -> str:
         quotation=quotation,
         client=client,
         contact=contact,
+        explicit_contact=explicit_contact,
         lines=lines,
         subtotal=_money(subtotal),
         tax_total=_money(tax_total),

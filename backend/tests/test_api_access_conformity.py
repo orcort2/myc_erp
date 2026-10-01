@@ -27,7 +27,8 @@ def test_every_http_operation_has_an_explicit_access_classification():
     # ETS/LAB Phase 1 adds six ERP link/history/candidate operations.
     # EMAIL-1 adds seven /email operations (templates, deliveries, transport status).
     # EMAIL-2 adds public forgot-password / reset-password.
-    assert len(operations) == 560
+    # EMAIL-3 adds five ClientContact operations and three contextual quotation email operations.
+    assert len(operations) == 568
     assert all(classify_operation(item.method, item.path, item.tags) for item in operations)
 
 

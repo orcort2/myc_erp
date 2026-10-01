@@ -383,9 +383,9 @@
       <strong>{{ client.commercial_name or client.legal_name }}</strong>
       <p>Raz&oacute;n social: {{ client.legal_name }}</p>
       <p>RFC: {{ client.rfc or "-" }}</p>
-      <p>Contacto: {{ contact.name if contact else "-" }}</p>
-      <p>Tel&eacute;fono: {{ client.phone or (contact.phone if contact else "-") or "-" }}</p>
-      <p>Correo: {{ client.email or (contact.email if contact else "-") or "-" }}</p>
+      <p>Atenci&oacute;n: {{ contact.name if contact else "-" }}{% if contact and contact.position %} &middot; {{ contact.position }}{% endif %}</p>
+      <p>Tel&eacute;fono: {% if explicit_contact %}{{ (contact.phone or client.phone) or "-" }}{% else %}{{ client.phone or (contact.phone if contact else "-") or "-" }}{% endif %}</p>
+      <p>Correo: {% if explicit_contact %}{{ (contact.email or client.email) or "-" }}{% else %}{{ client.email or (contact.email if contact else "-") or "-" }}{% endif %}</p>
     </article>
     <article class="box">
       <h3>Datos fiscales</h3>
