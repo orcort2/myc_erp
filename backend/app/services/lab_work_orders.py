@@ -1907,6 +1907,61 @@ def _reserve_external_certificate_folio(
     request.resolution_snapshot = {**snapshot, "used": used}
 
 
+def _release_equipment_certificate_folio(
+    db: Session, work_order: LabWorkOrder, equipment: LabWorkOrderEquipment
+) -> dict | None:
+    """Única autoridad que retira un folio MYCA/MYCT reservado de un equipo
+    cuando éste cambia de servicio ANTES de firma. No toca columnas del
+    equipo (el caller las reasigna en la misma transacción).
+
+    - Folio del pool externo (OperationalTicket certificate_folio_block): se
+      quita de resolution_snapshot['used'] y se registra en
+      resolution_snapshot['released'] -- sin esto el pool quedaría marcado
+      como usado para siempre (fuga). Vuelve a estar disponible para su
+      operator_client_id; nada se emitió aún porque la recepción no está firmada.
+    - Folio fuera de todo pool propio (secuenciador interno): se quema. El
+      contador sólo avanza, nunca se recicla un número interno; el folio queda
+      sólo en la auditoría.
+    Devuelve el detalle para auditar, o None si el equipo no tenía folio."""
+    folio = equipment.certificate_folio
+    if not folio:
+        return None
+    if equipment.folio_status == "authorized":
+        # Defensa en profundidad: el core ya lo bloquea; un folio autorizado
+        # explícitamente jamás se libera por este camino.
+        raise HTTPException(status_code=409, detail="Un folio autorizado no se libera")
+    # Propiedad probada sólo dentro del pool del MISMO operator_client_id y
+    # sólo si used[folio] apunta a ESTE equipo; _available_external_certificate_folios
+    # lee únicamente folios[prefix] menos las llaves de used, así que quitarlo
+    # de used lo devuelve al pool ('released' es bitácora, no se lee).
+    tickets = db.scalars(
+        select(OperationalTicket)
+        .where(
+            OperationalTicket.type == "certificate_folio_block",
+            OperationalTicket.operator_client_id == work_order.operator_client_id,
+        )
+        .with_for_update()
+    ).all()
+    for ticket in tickets:
+        snapshot = dict(ticket.resolution_snapshot or {})
+        used = dict(snapshot.get("used") or {})
+        entry = used.get(folio)
+        if not entry or entry.get("equipment_id") != equipment.id:
+            continue
+        del used[folio]
+        released = list(snapshot.get("released") or [])
+        released.append(
+            {
+                "folio": folio,
+                "equipment_id": equipment.id,
+                "released_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        ticket.resolution_snapshot = {**snapshot, "used": used, "released": released}
+        return {"folio": folio, "source": "external_pool", "ticket_id": ticket.id, "returned_to_pool": True}
+    return {"folio": folio, "source": "not_in_external_pool", "ticket_id": None, "returned_to_pool": False}
+
+
 def _assign_equipment_service_core(
     db: Session,
     work_order: LabWorkOrder,
@@ -1918,33 +1973,43 @@ def _assign_equipment_service_core(
 ) -> LabWorkOrderEquipment:
     """Núcleo sin commit de assign_equipment_service.
 
-    Fase 2G: si el equipo YA tiene un folio MYCA/MYCT reservado o autorizado,
-    la trazabilidad prohíbe liberarlo/reasignarlo en silencio (no hay política
-    existente de invalidar-y-reservar-otro para este flujo). Reconfirmar
-    exactamente el mismo servicio es un no-op seguro; cualquier otro cambio se
-    bloquea con 409 explícito en vez de reciclar el folio ya emitido.
+    Contrato de servicio/folio (endurecimiento 2026-10): la frontera de
+    inmutabilidad ordinaria es la firma de recepción (_ensure_members_editable,
+    que ya corre en todos los callers), NO la existencia de un folio reserved.
+
+    - Mismo servicio con folio ya asegurado: no-op seguro (jamás toca el folio).
+    - Servicio distinto antes de firma: se permite y el folio anterior pierde
+      autoridad sobre el equipo vía _release_equipment_certificate_folio
+      (pool externo -> vuelve al pool; secuenciador interno -> se quema, nunca
+      se recicla), después se reserva/pende el nuevo servicio.
+    - Folio 'authorized' (autorización explícita de un actor con
+      lab_folios.resolve) y hoja ya completada siguen bloqueando con 409.
     """
-    if equipment.field_sheet is not None:
-        raise HTTPException(status_code=409, detail="La hoja existente congela el tipo de servicio")
     folio_already_secured = (
         equipment.certificate_folio is not None
         or equipment.folio_status in {"reserved", "authorized"}
     )
-    if folio_already_secured:
-        unchanged = (
-            equipment.service_type == payload.service_type
-            and equipment.linked_company_id == payload.linked_company_id
-        )
-        if unchanged:
-            return equipment
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "El equipo ya tiene un folio MYCA/MYCT reservado; cambiar el "
-                "servicio requiere el flujo de reapertura/ticket existente, no "
-                "se libera ni reutiliza el folio en curso"
-            ),
-        )
+    unchanged = (
+        equipment.service_type == payload.service_type
+        and equipment.linked_company_id == payload.linked_company_id
+    )
+    if folio_already_secured and unchanged:
+        return equipment
+    if not unchanged:
+        sheet = equipment.field_sheet
+        if sheet is not None and sheet.status not in EDITABLE_STATUSES:
+            raise HTTPException(
+                status_code=409,
+                detail="La hoja completada congela el tipo de servicio",
+            )
+        if equipment.folio_status == "authorized":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "El folio fue autorizado explícitamente; cambiar el servicio "
+                    "requiere el flujo de reapertura/ticket existente"
+                ),
+            )
 
     linked = None
     if payload.service_type == "linked":
@@ -1967,8 +2032,7 @@ def _assign_equipment_service_core(
     }
     if previous["service_type"] == "linked" and payload.service_type != "linked":
         # Cierre UX 2026-09 (item C): el equipo abandona Vinculado antes de
-        # tener folio linked authorized/reserved (el guard folio_already_secured
-        # de arriba ya lo garantiza) -- la solicitud linked_folio pendiente que
+        # tener folio linked authorized (el guard de arriba lo garantiza) -- la solicitud linked_folio pendiente que
         # había quedado huérfana debe cancelarse en la MISMA transacción, no
         # sobrevivir apuntando a un equipo que ya no es Vinculado.
         cancel_linked_folio_request(
@@ -1977,6 +2041,7 @@ def _assign_equipment_service_core(
             user=user,
             reason=f"El equipo cambió de servicio: linked → {payload.service_type}",
         )
+    released_folio = _release_equipment_certificate_folio(db, work_order, equipment)
     equipment.service_type = payload.service_type
     equipment.linked_company_id = linked.id if linked else None
     equipment.linked_company_name_snapshot = linked.name if linked else None
@@ -2027,6 +2092,7 @@ def _assign_equipment_service_core(
         user_id=user.id,
         previous_values=previous,
         new_values={
+            "released_folio": released_folio,
             "service_type": equipment.service_type,
             "linked_company_id": equipment.linked_company_id,
             "linked_company_name_snapshot": equipment.linked_company_name_snapshot,
@@ -2183,6 +2249,10 @@ def update_configured_equipment(
         expected_edit_version = equipment_values.pop("expected_edit_version", None)
         _check_edit_version(editable_members, expected_edit_version)
 
+        service_before = equipment.service_type
+        linked_before = equipment.linked_company_id
+        version_before = max(item.edit_version for item in editable_members)
+
         _update_equipment_core(db, work_order, group, editable_members, equipment, equipment_values, user)
 
         # A diferencia de create_configured_equipment, aquí SIEMPRE se aplica
@@ -2197,9 +2267,23 @@ def update_configured_equipment(
             db, equipment, certificate_client, user, operator_client_id=operator_client_id
         )
 
-        _assign_equipment_service_core(
-            db, work_order, equipment, payload.service, user, external=external
+        # Diff AUTORITATIVO de servicio (no se confía en el diff de Mobile): sólo
+        # un cambio real de service_type/linked_company entra a la autoridad de
+        # servicio/folio. Editar marca/modelo/etc. con el mismo servicio deja
+        # folio, estado y snapshots linked byte-for-byte intactos.
+        # Vinculado sin linked_company_id en el payload = "no se está editando
+        # la empresa" (Mobile nunca la envía): no es un cambio de servicio.
+        service_changed = service_before != payload.service.service_type or (
+            payload.service.service_type == "linked"
+            and payload.service.linked_company_id is not None
+            and linked_before != payload.service.linked_company_id
         )
+        if service_changed:
+            _assign_equipment_service_core(
+                db, work_order, equipment, payload.service, user, external=external
+            )
+            if max(item.edit_version for item in editable_members) == version_before:
+                _bump_edit_version(editable_members)  # sólo cambió el servicio
         if equipment.service_type == "linked" and equipment.folio_status not in {
             "authorized", "reserved"
         }:

@@ -182,6 +182,22 @@ export function hydrateEquipmentFormValues(equipment: LabEquipment): EquipmentFo
   };
 }
 
+export const SERVICE_CHANGE_NEW_FOLIO_NOTICE =
+  'Si cambias el tipo de servicio, se asignará un nuevo folio y el consecutivo avanzará.';
+
+/** Leyenda al editar un equipo guardado: sólo cuando el servicio elegido es
+ * realmente distinto del guardado Y el destino lleva folio MYCA/MYCT (cada
+ * cambio asigna el siguiente; el número anterior no se reutiliza). Con el
+ * mismo servicio no se sugiere consumir otro folio. */
+export function serviceChangeNotice(
+  mode: 'create' | 'edit',
+  savedServiceType: LabServiceType | undefined,
+  selected: LabServiceType,
+): string | null {
+  if (mode !== 'edit' || !savedServiceType || savedServiceType === selected) return null;
+  return selected === 'accredited' || selected === 'traceable' ? SERVICE_CHANGE_NEW_FOLIO_NOTICE : null;
+}
+
 export type EquipmentEditChanges = {
   equipmentChanged: boolean;
   certificateClientChanged: boolean;

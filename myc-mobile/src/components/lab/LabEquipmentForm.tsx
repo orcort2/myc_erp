@@ -12,6 +12,7 @@ import {
 import {
   defaultDocumentaryClient,
   selectFinalClient,
+  serviceChangeNotice,
   validateServiceSelection,
   type DocumentaryClientSelection,
   type EquipmentBasicData,
@@ -95,6 +96,8 @@ export function LabEquipmentForm({
       && equipment.identification.trim()
       && equipment.serial_number.trim(),
   );
+
+  const changeNotice = serviceChangeNotice(mode, initialValues?.service.serviceType, service);
 
   const folioIsSecured =
     mode === 'edit'
@@ -342,12 +345,8 @@ export function LabEquipmentForm({
         ))}
       </View>
 
-      {mode === 'edit' && folioIsSecured && (
-        <Text style={styles.warning}>
-          Este equipo ya tiene folio reservado; cambiar el servicio
-          a otro distinto será rechazado para no liberarlo ni
-          reasignarlo. Reconfirmar el mismo servicio es seguro.
-        </Text>
+      {!!changeNotice && (
+        <Text style={styles.warning}>{changeNotice}</Text>
       )}
 
       {!!validationError && (

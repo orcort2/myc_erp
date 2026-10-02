@@ -90,6 +90,33 @@ export function markSaved(state: WorkspaceState, savedRows: FieldSheetResultRow[
   return { ...state, rows: savedRows, savedRows, saveState: 'saved', errorMessage: null };
 }
 
+/** Confirma en backend EXACTAMENTE las filas que se enviaron (`submittedRows`),
+ * no las que haya ahora en pantalla: si el técnico siguió editando durante el
+ * guardado, esas ediciones permanecen dirty y la respuesta no las da por
+ * guardadas. */
+export function markSavedSnapshot(
+  state: WorkspaceState,
+  submittedRows: FieldSheetResultRow[],
+): WorkspaceState {
+  const clean = sameRows(state.rows, submittedRows);
+  return {
+    ...state,
+    savedRows: submittedRows,
+    saveState: clean ? 'saved' : 'dirty',
+    errorMessage: null,
+  };
+}
+
+/** Acción única del pie del workspace: 'save' mientras haya resultados sin
+ * persistir (o el último guardado falló / está en curso); 'close' sólo cuando
+ * las filas visibles ya fueron confirmadas por el backend. Sólo depende de las
+ * filas de Resultados, nunca de los campos generales de la hoja. */
+export type ResultsFooterAction = 'save' | 'close';
+
+export function resultsFooterAction(state: WorkspaceState): ResultsFooterAction {
+  return isDirty(state) || state.saveState === 'saving' || state.saveState === 'error' ? 'save' : 'close';
+}
+
 export function markSaveError(state: WorkspaceState, message: string): WorkspaceState {
   return { ...state, saveState: 'error', errorMessage: message };
 }
