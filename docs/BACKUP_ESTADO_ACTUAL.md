@@ -8,6 +8,20 @@
 
 # Estado operativo actual del ERP MYC
 
+## Endurecimiento edición de recepción LAB / autosave FieldSheet (2026-10-02)
+
+- Base `84f895f`, rama `fix/mobile-lab-reception-editing-hardening`; sin commit/push/migraciones.
+- Backend: `update_configured_equipment` calcula el diff autoritativo de servicio; sin cambio no
+  toca servicio/folio. Cambio explícito antes de firma reasigna folio con
+  `_release_equipment_certificate_folio` (pool externo → `released`; interno se quema).
+  Siguen 409: recepción firmada, folio `authorized`, hoja completada.
+- Mobile: autosave silencioso con debounce 800 ms, flush en blur/acciones sensibles,
+  single-flight + seq/generación contra respuestas obsoletas; cambiar `reception_date`
+  ya no reemplaza la captura local. El autosave no envía resultados ni crea revisiones.
+- Validación: backend `tests/test_lab_phase2_integrated_alta.py` 77 passed; suite completa
+  2204 passed, 1 fallo preexistente (`test_sat_xls_source`, falta `catalogo sat.xlsx`);
+  Mobile 890/890. `tsc` sólo conserva 2 errores preexistentes en `realtime-client.ts`.
+
 ## Representación documental LAB en el ERP (2026-09-29)
 
 - Preflight limpio: HEAD = origin = `29d788924639c485ff6ea466e35be02291bc9ad0`.

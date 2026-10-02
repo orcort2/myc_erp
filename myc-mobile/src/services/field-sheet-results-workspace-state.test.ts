@@ -9,6 +9,8 @@ import {
   isDirty,
   markSaveError,
   markSaved,
+  markSavedSnapshot,
+  resultsFooterAction,
   markSaving,
   removeRow,
   setCellValue,
@@ -144,4 +146,25 @@ test('removeRow es un no-op sin allow_remove_rows (filas fixed de la plantilla)'
   let state = initWorkspaceState(rows());
   state = removeRow(state, fixedNoRemove, 1);
   assert.equal(state.rows.length, 2);
+});
+
+test('markSavedSnapshot: una respuesta que confirma filas viejas no limpia la edición posterior', () => {
+  let state = initWorkspaceState(rows());
+  state = setCellValue(state, 'measurements', 2, 'pattern_value', 'A');
+  const submitted = state.rows;
+  state = markSaving(state);
+  state = setCellValue(state, 'measurements', 2, 'pattern_value', 'B');
+  state = markSavedSnapshot(state, submitted);
+  assert.equal(isDirty(state), true);
+  assert.equal(resultsFooterAction(state), 'save');
+  state = markSavedSnapshot(state, state.rows);
+  assert.equal(resultsFooterAction(state), 'close');
+});
+
+test('resultsFooterAction: idle->close, dirty/saving/error->save; sólo depende de las filas de Resultados', () => {
+  const state = initWorkspaceState(rows());
+  assert.equal(resultsFooterAction(state), 'close');
+  assert.equal(resultsFooterAction(setCellValue(state, 'measurements', 1, 'pattern_value', 'x')), 'save');
+  assert.equal(resultsFooterAction(markSaving(state)), 'save');
+  assert.equal(resultsFooterAction(markSaveError(state, 'x')), 'save');
 });

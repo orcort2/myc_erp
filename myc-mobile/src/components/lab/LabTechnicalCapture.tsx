@@ -13,6 +13,13 @@ import type {
 import { LabelRenderError, PrinterNotReadyError, printLabel, type LabLabelPayload } from '@/src/services/label-print-service';
 import { FIELD_LABELS } from '@/src/services/field-labels';
 import { directFields, normalizeFieldSheetPayload } from '@/src/services/field-sheet-payload';
+import {
+  createFieldSheetAutosave,
+  mergeAuthoritativeSheetFields,
+  mergeAutosavedSheet,
+  type Autosave,
+  type AutosaveStatus,
+} from '@/src/services/field-sheet-autosave';
 import { resolveDocumentaryClientLabel } from '@/src/services/lab-documentary-client';
 import { keyboardTypeForFieldType } from '@/src/services/field-sheet-contract';
 import {
@@ -91,6 +98,16 @@ function buildValues(entity: LabFieldSheet): Record<string, unknown> {
   return { ...entity.capture_values, ...picked };
 }
 
+const LEAVE_FAILED_MESSAGE = 'No se pudo guardar tu captura; revisa la conexión y reintenta antes de salir de esta hoja.';
+
+const AUTOSAVE_STATUS_LABELS: Record<AutosaveStatus, string> = {
+  idle: '',
+  dirty: 'Cambios sin guardar…',
+  saving: 'Guardando…',
+  saved: 'Guardado',
+  error: 'No se pudo guardar automáticamente; se reintentará al seguir editando.',
+};
+
 function statusTone(status: string): 'warning' | 'info' | 'success' {
   if (status === 'completed') return 'success';
   if (status === 'draft') return 'warning';
@@ -145,6 +162,52 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
   const [changingTemplate, setChangingTemplate] = useState(false);
   const [changingTemplateTo, setChangingTemplateTo] = useState('');
   const [changingTemplateSearch, setChangingTemplateSearch] = useState('');
+  const [autosaveStatus, setAutosaveStatus] = useState<AutosaveStatus>('idle');
+
+  // Autosave silencioso del borrador (field-sheet-autosave.ts). Los refs
+  // dan al callback de guardado la hoja/valores/request VIGENTES -- un
+  // closure de render viejo mandaría un diff contra una hoja obsoleta.
+  const sheetRef = useRef<LabFieldSheet | null>(null);
+  const valuesRef = useRef<Record<string, unknown>>({});
+  const activeEquipmentRef = useRef<LabEquipment | null>(null);
+  const requestRef = useRef(request);
+  const workOrderIdRef = useRef(workOrder.id);
+  const autosaveEnabledRef = useRef(false);
+  sheetRef.current = sheet;
+  valuesRef.current = values;
+  activeEquipmentRef.current = activeEquipment;
+  requestRef.current = request;
+  workOrderIdRef.current = workOrder.id;
+  const autosaveRef = useRef<Autosave<Record<string, unknown>> | null>(null);
+  if (autosaveRef.current === null) {
+    autosaveRef.current = createFieldSheetAutosave<Record<string, unknown>, LabFieldSheet>({
+      // Sólo columnas directas + capture_values: NUNCA filas de resultados (los
+      // Resultados se guardan por saveResultsRows) ni la acción de completar. Es el mismo
+      // PATCH sobre la misma hoja editable: el backend no crea revisión.
+      save: async (nextValues) => {
+        const currentSheet = sheetRef.current;
+        const equipment = activeEquipmentRef.current;
+        if (!currentSheet || !equipment) throw new Error('Sin hoja activa');
+        const { direct, captureValues } = normalizeFieldSheetPayload(nextValues, currentSheet);
+        return requestRef.current<LabFieldSheet>(
+          `/mobile/v1/technician/lab-work-orders/${workOrderIdRef.current}/equipment/${equipment.id}/field-sheet`,
+          { method: 'PATCH', body: JSON.stringify({ ...direct, capture_values: captureValues }) },
+        );
+      },
+      onSaved: (saved) => setSheet((current) => mergeAutosavedSheet(current, saved)),
+      onStatusChange: setAutosaveStatus,
+    });
+  }
+  const autosave = autosaveRef.current;
+
+  // Cambiar de equipo/hoja invalida guardados en vuelo y pendientes de la
+  // anterior: un draft nunca se mezcla con otro equipo.
+  useEffect(() => {
+    autosave.invalidateContext();
+  }, [autosave, activeEquipment?.id, sheet?.id]);
+
+  // Salir de la pantalla con captura pendiente: flush best-effort.
+  useEffect(() => () => { void autosave.flush(); }, [autosave]);
 
   async function refreshWorkOrder() {
     const updated = await request<LabWorkOrder>(
@@ -177,10 +240,17 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
   const canonicalFields = labExternal ? CANONICAL_FIELDS : canonicalFieldsForDefinition(definition?.blocks);
   const overallProgress = definition ? computeOverallProgress(definition.result_sections, sheet?.results_rows ?? []) : null;
   const editable = canCapture && !!sheet && isFieldSheetEditable(sheet.status, viewMode);
+  autosaveEnabledRef.current = editable;
   const visibleTemplates = filterFieldSheetTemplates(templates, templateSearch);
   const visibleChangeTemplateOptions = filterFieldSheetTemplates(templates, changingTemplateSearch);
 
   async function openSheet(equipment: LabEquipment) {
+    // Captura pendiente de la hoja anterior: debe quedar persistida antes de
+    // abandonarla; si el guardado falla NO se descarta en silencio.
+    if (autosave.isDirty() && !(await autosave.leave())) {
+      setFormError(LEAVE_FAILED_MESSAGE);
+      return;
+    }
     setExternalResultsDirty(false);
     setActiveEquipment(equipment);
     setSelectedTemplate('');
@@ -245,7 +315,10 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
   }
 
   function setField(key: string, value: string | boolean) {
-    setValues((current) => ({ ...current, [key]: value }));
+    const next = { ...valuesRef.current, [key]: value };
+    valuesRef.current = next;
+    setValues(next);
+    if (autosaveEnabledRef.current) autosave.change(next);
     setFieldErrors((current) => {
       if (!(key in current)) return current;
       const next = { ...current };
@@ -256,6 +329,10 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
 
   async function updateReceptionDate(value: string) {
     if (!activeEquipment || !sheet || !canOverrideReceptionDate) return;
+    // La captura local pendiente se persiste ANTES de tocar la OT; si el
+    // flush falla se continúa igual (la fecha es independiente) y los
+    // valores locales siguen dirty para reintentarse.
+    await autosave.flush();
     setBusy(true);
     setFormError('');
     try {
@@ -266,8 +343,13 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
       const refreshedSheet = await request<LabFieldSheet>(
         `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${activeEquipment.id}/field-sheet`,
       );
+      // reception_date es readonly en la FieldSheet canónica: se toma del
+      // backend, pero los valores editables locales NO se reemplazan.
+      // results_rows sí vienen del refresh (nada del autosave los toca).
       setSheet(refreshedSheet);
-      setValues(buildValues(refreshedSheet));
+      const merged = mergeAuthoritativeSheetFields(valuesRef.current, refreshedSheet);
+      valuesRef.current = merged;
+      setValues(merged);
       onUpdated(updated);
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'No fue posible actualizar la fecha de recepción.');
@@ -361,6 +443,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
         key={field.key}
         keyboardType="default"
         label={field.label}
+        onBlur={() => void autosave.flush()}
         onChange={(value) => setField(field.key, value)}
         value={String(values[field.key] ?? '')}
       />
@@ -388,12 +471,16 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
     }
     setBusy(true);
     setFormError('');
+    // Un autosave en vuelo termina antes del guardado manual (orden en el
+    // servidor); luego se lee hoja/valores VIGENTES, no los del closure.
+    await autosave.flush();
+    const latestSheet = sheetRef.current ?? sheet;
     let saved: LabFieldSheet;
     try {
-      const { direct, captureValues } = normalizeFieldSheetPayload(values, sheet);
+      const { direct, captureValues } = normalizeFieldSheetPayload(valuesRef.current, latestSheet);
       saved = await request<LabFieldSheet>(
         `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${activeEquipment.id}/field-sheet`,
-        { method: 'PATCH', body: JSON.stringify({ ...direct, capture_values: captureValues, results_rows: sheet.results_rows }) },
+        { method: 'PATCH', body: JSON.stringify({ ...direct, capture_values: captureValues, results_rows: latestSheet.results_rows }) },
       );
     } catch (error) {
       // A) payload inválido técnicamente en el PATCH (tipos, formato): no es
@@ -578,6 +665,10 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
           style: 'destructive',
           onPress: async () => {
             setBusy(true);
+            // Descarte explícito: lo no enviado se descarta; un PATCH ya enviado
+            // no puede cancelarse, así que se espera a que termine antes del DELETE
+            // (su respuesta ya no se aplica a la UI).
+            await autosave.discard();
             try {
               await request(
                 `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${activeEquipment.id}/field-sheet`,
@@ -613,6 +704,11 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
   async function confirmChangeTemplate() {
     if (!activeEquipment || !changingTemplateTo) return;
     setBusy(true);
+    if (!(await autosave.flush())) {
+      setFormError(LEAVE_FAILED_MESSAGE);
+      setBusy(false);
+      return;
+    }
     try {
       const updated = await request<LabFieldSheet>(
         `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${activeEquipment.id}/field-sheet/change-template`,
@@ -878,6 +974,11 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
         </> : <>
           <View style={styles.statusRow}>
             <StatusBadge label={fieldSheetStatusLabel(sheet.status)} tone={statusTone(sheet.status)} />
+            {editable && autosaveStatus !== 'idle' && (
+              <Text style={autosaveStatus === 'error' ? styles.autosaveError : styles.autosaveHint}>
+                {AUTOSAVE_STATUS_LABELS[autosaveStatus]}
+              </Text>
+            )}
           </View>
 
           {CANONICAL_GROUP_ORDER.map((group) => (
@@ -924,6 +1025,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
                     key={field.key}
                     keyboardType={keyboardTypeForFieldType(field.fieldType)}
                     label={field.label}
+                    onBlur={() => void autosave.flush()}
                     onChange={(value) => setField(field.key, value)}
                     placeholder={field.placeholder ?? undefined}
                     value={String(values[field.key] ?? '')}
@@ -1013,7 +1115,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
           )}
         </>}
         <OperationalActionStack>
-          <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => { setActiveEquipment(null); setSheet(null); setTicketMode(null); setViewMode(initialViewMode()); }} />
+          <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={async () => { if (!(await autosave.leave())) { setFormError(LEAVE_FAILED_MESSAGE); return; } setActiveEquipment(null); setSheet(null); setTicketMode(null); setViewMode(initialViewMode()); }} />
         </OperationalActionStack>
         </FadeIn>
       </ScrollView>
@@ -1106,7 +1208,9 @@ const styles = StyleSheet.create({
   templateCheck: { color: '#fff', fontWeight: '800' },
   eyebrow: { color: colors.accent, fontSize: 12, fontWeight: '800', letterSpacing: 1 },
   title: { color: colors.text, fontSize: 22, fontWeight: '800' },
-  statusRow: { flexDirection: 'row', marginBottom: spacing.sm },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
+  autosaveHint: { color: colors.textSubtle, fontSize: 12 },
+  autosaveError: { flexShrink: 1, color: colors.danger, fontSize: 12 },
   progressRow: { marginBottom: spacing.sm },
   progressTitle: { color: colors.text, fontWeight: '700' },
   progressCount: { color: colors.textMuted, fontSize: 13 },
