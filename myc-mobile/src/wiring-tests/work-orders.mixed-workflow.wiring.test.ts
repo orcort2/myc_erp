@@ -57,3 +57,29 @@ test('nunca se refetch/parcha localmente: la respuesta de backend reemplaza el w
   );
   assert.doesNotMatch(block, /\{\s*\.\.\.workOrder,/);
 });
+
+test('la creación directa muestra modalidad y aplicación; la solicitud externa queda excluida', () => {
+  assert.match(source, /!workOrder && groupMode !== 'request' && \(\s*<FormSection title="Modalidad de trabajo"/);
+  assert.match(source, /!workOrder && groupMode === 'direct' && \(\s*<FormSection title="Aplicación de modalidad"/);
+  assert.match(source, /memberWorkflowModes\.map/);
+  assert.match(source, /onChangeText=\{changeGroupQuantity\}/);
+});
+
+test('un formulario nuevo limpia la configuración manual y usa reconciliación al cambiar cantidad', () => {
+  const start = source.slice(source.indexOf('function startNew()'), source.indexOf('function selectLabClient'));
+  assert.match(start, /setManualGroupWorkflow\(false\)/);
+  assert.match(start, /setMemberWorkflowModes\(\[\]\)/);
+  const handlers = source.slice(source.indexOf('function changeGroupQuantity'), source.indexOf('function selectGroupWorkflowApplication') + 350);
+  assert.match(handlers, /reconcileMemberWorkflowModes\(current, quantity, workflowMode\)/);
+  assert.match(handlers, /reconcileMemberWorkflowModes\(\[\], validGroupQuantity\(groupQuantity\) \?\? 0, workflowMode\)/);
+});
+
+
+test('el selector de base reinicializa todas las posiciones sólo en manual con cantidad válida', () => {
+  const selector = source.slice(source.indexOf('<FormSection title="Modalidad de trabajo">'), source.indexOf('<FormSection title="Aplicación de modalidad">'));
+  assert.match(selector, /onPress=\{\(\) => changeWorkflowMode\(option\.value\)\}/);
+  const handler = source.slice(source.indexOf('function changeWorkflowMode'), source.indexOf('function changeGroupQuantity'));
+  assert.match(handler, /setWorkflowMode\(newBaseMode\)/);
+  assert.match(handler, /const quantity = validGroupQuantity\(groupQuantity\)/);
+  assert.match(handler, /if \(manualGroupWorkflow && quantity !== null\) \{\s*setMemberWorkflowModes\(reconcileMemberWorkflowModes\(\[\], quantity, newBaseMode\)\);\s*\}/);
+});

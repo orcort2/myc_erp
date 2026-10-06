@@ -39,6 +39,13 @@ class LabWorkOrderInternalCreate(LabWorkOrderCreate):
 
 class LabWorkOrderInternalGroupCreate(LabWorkOrderGroupCreate):
     service_order_id: int | None = Field(default=None, gt=0)
+    member_workflow_modes: list[Literal["group", "equipment_by_equipment"]] | None = None
+
+    @model_validator(mode="after")
+    def validate_member_workflow_modes(self):
+        if self.member_workflow_modes is not None and len(self.member_workflow_modes) != self.quantity:
+            raise ValueError("member_workflow_modes debe contener exactamente quantity modalidades")
+        return self
 
 
 class LabErpCalibrationItemSummary(BaseModel):

@@ -111,6 +111,25 @@ test('los efectos sensibles a refresh/notificación/sesión nunca tocan setOpen'
   }
 });
 
+test('cambio entre OT relacionadas sólo muestra carga tras latencia y descarta respuestas obsoletas', () => {
+  const start = workOrdersSource.indexOf('async function selectRelated(id: number)');
+  const end = workOrdersSource.indexOf('function showEquipmentEditor', start);
+  assert.ok(start >= 0 && end > start);
+
+  const block = workOrdersSource.slice(start, end);
+
+  assert.doesNotMatch(block, /setBusy\(/);
+  assert.match(block, /const requestId = \+\+relatedSelectionSequence\.current/);
+  assert.match(block, /RELATED_WORK_ORDER_LOADING_DELAY_MS/);
+  assert.match(block, /setTimeout\(/);
+  assert.match(block, /setRelatedLoading\(true\)/);
+  assert.match(block, /clearTimeout\(loadingTimer\)/);
+  assert.match(block, /setRelatedLoading\(false\)/);
+  assert.match(block, /if \(requestId !== relatedSelectionSequence\.current\) return;/);
+  assert.match(block, /setWorkOrder\(detail\)/);
+});
+
+
 test('onRequestClose del Modal principal apunta exclusivamente a closeFlow', () => {
   assert.match(workOrdersSource, /<Modal\s+animationType="slide"\s+onRequestClose=\{closeFlow\}\s+visible=\{open\}>/);
 });

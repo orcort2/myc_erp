@@ -8,6 +8,51 @@
 
 # Estado operativo actual del ERP MYC
 
+## Modalidades iniciales de grupos LAB internos (2026-10-06, sin commit)
+
+- Worktree `myc_erp-lab-group-workflow`, rama
+  `fix/mobile-lab-group-workflow-selection`, base y origin `589e53d8b6d275e88ebd4b65012bef35b5a5a56b`;
+  limpio al comenzar. Pendiente revisión humana del diff; sin commit/push/merge/deploy.
+- Causa: Mobile ocultaba modalidad en grupo directo y la materialización repetía
+  el único `workflow_mode`. Confirmadas firma/prevalidación/finalización mixtas
+  ya existentes; no se modificaron.
+- `LabWorkOrderInternalGroupCreate.member_workflow_modes` opcional valida valores
+  y longitud exacta. Router → servicio directo o vinculado → única
+  `_materialize_group`, con modalidad por `sequence_number` en la transacción
+  inicial. El vínculo ETS sigue siendo uno, a la raíz. `group_materialized`
+  registra array ordenado o base homogénea; no genera cambios administrativos.
+- Mobile: cantidad, modalidad base, aplicación a todas/manual por OT. Helper puro
+  reconcilia posiciones y construye payload; alta individual y solicitud externa
+  conservan sus contratos. Sin AsyncStorage, cambios de permisos ni migraciones.
+- Rojo/verde: las dos regresiones mixtas (con/sin ETS) fallaron antes con HTTP 422
+  `extra_forbidden`; pasaron tras implementar. Casos adicionales verifican
+  omitido/null, ambos modos homogéneos, arrays cortos/largos/inválidos, orden,
+  auditoría, rollback al fallar segundo miembro/auditoría/commit y aprobación
+  externa histórica (siempre `group`).
+- Backend focal final: `test_lab_erp_calibration_bridge.py`,
+  `test_lab_work_orders.py`, `test_lab_equipment_by_equipment_workflow.py`,
+  `test_service_order_lab_links.py`: **219 passed, 16 skipped** (PostgreSQL opt-in).
+  Suite completa `python -m pytest -q`: **2228 passed, 45 skipped, 1 failed**,
+  además de 23 subtests passed. Único fallo: recurso oficial no versionado ausente
+  `backend/resources/sat/catalogo sat.xlsx`, caso `test_official_regime_626_is_read_from_the_xlsx`.
+  Reproducido en extracción de `main` (`589e53d8`) dentro de `tmp/main-baseline`:
+  `test_sat_xls_source.py` **3 passed, 1 failed** con la misma causa; no corregido.
+- Mobile focal: **66/66** (helpers de creación/vínculo/flujo/firma/cierre y wiring
+  de workflow); `npm test` completo: **935/935**. El follow-up de cambio de modalidad base
+  quedó cubierto por helper + wiring (**33/33**): en configuración manual, cambiar
+  la base reinicializa todas las posiciones con la nueva modalidad. Wiring previo
+  ajustado únicamente para permitir grupos internos y delegar payload al helper
+  funcional probado.
+- `npm run lint`: exit 0. ESLint focal `--max-warnings=0`: exit 0.
+  `tsc --noEmit`: sólo TS2322 en `src/realtime/realtime-client.ts:205,231`;
+  reproducidos idénticos en extracción de `main` con las mismas dependencias.
+- Registry y su generador sincronizados; `git diff --check` limpio. Pruebas con
+  el venv existente y dependencias Mobile existentes; código ejecutado desde este
+  worktree. Sin cambio de BD operativa ni regeneración de respaldo SQL.
+- Pendientes: revisión del diff, QA visual/táctil en dispositivo y suites opt-in
+  de locks PostgreSQL. Contrato vigente en
+  [LAB_WORK_ORDERS.md](architecture/LAB_WORK_ORDERS.md#modalidades-iniciales-de-grupos-directos-internos-2026-10-06).
+
 ## Hoja de campo Mobile al regresar a foreground (2026-10-06)
 
 - Base `f377b511e5d18d408ef48690d17c45342c70cdeb`, rama

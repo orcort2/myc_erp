@@ -10,6 +10,15 @@
 
 # Reglas de negocio vigentes
 
+## Modalidad inicial por miembro LAB (2026-10-06)
+
+`workflow_mode` pertenece a cada `LabWorkOrder`. Sólo la creación directa interna
+admite `member_workflow_modes`, con exactamente `quantity` valores válidos y
+posición alineada a `sequence_number` desde 1. Ausente/null conserva el flujo
+homogéneo histórico. La configuración es atómica, también con ETS; solicitudes
+externas no adquieren esta capacidad.
+[Contrato](../architecture/LAB_WORK_ORDERS.md#modalidades-iniciales-de-grupos-directos-internos-2026-10-06).
+
 ## Mobile único editor técnico; ERP gobierna (2026-09-29)
 
 - MYC Mobile es la única interfaz de escritura técnica LAB. El ERP no modifica

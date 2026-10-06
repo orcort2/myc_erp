@@ -346,7 +346,8 @@ def test_unique_index_race_rolls_back_order_and_folio(ctx, monkeypatch):
 
 
 @pytest.mark.parametrize("failure", ["audit", "commit"])
-def test_audit_or_commit_failure_rolls_back_everything(ctx, monkeypatch, failure):
+@pytest.mark.parametrize("modes", [None, ["group", "equipment_by_equipment"]])
+def test_audit_or_commit_failure_rolls_back_everything(ctx, monkeypatch, failure, modes):
     before = counts(ctx)
 
     def boom(*_args, **_kwargs):
@@ -359,7 +360,7 @@ def test_audit_or_commit_failure_rolls_back_everything(ctx, monkeypatch, failure
     client = TestClient(app, raise_server_exceptions=False)
     try:
         response = client.post(
-            f"{BASE}/groups", json=payload(quantity=2, service_order_id=ctx["orders"]["mobile"]),
+            f"{BASE}/groups", json=payload(quantity=2, service_order_id=ctx["orders"]["mobile"], member_workflow_modes=modes),
             headers=ctx["headers"],
         )
     finally:
@@ -463,3 +464,91 @@ def test_postgresql_concurrent_creations_leave_one_linked_group(pg_factory):
         assert sorted(db.scalars(select(LabWorkOrder.folio))) == [6400, 6401]
         assert db.scalar(select(InstitutionalFolioSequence.next_value).where(
             InstitutionalFolioSequence.document_type == "lab_work_order")) == 6402
+
+
+@pytest.mark.parametrize("linked", [False, True])
+def test_direct_group_initial_member_modes_are_atomic_and_ordered(ctx, linked):
+    modes = ["equipment_by_equipment", "group", "equipment_by_equipment", "group"]
+    extra = {"service_order_id": ctx["orders"]["mobile"]} if linked else {}
+    response = ctx["http"].post(
+        f"{BASE}/groups", headers=ctx["headers"],
+        json=payload(quantity=4, workflow_mode="group", member_workflow_modes=modes, **extra),
+    )
+    assert response.status_code == 201, response.text
+    assert [row["workflow_mode"] for row in response.json()["related_work_orders"]] == modes
+    with ctx["factory"]() as db:
+        members = list(db.scalars(select(LabWorkOrder).order_by(LabWorkOrder.sequence_number)))
+        assert [(row.sequence_number, row.workflow_mode) for row in members] == list(enumerate(modes, 1))
+        links = list(db.scalars(select(ServiceOrderLabLink)))
+        assert len(links) == int(linked)
+        if linked:
+            assert links[0].lab_root_work_order_id == members[0].id
+        audit = db.scalar(select(AuditLog).where(AuditLog.action == "lab_work_order.group_materialized"))
+        assert audit.new_values["member_workflow_modes"] == modes
+        assert db.scalar(select(func.count(AuditLog.id)).where(
+            AuditLog.action == "lab_work_order.workflow_mode_changed")) == 0
+
+
+@pytest.mark.parametrize("mode", ["group", "equipment_by_equipment"])
+@pytest.mark.parametrize("explicit_null", [False, True])
+def test_direct_group_homogeneous_modes_remain_compatible(ctx, mode, explicit_null):
+    extra = {"member_workflow_modes": None} if explicit_null else {}
+    response = ctx["http"].post(
+        f"{BASE}/groups", headers=ctx["headers"],
+        json=payload(quantity=3, workflow_mode=mode, **extra),
+    )
+    assert response.status_code == 201, response.text
+    with ctx["factory"]() as db:
+        assert list(db.scalars(select(LabWorkOrder.workflow_mode))) == [mode] * 3
+        audit = db.scalar(select(AuditLog).where(AuditLog.action == "lab_work_order.group_materialized"))
+        assert audit.new_values["workflow_mode"] == mode
+        assert "member_workflow_modes" not in audit.new_values
+
+
+@pytest.mark.parametrize("modes", [[], ["group"], ["group"] * 3, ["group", "invalid"]])
+@pytest.mark.parametrize("linked", [False, True])
+def test_invalid_member_modes_are_rejected_before_materialization(ctx, modes, linked):
+    before = counts(ctx)
+    extra = {"service_order_id": ctx["orders"]["mobile"]} if linked else {}
+    response = ctx["http"].post(
+        f"{BASE}/groups", headers=ctx["headers"],
+        json=payload(quantity=2, member_workflow_modes=modes, **extra),
+    )
+    assert response.status_code == 422, response.text
+    assert counts(ctx) == before
+    with ctx["factory"]() as db:
+        assert db.scalar(select(func.count(AuditLog.id)).where(
+            AuditLog.action == "lab_work_order.group_materialized")) == 0
+
+
+def test_external_request_schema_rejects_member_workflow_configuration():
+    from pydantic import ValidationError
+    from app.schemas.lab_work_order import LabWorkOrderGroupCreate
+
+    assert "member_workflow_modes" not in LabWorkOrderGroupCreate.model_fields
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        LabWorkOrderGroupCreate(**payload(quantity=2, member_workflow_modes=["group", "group"]))
+
+
+@pytest.mark.parametrize("linked", [False, True])
+def test_mixed_group_failure_during_materialization_rolls_back_all_members(ctx, linked):
+    before = counts(ctx)
+
+    def fail_second_member(_mapper, _connection, target):
+        if target.sequence_number == 2:
+            raise RuntimeError("simulated second member failure")
+
+    event.listen(LabWorkOrder, "before_insert", fail_second_member)
+    extra = {"service_order_id": ctx["orders"]["mobile"]} if linked else {}
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.post(f"{BASE}/groups", headers=ctx["headers"], json=payload(
+                quantity=3, member_workflow_modes=["group", "equipment_by_equipment", "group"], **extra,
+            ))
+    finally:
+        event.remove(LabWorkOrder, "before_insert", fail_second_member)
+    assert response.status_code == 500
+    assert counts(ctx) == before
+    with ctx["factory"]() as db:
+        assert db.scalar(select(func.count(AuditLog.id)).where(
+            AuditLog.action == "lab_work_order.group_materialized")) == 0

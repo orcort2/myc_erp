@@ -137,7 +137,8 @@ def test_staff_direct_group_materializes_consecutive_real_orders(lab_context):
         assert all(item.client_name == "Cliente final documental" for item in rows)
 
 
-def test_group_request_approval_is_idempotent_and_pending_consumes_no_folios(lab_context):
+@pytest.mark.parametrize("workflow_mode", ["group", "equipment_by_equipment"])
+def test_group_request_approval_is_idempotent_and_pending_consumes_no_folios(lab_context, workflow_mode):
     client, factory, tokens = lab_context
     with factory() as db:
         operator = Client(legal_name="Operador", commercial_name="Operador")
@@ -146,7 +147,7 @@ def test_group_request_approval_is_idempotent_and_pending_consumes_no_folios(lab
         requester = db.scalar(select(User).where(User.username == "lab-tech"))
         request = create_group_request(
             db,
-            LabWorkOrderGroupCreate(**create_payload("Cliente final"), quantity=2),
+            LabWorkOrderGroupCreate(**create_payload("Cliente final"), quantity=2, workflow_mode=workflow_mode),
             requester,
             operator_client_id=operator.id,
         )
@@ -173,6 +174,7 @@ def test_group_request_approval_is_idempotent_and_pending_consumes_no_folios(lab
     with factory() as db:
         assert db.scalar(select(func.count(LabWorkOrder.id))) == 2
         assert list(db.scalars(select(LabWorkOrder.folio).order_by(LabWorkOrder.folio))) == [6400, 6401]
+        assert list(db.scalars(select(LabWorkOrder.workflow_mode))) == ["group", "group"]
         conversation = db.get(CommunicationConversation, conversation_id)
         assert {participant.username for participant in conversation.participants} == {"lab-tech", "lab-admin"}
         messages = list(db.scalars(select(CommunicationMessage).where(CommunicationMessage.conversation_id == conversation_id).order_by(CommunicationMessage.sequence)))

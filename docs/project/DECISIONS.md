@@ -797,3 +797,14 @@ La autorización ACL de `Deployment/acl-backups` se representa como
 `persistent_protected`, separada de `owned`: permite crear/proteger, nunca
 borrarlo como recurso del lifecycle. Los consumidores de eliminación siguen
 consultando exclusivamente `owned`.
+
+## D-2026-10-06 — Modalidad inicial por OT en grupo LAB interno
+
+La configuración mixta vive sólo en `LabWorkOrderInternalGroupCreate` y se
+transporta como argumento opcional hasta `_materialize_group`, autoridad única
+compartida por creación directa y vinculada a ETS. Se asigna al insertar cada
+miembro dentro de la transacción existente; no se crea primero un grupo homogéneo
+para mutarlo después. La auditoría de materialización conserva la configuración
+inicial sin simular cambios administrativos. Sin nuevo agregado, columna ni
+migración; solicitudes externas conservan su contrato y aprobación históricos.
+[Contrato](../architecture/LAB_WORK_ORDERS.md#modalidades-iniciales-de-grupos-directos-internos-2026-10-06).

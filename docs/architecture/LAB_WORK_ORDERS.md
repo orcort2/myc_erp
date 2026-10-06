@@ -72,6 +72,43 @@ operador externo.
 
 La bandeja administrativa Mobile compone `OperationalTicket` y `WorkOrderGroupRequest` como proyecciones separadas y calcula pendientes accionables con dos consultas acotadas, sin endpoint/modelo agregado nuevo. `WorkOrderGroupRequest` continúa siendo la fuente de verdad. Durante `pending`, `conversation_id` es nulo; el claim atómico asigna handler, crea o reutiliza la conversación, agrega exclusivamente requester/handler y sólo entonces publica mensajes system. Approve/reject reutilizan ese vínculo sin duplicarlo.
 
+### Modalidades iniciales de grupos directos internos (2026-10-06)
+
+Un grupo OT LAB puede ser homogéneo o mixto. La autoridad sigue siendo
+`LabWorkOrder.workflow_mode` de cada miembro, sin modalidad persistente del grupo.
+`POST /mobile/v1/technician/lab-work-orders/groups` acepta exclusivamente en
+`LabWorkOrderInternalGroupCreate` el campo opcional
+`member_workflow_modes: list[Literal["group", "equipment_by_equipment"]] | None`.
+Si se omite o es `null`, todas las OT reciben el `workflow_mode` base (default
+`group`), como los callers históricos. Si se envía un array, debe contener
+exactamente `quantity` valores válidos; la posición 0 corresponde a
+`sequence_number=1`. Pydantic rechaza longitud/modalidad inválidas antes de crear.
+
+El router separa esta configuración del contrato base externo y la pasa como
+argumento opcional a la única `_materialize_group`, tanto por creación directa
+como por `create_linked_work_order_group`. Cada fila nace con su modalidad final
+en la misma transacción de folios, OT, auditoría y vínculo ETS opcional; el vínculo
+sigue siendo único y de la raíz. No hay PATCH posterior ni eventos artificiales
+`lab_work_order.workflow_mode_changed`. `lab_work_order.group_materialized`
+conserva `member_workflow_modes` en orden de secuencia cuando se proporciona;
+sin array conserva sólo `workflow_mode` para reconstruir la configuración homogénea.
+
+Mobile presenta cantidad → modalidad base → “Aplicar a todas” o “Configurar
+manualmente”. Al entrar a manual inicializa cada fila con la modalidad base.
+Aumentar cantidad conserva las elecciones existentes que continúan dentro del
+rango y rellena nuevas filas con la base actual; reducirla descarta las posiciones
+sobrantes. Cambiar la modalidad base mientras está activa la configuración manual
+reinicializa todas las posiciones con la nueva base; las excepciones manuales se
+configuran después de elegirla. Cantidades no enteras o fuera de 1–50 impiden
+crear; durante una edición temporal inválida se ocultan las filas y se conservan
+sus selecciones hasta recibir una cantidad válida. Volver a “Aplicar a todas”
+omite el array; un formulario nuevo limpia la configuración manual.
+
+Solicitudes externas (`group-requests`, `LabWorkOrderGroupCreate` y
+`LabWorkOrderGroupRequest`) quedan fuera: no aceptan ni persisten configuración
+por miembro; la aprobación conserva su materialización histórica `group`.
+Sin migración ni cambios de firma, recepción, captura, cierre o permisos.
+
 ## Autoridad y aislamiento
 
 El LAB resuelve captura operativa temporal desde iPhone sin crear ni modificar

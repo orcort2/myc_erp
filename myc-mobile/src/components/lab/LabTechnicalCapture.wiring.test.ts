@@ -17,6 +17,36 @@ const source = readFileSync(
   'utf8',
 );
 
+test('abrir una hoja existente mantiene la vista anterior hasta recibir el snapshot completo', () => {
+  const start = source.indexOf('async function openSheet(equipment: LabEquipment)');
+  const end = source.indexOf('async function createSheet()', start);
+  assert.ok(start >= 0 && end > start);
+
+  const block = source.slice(start, end);
+  const awaitExisting = block.indexOf(
+    'nextSheet = await request<LabFieldSheet>('
+  );
+  const setEquipment = block.indexOf('setActiveEquipment(equipment);', awaitExisting);
+
+  assert.ok(awaitExisting >= 0, 'la hoja existente debe cargarse antes de aplicar estado');
+  assert.ok(setEquipment > awaitExisting, 'activeEquipment sólo cambia después del request');
+
+  assert.match(block, /setSheet\(nextSheet\)/);
+  assert.match(block, /setValues\(buildValues\(nextSheet\)\)/);
+  assert.match(block, /setSelectedTemplate\(nextSheet\.template_key\)/);
+
+  const firstEquipmentAssignment = block.indexOf('setActiveEquipment(equipment);');
+  const newInternalSheetBranch = block.indexOf(
+    'if (!equipment.field_sheet_id && !isLabExternalEquipment(equipment))'
+  );
+
+  assert.ok(
+    firstEquipmentAssignment > newInternalSheetBranch,
+    'el único cambio inmediato de equipo debe pertenecer al selector de una hoja nueva'
+  );
+});
+
+
 test('el selector de hoja filtra todas las plantillas cargadas sin recortar la fuente', () => {
   assert.match(source, /filterFieldSheetTemplates\(templates, templateSearch\)/);
   assert.doesNotMatch(source, /\{templates\.map\(\(template\)/);

@@ -36,6 +36,7 @@ import {
   withErpLink,
   type ErpCalibrationCandidate,
 } from '@/src/services/lab-erp-calibration';
+import { buildLabWorkflowCreationPayload, reconcileMemberWorkflowModes, validGroupQuantity } from '@/src/services/lab-group-workflow';
 import {
   ActionRow,
   ActionTile,
@@ -150,6 +151,7 @@ import type { OperationalTicket } from '@/src/types/operational-ticket';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const PAGE_SIZE = 25;
+const RELATED_WORK_ORDER_LOADING_DELAY_MS = 1000;
 const emptyGeneral = (): GeneralData => ({
   lab_client_id: null,
   reception_date: today(),
@@ -270,10 +272,37 @@ export default function WorkOrdersScreen() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'completed'>('all');
   const [busy, setBusy] = useState(false);
+  const [relatedLoading, setRelatedLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [groupMode, setGroupMode] = useState<'none' | 'request' | 'direct'>('none');
   const [groupQuantity, setGroupQuantity] = useState('2');
   const [workflowMode, setWorkflowMode] = useState<LabWorkOrderWorkflowMode>('group');
+  const [manualGroupWorkflow, setManualGroupWorkflow] = useState(false);
+  const [memberWorkflowModes, setMemberWorkflowModes] = useState<LabWorkOrderWorkflowMode[]>([]);
+
+  function changeWorkflowMode(newBaseMode: LabWorkOrderWorkflowMode) {
+    setWorkflowMode(newBaseMode);
+    const quantity = validGroupQuantity(groupQuantity);
+    if (manualGroupWorkflow && quantity !== null) {
+      setMemberWorkflowModes(reconcileMemberWorkflowModes([], quantity, newBaseMode));
+    }
+  }
+
+  function changeGroupQuantity(value: string) {
+    setGroupQuantity(value);
+    const quantity = validGroupQuantity(value);
+    if (manualGroupWorkflow && quantity !== null) {
+      setMemberWorkflowModes((current) => reconcileMemberWorkflowModes(current, quantity, workflowMode));
+    }
+  }
+
+  function selectGroupWorkflowApplication(manual: boolean) {
+    setManualGroupWorkflow(manual);
+    setMemberWorkflowModes(manual
+      ? reconcileMemberWorkflowModes([], validGroupQuantity(groupQuantity) ?? 0, workflowMode)
+      : []);
+  }
+
   const [equipmentByEquipmentBlockers, setEquipmentByEquipmentBlockers] = useState<EquipmentByEquipmentBlocker[] | null>(null);
   const [step, setStep] = useState<Step>('general');
   const [general, setGeneral] = useState<GeneralData>(emptyGeneral);
@@ -314,6 +343,7 @@ export default function WorkOrdersScreen() {
   const refreshGate = useRef(new RefreshGate());
   const deletionCoordinator = useRef(new LabWorkOrderDeletionCoordinator());
   const signatureSubmitRef = useRef(false);
+  const relatedSelectionSequence = useRef(0);
   const capabilities = deriveMobileCapabilities(user);
   // Identidad estable: una renovación silenciosa reemplaza `session` (y con
   // ello la referencia de `user`) sin cambiar de usuario. Los disparadores de
@@ -575,6 +605,8 @@ export default function WorkOrdersScreen() {
   function startNew() {
     setGroupMode('none');
     setWorkflowMode('group');
+    setManualGroupWorkflow(false);
+    setMemberWorkflowModes([]);
     setEquipmentByEquipmentBlockers(null);
     setGeneral(emptyGeneral());
     setErpLink(null);
@@ -948,8 +980,9 @@ export default function WorkOrdersScreen() {
           state_name: general.state_name || null,
           purchase_order: general.purchase_order || null,
           notes: general.notes || null,
-          ...(workOrder ? { expected_edit_version: workOrder.edit_version } : { workflow_mode: workflowMode }),
-          ...(groupMode !== 'none' ? { quantity: Number(groupQuantity) } : {}),
+          ...(workOrder
+            ? { expected_edit_version: workOrder.edit_version }
+            : buildLabWorkflowCreationPayload(groupMode, workflowMode, groupQuantity, manualGroupWorkflow, memberWorkflowModes)),
         }, erpLink, groupMode, !!workOrder)),
       });
       if (groupMode === 'request') {
@@ -1084,9 +1117,19 @@ export default function WorkOrdersScreen() {
   }
 
   async function selectRelated(id: number) {
-    setBusy(true);
+    if (id === workOrder?.id) return;
+
+    const requestId = ++relatedSelectionSequence.current;
+    const loadingTimer = setTimeout(() => {
+      if (requestId === relatedSelectionSequence.current) {
+        setRelatedLoading(true);
+      }
+    }, RELATED_WORK_ORDER_LOADING_DELAY_MS);
+
     try {
       const detail = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${id}`);
+      if (requestId !== relatedSelectionSequence.current) return;
+
       const nextScope = inferClosureScope(detail);
       const contextId = labClosureContextId(detail, nextScope);
       const skipPreservedSignatures = canSkipSignaturesAfterReopen(detail);
@@ -1102,9 +1145,13 @@ export default function WorkOrdersScreen() {
       setWorkOrder(detail);
       setStep(inferStepForStatus(detail.status));
     } catch (error) {
+      if (requestId !== relatedSelectionSequence.current) return;
       Alert.alert('No fue posible cambiar de OT', error instanceof Error ? error.message : 'Intenta nuevamente');
     } finally {
-      setBusy(false);
+      clearTimeout(loadingTimer);
+      if (requestId === relatedSelectionSequence.current) {
+        setRelatedLoading(false);
+      }
     }
   }
 
@@ -1710,12 +1757,17 @@ export default function WorkOrdersScreen() {
                   {Object.values(generalErrors).some(Boolean) && (
                     <AlertBanner tone="danger">Revisa los campos marcados antes de continuar.</AlertBanner>
                   )}
-                  {!workOrder && groupMode === 'none' && (
+                  {!workOrder && groupMode === 'direct' && (
+                    <FormSection title="Generar grupo">
+                      <Field label="Cantidad de OT (1–50)" required keyboardType="phone-pad" value={groupQuantity} onChangeText={changeGroupQuantity} />
+                    </FormSection>
+                  )}
+                  {!workOrder && groupMode !== 'request' && (
                     <FormSection title="Modalidad de trabajo">
                       {WORKFLOW_MODE_OPTIONS.map((option) => (
                         <Pressable
                           key={option.value}
-                          onPress={() => setWorkflowMode(option.value)}
+                          onPress={() => changeWorkflowMode(option.value)}
                           style={[styles.workflowModeCard, workflowMode === option.value && styles.workflowModeCardSelected]}
                         >
                           <Text style={styles.workflowModeTitle}>{option.title}</Text>
@@ -1724,8 +1776,40 @@ export default function WorkOrdersScreen() {
                       ))}
                     </FormSection>
                   )}
+                  {!workOrder && groupMode === 'direct' && (
+                    <FormSection title="Aplicación de modalidad">
+                      {[{ manual: false, title: 'Aplicar a todas' }, { manual: true, title: 'Configurar manualmente' }].map((option) => (
+                        <Pressable
+                          key={option.title}
+                          accessibilityRole="radio"
+                          accessibilityState={{ checked: manualGroupWorkflow === option.manual }}
+                          onPress={() => { if (manualGroupWorkflow !== option.manual) selectGroupWorkflowApplication(option.manual); }}
+                          style={[styles.workflowModeCard, manualGroupWorkflow === option.manual && styles.workflowModeCardSelected]}
+                        >
+                          <Text style={styles.workflowModeTitle}>{option.title}</Text>
+                        </Pressable>
+                      ))}
+                      {manualGroupWorkflow && validGroupQuantity(groupQuantity) !== null && memberWorkflowModes.map((mode, index) => (
+                        <View key={index}>
+                          <Text style={styles.fieldLabel}>OT {index + 1}</Text>
+                          {WORKFLOW_MODE_OPTIONS.map((option) => (
+                            <Pressable
+                              key={option.value}
+                              accessibilityRole="radio"
+                              accessibilityLabel={`OT ${index + 1}: ${option.title}`}
+                              accessibilityState={{ checked: mode === option.value }}
+                              onPress={() => setMemberWorkflowModes((current) => current.map((value, position) => position === index ? option.value : value))}
+                              style={[styles.workflowModeCard, mode === option.value && styles.workflowModeCardSelected]}
+                            >
+                              <Text style={styles.workflowModeTitle}>{option.title}</Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      ))}
+                    </FormSection>
+                  )}
                   <FormSection title="Servicio y cliente">
-                    {groupMode !== 'none' && <Field label="Cantidad de OT (1–50)" required keyboardType="phone-pad" value={groupQuantity} onChangeText={setGroupQuantity} />}
+                    {groupMode === 'request' && <Field label="Cantidad de OT (1–50)" required keyboardType="phone-pad" value={groupQuantity} onChangeText={setGroupQuantity} />}
                     <MycDatePickerField error={generalErrors.reception_date} label="Fecha de recepción *" value={general.reception_date} onChange={(value) => { setGeneral({ ...general, reception_date: value }); setGeneralErrors((current) => ({ ...current, reception_date: '' })); }} />
                     <Text style={styles.fieldLabel}>Cliente *</Text>
                     <LabWorkOrderClientField
@@ -1775,8 +1859,8 @@ export default function WorkOrdersScreen() {
                         || (
                           groupMode !== 'none'
                           && (
-                            Number(groupQuantity) < 1
-                            || Number(groupQuantity) > 50
+                            validGroupQuantity(groupQuantity) === null
+                            || (groupMode === 'direct' && manualGroupWorkflow && memberWorkflowModes.length !== Number(groupQuantity))
                           )
                         )
                       }
@@ -1808,6 +1892,12 @@ export default function WorkOrdersScreen() {
                       </Pressable>
                     ))}
                   </ScrollView>
+                  {relatedLoading && (
+                    <View style={styles.relatedLoading}>
+                      <ActivityIndicator size="small" />
+                      <Text style={styles.relatedLoadingText}>Cargando OT…</Text>
+                    </View>
+                  )}
                   <View style={styles.summary}><Text style={styles.summaryClient}>{workOrder.client_name}</Text><Text style={styles.summaryLine}>Recepción: {workOrder.reception_date}</Text><Text style={styles.summaryLine}>{workOrder.departure_date ? `Salida: ${workOrder.departure_date}` : deliveryStatus ? 'Pendiente de entrega' : ''}</Text><Text style={styles.summaryLine}>{workOrder.address}</Text></View>
                 </>
               )}
@@ -3238,6 +3328,18 @@ const styles = StyleSheet.create({
 
   related: {
     marginBottom: 14,
+  },
+
+  relatedLoading: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+
+  relatedLoadingText: {
+    color: '#64748b',
+    fontSize: 12,
   },
 
   relatedChip: {
