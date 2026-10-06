@@ -121,8 +121,13 @@ test('Fase 5: ready_to_close y terminales re-derivan del status real', () => {
 
 test('Fase 5: ambos puntos de reconciliación en work-orders.tsx usan resolveStepAfterStatusUpdate, no el carve-out inline anterior', () => {
   const source = screenSource();
-  const occurrences = source.split('resolveStepAfterStatusUpdate(current, sameSignatureCohort, detail.status, detail.workflow_mode)').length - 1;
+  // Ambos puntos pasan además el contexto de misma OT (sameWorkOrder) para
+  // que un refresh no expulse de una Captura Técnica alcanzada por intención.
+  const occurrences = source.split('resolveStepAfterStatusUpdate(\n        current,').length - 1
+    + source.split('resolveStepAfterStatusUpdate(\n            current,').length - 1;
   assert.equal(occurrences, 2);
+  assert.match(source, /\{ sameWorkOrder: true, canSkipSignatures: skipPreservedSignatures \}/);
+  assert.match(source, /\{ sameWorkOrder, canSkipSignatures: skipPreservedSignatures \}/);
   // El carve-out inline (paso 'signatures' conservado sin mirar si el status
   // ya es terminal) quedó reemplazado por completo -- si reaparece, alguien
   // reintrodujo el bug que Fase 5 corrigió.
@@ -309,4 +314,35 @@ test('19. un conflicto de versión (REVISION_CONFLICT) se presenta con el mensaj
   // REVISION_CONFLICT) como ApiError; los catch de guardado siempre usan
   // error.message antes que un texto genérico.
   assert.match(source, /error instanceof Error \? error\.message : /);
+});
+
+test('foreground: Captura Técnica alcanzada por intención se conserva en la MISMA OT mientras el status la admita', () => {
+  const same = { sameWorkOrder: true, canSkipSignatures: false };
+  // "Revisar captura técnica" desde el cierre: ready_to_close infiere 'review' al ABRIR, no al refrescar.
+  assert.equal(resolveStepAfterStatusUpdate('technical', false, 'ready_to_close', 'group', same), 'technical');
+  assert.equal(resolveStepAfterStatusUpdate('technical', false, 'in_progress', 'group', same), 'technical');
+  assert.equal(resolveStepAfterStatusUpdate('technical', false, 'received_signed', 'group', same), 'technical');
+  // Reapertura con firma preservada: draft directo a captura técnica.
+  assert.equal(resolveStepAfterStatusUpdate('technical', false, 'draft', 'group', { sameWorkOrder: true, canSkipSignatures: true }), 'technical');
+});
+
+test('foreground: sin contexto de misma OT (apertura de otra OT) el status sigue dictando el destino', () => {
+  assert.equal(resolveStepAfterStatusUpdate('technical', false, 'ready_to_close', 'group'), 'review');
+  assert.equal(resolveStepAfterStatusUpdate('technical', false, 'ready_to_close', 'group', { sameWorkOrder: false, canSkipSignatures: false }), 'review');
+  assert.equal(resolveStepAfterStatusUpdate('technical', false, 'draft', 'group', { sameWorkOrder: false, canSkipSignatures: true }), 'capture');
+});
+
+test('foreground: terminales y draft sin firma preservada siguen reconciliándose aunque sea la misma OT', () => {
+  const same = { sameWorkOrder: true, canSkipSignatures: false };
+  for (const status of ['completed', 'partially_closed', 'cancelled']) {
+    assert.equal(resolveStepAfterStatusUpdate('technical', false, status, 'group', same), 'completed');
+  }
+  assert.equal(resolveStepAfterStatusUpdate('technical', false, 'draft', 'group', same), 'capture');
+  assert.equal(resolveStepAfterStatusUpdate('technical', false, 'ready_for_signatures', 'group', same), 'signatures');
+});
+
+test('foreground: la conservación sólo aplica desde technical; otros pasos se reconcilian como siempre', () => {
+  const same = { sameWorkOrder: true, canSkipSignatures: false };
+  assert.equal(resolveStepAfterStatusUpdate('review', false, 'in_progress', 'group', same), 'technical');
+  assert.equal(resolveStepAfterStatusUpdate('capture', false, 'ready_to_close', 'group', same), 'review');
 });

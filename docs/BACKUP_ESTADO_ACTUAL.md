@@ -53,6 +53,34 @@
   de locks PostgreSQL. Contrato vigente en
   [LAB_WORK_ORDERS.md](architecture/LAB_WORK_ORDERS.md#modalidades-iniciales-de-grupos-directos-internos-2026-10-06).
 
+## Contexto de FieldSheet Mobile en background → foreground, mismo proceso (2026-10-06)
+
+- Base `d1810266a0dd616612b27e50108e006fb1760c62`, rama
+  `fix/mobile-field-sheet-foreground-context`; sin migraciones ni cambios de backend.
+- Causa demostrada con el reconciliador real de React: `app.foreground` →
+  GET de la OT → `setStep(resolveStepAfterStatusUpdate(...))` aplicaba
+  `inferStepForStatus` (destino por defecto al ABRIR) sobre una Captura Técnica
+  alcanzada por intención explícita (`ready_to_close` + "Revisar captura técnica";
+  reapertura con firma preservada + "Continuar proceso"). El paso salía de `technical`,
+  se desmontaba `LabTechnicalCapture` y se perdían equipo, hoja, modo y valores.
+  El fix previo sólo cubría `equipment_by_equipment + draft`.
+- Corrección: el resolver recibe `{ sameWorkOrder, canSkipSignatures }` y conserva
+  `technical` mientras el status admita captura; terminales mandan. Lecturas de
+  refresh con secuencia + identidad de OT (respuesta vieja no gana; un guardado
+  local posterior invalida lecturas en vuelo). `LabTechnicalCapture` con
+  `key={workOrder.id}` (antes una OT relacionada heredaba equipo/hoja de la
+  anterior) y reconciliación de equipo retirado / hoja reemplazada
+  (`field-sheet-context.ts`). Sin estado duplicado: el autosave sigue siendo la
+  autoridad del draft; sin persistencia durable ni cambios de backend.
+- El harness conserva `group/in_progress` por la ruta natural como caso de guarda:
+  esa variante no reproducía el desmontaje previo. Sí reprodujo y corrigió
+  `ready_to_close` al revisar captura y `draft` reabierto con firma preservada.
+- QA manual iOS del ciclo FieldSheet abierta → background → otra app → foreground:
+  aprobado; conserva OT, equipo, hoja, modo y captura local sin regresar al listado.
+- Regresiones focales: **241/241**. Suite Mobile completa: **970/970**.
+  `npm run lint`, `npx tsc --noEmit` y `git diff --check`: limpios.
+- Fuera de alcance: process kill / cold start; no se agregó persistencia durable.
+
 ## Hoja de campo Mobile al regresar a foreground (2026-10-06)
 
 - Base `f377b511e5d18d408ef48690d17c45342c70cdeb`, rama

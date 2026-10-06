@@ -573,13 +573,28 @@ arriba; o `equipment_by_equipment`). La elección es backend-autoritativa y
 persistente -- sobrevive refresh/kill/logout/reload y nunca se reinterpreta
 para OT históricas.
 
-Al regresar a foreground, Mobile refresca la OT abierta y conserva el paso
-`technical` únicamente si el payload sigue en `draft` con modalidad
-`equipment_by_equipment`. Así la hoja en captura permanece montada. La regla
-vive en `resolveStepAfterStatusUpdate`; `group` continúa resolviendo `draft`
-a `capture`, `ready_to_close` a `review` y los estados terminales a `completed`.
-La protección vigente de firmas del mismo cohorte no cambia. Esto conserva
-el contexto en memoria; no agrega recuperación tras terminar el proceso.
+Al regresar a foreground (mismo proceso), Mobile refresca la OT abierta y
+conserva la Captura Técnica -- y con ella la FieldSheet activa, su modo de
+vista/edición y los valores locales no confirmados -- mientras la OT, el equipo
+y la hoja sigan siendo válidos. `resolveStepAfterStatusUpdate` recibe si la
+respuesta pertenece a la misma OT abierta y sólo conserva `technical` cuando el
+status sigue admitiendo captura (`received_signed`, `in_progress`,
+`ready_to_close` revisado desde "Revisar captura técnica", y `draft` con
+`equipment_by_equipment` o reapertura con firma preservada). Los estados
+terminales, `draft` sin esas condiciones y la protección de firmas del mismo
+cohorte conservan su autoridad. Abrir otra OT (o la misma tras cerrar el modal)
+parte del destino que dicta su status.
+
+El contexto de captura pertenece a UNA OT (`LabTechnicalCapture` se monta con
+`key={workOrder.id}`). Un detalle refrescado que retira el equipo, reemplaza su
+hoja vigente o ya no la tiene (`field_sheet_id` null posterior a la confirmación de una
+creación local) se reconcilia explícitamente con aviso, sin evaluar mientras hay una
+operación propia en curso y revalidando al terminar; "Volver a equipos",
+completar o descartar la hoja limpian el contexto. Las lecturas de refresh se
+aplican sólo si siguen siendo la más reciente y la OT sigue abierta: una
+respuesta vieja nunca reemplaza datos o contexto más nuevos. Todo ocurre en
+memoria: no hay persistencia durable y la recuperación tras process kill/cold
+start queda fuera de alcance.
 
 ```text
 Login interno técnico

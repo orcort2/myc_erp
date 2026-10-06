@@ -344,6 +344,16 @@ export default function WorkOrdersScreen() {
   const deletionCoordinator = useRef(new LabWorkOrderDeletionCoordinator());
   const signatureSubmitRef = useRef(false);
   const relatedSelectionSequence = useRef(0);
+  // Identidad de la OT abierta y de la última lectura de detalle aceptada.
+  // Un GET de refresh (foreground/realtime) sólo puede aplicarse si sigue
+  // siendo la lectura más reciente Y la OT sigue siendo la misma: una
+  // respuesta vieja nunca reemplaza datos/contexto más nuevos (otra OT
+  // seleccionada, un guardado local posterior o un evento más reciente).
+  const openWorkOrderIdRef = useRef<number | null>(null);
+  const modalOpenRef = useRef(false);
+  const detailRefreshSequence = useRef(0);
+  openWorkOrderIdRef.current = workOrder?.id ?? null;
+  modalOpenRef.current = open;
   const capabilities = deriveMobileCapabilities(user);
   // Identidad estable: una renovación silenciosa reemplaza `session` (y con
   // ello la referencia de `user`) sin cambiar de usuario. Los disparadores de
@@ -519,8 +529,11 @@ export default function WorkOrdersScreen() {
     refreshActive(event.source === 'local');
     const targetId = event.work_order_id;
     if (workOrder && (!targetId || targetId === workOrder.id)) {
-      request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}`)
+      const requestedId = workOrder.id;
+      const sequence = ++detailRefreshSequence.current;
+      request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${requestedId}`)
         .then((detail) => {
+          if (sequence !== detailRefreshSequence.current || openWorkOrderIdRef.current !== requestedId) return;
           const contextId = labClosureContextId(detail, closureScope);
           const skipPreservedSignatures = canSkipSignaturesAfterReopen(detail);
           const sameSignatureCohort = !skipPreservedSignatures
@@ -532,7 +545,13 @@ export default function WorkOrdersScreen() {
           }));
           if (!sameSignatureCohort) setSignatureDrawing(false);
           setWorkOrder(detail);
-          setStep((current) => resolveStepAfterStatusUpdate(current, sameSignatureCohort, detail.status, detail.workflow_mode));
+          setStep((current) => resolveStepAfterStatusUpdate(
+            current,
+            sameSignatureCohort,
+            detail.status,
+            detail.workflow_mode,
+            { sameWorkOrder: true, canSkipSignatures: skipPreservedSignatures },
+          ));
         })
         .catch(() => undefined);
     }
@@ -901,9 +920,20 @@ export default function WorkOrdersScreen() {
       if (!sameSignatureCohort) setSignatureDrawing(false);
       setDeliveryPanel('closed');
       setDeliveryHistoryOpen(false);
+      // Reabrir la OT que YA está abierta (p.ej. tras distribuir folios) es
+      // la misma OT; abrir otra -- o la misma tras cerrar el modal -- parte
+      // del destino que dicta su status.
+      const sameWorkOrder = modalOpenRef.current && openWorkOrderIdRef.current === detail.id;
+      detailRefreshSequence.current += 1;
       setWorkOrder(detail);
       setGeneral(generalFromDetail(detail));
-      setStep((current) => resolveStepAfterStatusUpdate(current, sameSignatureCohort, detail.status, detail.workflow_mode));
+      setStep((current) => resolveStepAfterStatusUpdate(
+        current,
+        sameSignatureCohort,
+        detail.status,
+        detail.workflow_mode,
+        { sameWorkOrder, canSkipSignatures: skipPreservedSignatures },
+      ));
       setOpen(true);
     } catch (error) {
       Alert.alert('No fue posible abrir la OT', error instanceof Error ? error.message : 'Intenta nuevamente');
@@ -1142,6 +1172,9 @@ export default function WorkOrdersScreen() {
         rootWorkOrderId: contextId,
         technicianName: user?.full_name ?? '',
       }));
+      // Cambiar de OT invalida cualquier refresh en vuelo de la anterior, aun si
+      // luego se vuelve a ella (A -> B -> A): su respuesta ya es vieja.
+      detailRefreshSequence.current += 1;
       setWorkOrder(detail);
       setStep(inferStepForStatus(detail.status));
     } catch (error) {
@@ -1586,6 +1619,13 @@ export default function WorkOrdersScreen() {
     );
   }
 
+  // Detalle que LabTechnicalCapture ya confirmó con backend (guardar, completar,
+  // folio, etc.): invalida cualquier GET de refresh anterior aún en vuelo.
+  function commitCaptureWorkOrder(updated: LabWorkOrder) {
+    detailRefreshSequence.current += 1;
+    setWorkOrder(updated);
+  }
+
   function closeFlow() {
     if (signatureSubmitRef.current) {
       Alert.alert('Guardado en curso', 'Espera a que termine el envío de las firmas.');
@@ -2009,13 +2049,16 @@ export default function WorkOrdersScreen() {
                     <Text style={styles.sectionTitle}>Servicio, folio y hoja por equipo</Text>
                   </View>
                   <LabTechnicalCapture
+                    // Una OT distinta nunca hereda equipo/hoja activos de la
+                    // anterior: el contexto de captura pertenece a UNA OT.
+                    key={workOrder.id}
                     accessToken={session?.access_token ?? ''}
                     canCapture={canCaptureFieldSheets}
                     canCreateTickets={canCreateTickets}
                     canOverrideReceptionDate={canOverrideReceptionDate}
                     canReopenFieldSheetDirectly={canReopenFieldSheetDirectly}
                     external={user.actor_type === 'client'}
-                    onUpdated={setWorkOrder}
+                    onUpdated={commitCaptureWorkOrder}
                     request={request}
                     workOrder={workOrder}
                   />

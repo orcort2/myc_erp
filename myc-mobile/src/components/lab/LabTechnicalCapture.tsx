@@ -12,6 +12,7 @@ import type {
 } from '@/src/types/lab-work-order';
 import { LabelRenderError, PrinterNotReadyError, printLabel, type LabLabelPayload } from '@/src/services/label-print-service';
 import { FIELD_LABELS } from '@/src/services/field-labels';
+import { validateFieldSheetContext } from '@/src/services/field-sheet-context';
 import { directFields, normalizeFieldSheetPayload } from '@/src/services/field-sheet-payload';
 import {
   createFieldSheetAutosave,
@@ -209,6 +210,41 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
   // Salir de la pantalla con captura pendiente: flush best-effort.
   useEffect(() => () => { void autosave.flush(); }, [autosave]);
 
+  // Un detalle refrescado de la OT (foreground, realtime, guardado) puede
+  // traer un equipo/hoja que backend ya retiró o reemplazó: el contexto activo
+  // se reconcilia explícitamente en vez de dejar una hoja fantasma. Mientras
+  // hay una operación propia en curso (busy) no se reconcilia -- el detalle aún
+  // no refleja lo que este componente escribe--, pero `busy` es dependencia:
+  // al terminar se valida contra el ÚLTIMO detalle recibido. Una hoja creada
+  // localmente cuenta como pendiente hasta que un detalle la confirma; después,
+  // un detalle que ya no la tiene es autoritativo.
+  const pendingLocalSheetIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    const equipment = activeEquipmentRef.current;
+    if (!equipment || busy) return;
+    const validity = validateFieldSheetContext(workOrder.equipment, {
+      equipmentId: equipment.id,
+      sheetId: sheetRef.current?.id ?? null,
+      pendingLocalSheetId: pendingLocalSheetIdRef.current,
+    });
+    if (validity === 'confirmed') {
+      pendingLocalSheetIdRef.current = null;
+      return;
+    }
+    if (validity === 'valid') return;
+    pendingLocalSheetIdRef.current = null;
+    setActiveEquipment(null);
+    setSheet(null);
+    setTicketMode(null);
+    setViewMode(initialViewMode());
+    Alert.alert(
+      'La hoja cambió',
+      validity === 'equipment_removed'
+        ? 'El equipo ya no pertenece a esta OT. Se regresó a la lista de equipos.'
+        : 'La hoja de este equipo fue retirada o reemplazada en el servidor. Se regresó a la lista de equipos.',
+    );
+  }, [workOrder.equipment, busy]);
+
   async function refreshWorkOrder() {
     const updated = await request<LabWorkOrder>(
       `/mobile/v1/technician/lab-work-orders/${workOrder.id}`,
@@ -283,6 +319,8 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
         );
       }
 
+      const createdLocally = !equipment.field_sheet_id;
+      if (createdLocally) pendingLocalSheetIdRef.current = nextSheet.id;
       setActiveEquipment(equipment);
       setSheet(nextSheet);
       setSelectedTemplate(nextSheet.template_key);
@@ -296,6 +334,9 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
           ? 'view'
           : initialViewMode()
       );
+      // La hoja LAB EXTERNO recién creada se confirma con un detalle fresco
+      // (igual que createSheet); si falla, queda pendiente sin cerrar nada.
+      if (createdLocally) await refreshWorkOrder().catch(() => undefined);
     } catch (error) {
       Alert.alert(
         equipment.field_sheet_id ? 'No fue posible abrir la hoja' : 'No fue posible crear la hoja LAB EXTERNO',
@@ -314,6 +355,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
         `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${activeEquipment.id}/field-sheet`,
         { method: 'POST', body: JSON.stringify({ template_key: selectedTemplate }) },
       );
+      pendingLocalSheetIdRef.current = created.id;
       setSheet(created);
       setValues(buildValues(created));
       setViewMode(initialViewMode());
@@ -628,6 +670,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
         `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${activeEquipment.id}/field-sheet/reopen`,
         { method: 'POST', body: JSON.stringify({ reason: `${ticketReason.trim()}: ${ticketDescription.trim()}` }) },
       );
+      pendingLocalSheetIdRef.current = clone.id;
       setSheet(clone);
       setValues(buildValues(clone));
       setViewMode(initialViewMode());
@@ -723,6 +766,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
         `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${activeEquipment.id}/field-sheet/change-template`,
         { method: 'POST', body: JSON.stringify({ template_key: changingTemplateTo }) },
       );
+      pendingLocalSheetIdRef.current = updated.id;
       setSheet(updated);
       setSelectedTemplate(updated.template_key);
       setValues(buildValues(updated));

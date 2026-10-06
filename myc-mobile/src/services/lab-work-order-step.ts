@@ -45,6 +45,34 @@ export function inferStepForStatus(status: LabWorkOrderStatus | string): Step {
   return 'capture';
 }
 
+export type StepReconciliationContext = {
+  /** La respuesta pertenece a la OT que el técnico ya tiene abierta. */
+  sameWorkOrder: boolean;
+  /** Reapertura con firma preservada (canSkipSignaturesAfterReopen). */
+  canSkipSignatures: boolean;
+};
+
+/**
+ * Captura técnica alcanzada por intención explícita del técnico (abrir
+ * "Continuar proceso", "Revisar captura técnica", tocar un equipo): un
+ * refresh de la MISMA OT no puede expulsarlo de ahí sólo porque
+ * inferStepForStatus (destino por defecto al ABRIR una OT) apunte a otro
+ * paso -- eso desmontaba LabTechnicalCapture y con ello la FieldSheet
+ * abierta, al volver de background. Sólo se conserva mientras la captura
+ * siga siendo coherente con el status vigente; terminales y cualquier
+ * status que ya no admita captura siguen reconciliándose de inmediato.
+ */
+function keepsTechnicalCapture(
+  status: LabWorkOrderStatus | string,
+  workflowMode: LabWorkOrderWorkflowMode | undefined,
+  context: StepReconciliationContext,
+): boolean {
+  if (status === 'received_signed' || status === 'in_progress' || status === 'ready_to_close') return true;
+  // Por equipo se captura en draft; una reapertura con firma preservada
+  // también vuelve a draft directo a captura técnica.
+  return status === 'draft' && (workflowMode === 'equipment_by_equipment' || context.canSkipSignatures);
+}
+
 /**
  * Fase 5: al reconciliar un evento realtime o reabrir una OT (deep link),
  * work-orders.tsx evita interrumpir una firma en curso del mismo cohorte
@@ -60,10 +88,15 @@ export function resolveStepAfterStatusUpdate(
   sameSignatureCohort: boolean,
   nextStatus: LabWorkOrderStatus | string,
   workflowMode?: LabWorkOrderWorkflowMode,
+  context?: StepReconciliationContext,
 ): Step {
   // Por equipo se puede capturar mientras la OT global sigue en draft.
   // Un refresh conserva ese paso válido; cualquier otro status se reconcilia.
   if (workflowMode === 'equipment_by_equipment' && currentStep === 'technical' && nextStatus === 'draft') {
+    return 'technical';
+  }
+
+  if (currentStep === 'technical' && context?.sameWorkOrder && keepsTechnicalCapture(nextStatus, workflowMode, context)) {
     return 'technical';
   }
 
