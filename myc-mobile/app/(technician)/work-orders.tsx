@@ -502,7 +502,7 @@ export default function WorkOrdersScreen() {
           }));
           if (!sameSignatureCohort) setSignatureDrawing(false);
           setWorkOrder(detail);
-          setStep((current) => resolveStepAfterStatusUpdate(current, sameSignatureCohort, detail.status));
+          setStep((current) => resolveStepAfterStatusUpdate(current, sameSignatureCohort, detail.status, detail.workflow_mode));
         })
         .catch(() => undefined);
     }
@@ -871,7 +871,7 @@ export default function WorkOrdersScreen() {
       setDeliveryHistoryOpen(false);
       setWorkOrder(detail);
       setGeneral(generalFromDetail(detail));
-      setStep((current) => resolveStepAfterStatusUpdate(current, sameSignatureCohort, detail.status));
+      setStep((current) => resolveStepAfterStatusUpdate(current, sameSignatureCohort, detail.status, detail.workflow_mode));
       setOpen(true);
     } catch (error) {
       Alert.alert('No fue posible abrir la OT', error instanceof Error ? error.message : 'Intenta nuevamente');

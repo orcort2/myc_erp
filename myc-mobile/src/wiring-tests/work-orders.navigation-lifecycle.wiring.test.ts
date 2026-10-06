@@ -114,3 +114,15 @@ test('los efectos sensibles a refresh/notificación/sesión nunca tocan setOpen'
 test('onRequestClose del Modal principal apunta exclusivamente a closeFlow', () => {
   assert.match(workOrdersSource, /<Modal\s+animationType="slide"\s+onRequestClose=\{closeFlow\}\s+visible=\{open\}>/);
 });
+
+test('foreground refresca la OT abierta y reconcilia con el workflow recién recibido', () => {
+  assert.match(notificationSyncSource, /emit\(\{ event_type: 'app.foreground', source: 'foreground' \}\)/);
+  const start = workOrdersSource.indexOf('useEffect(() => subscribe((event) => {');
+  const end = workOrdersSource.indexOf('}), [closureScope', start);
+  assert.ok(start >= 0 && end > start);
+  const subscription = workOrdersSource.slice(start, end);
+  assert.match(subscription, /if \(!affectsWorkOrders\(event\)\) return;/);
+  assert.match(subscription, /request<LabWorkOrder>\(`/);
+  assert.match(subscription, /setWorkOrder\(detail\)/);
+  assert.match(subscription, /setStep\(\(current\) => resolveStepAfterStatusUpdate\(current, sameSignatureCohort, detail.status, detail.workflow_mode\)\)/);
+});
