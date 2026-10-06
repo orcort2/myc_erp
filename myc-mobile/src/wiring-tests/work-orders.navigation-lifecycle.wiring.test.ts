@@ -143,5 +143,8 @@ test('foreground refresca la OT abierta y reconcilia con el workflow recién rec
   assert.match(subscription, /if \(!affectsWorkOrders\(event\)\) return;/);
   assert.match(subscription, /request<LabWorkOrder>\(`/);
   assert.match(subscription, /setWorkOrder\(detail\)/);
-  assert.match(subscription, /setStep\(\(current\) => resolveStepAfterStatusUpdate\(current, sameSignatureCohort, detail.status, detail.workflow_mode\)\)/);
+  assert.match(subscription, /setStep\(\(current\) => resolveStepAfterStatusUpdate\(\s*current,\s*sameSignatureCohort,\s*detail\.status,\s*detail\.workflow_mode,\s*\{ sameWorkOrder: true, canSkipSignatures: skipPreservedSignatures \},\s*\)\)/);
+  // Una respuesta vieja nunca gana: secuencia + identidad de la OT abierta.
+  assert.match(subscription, /const sequence = \+\+detailRefreshSequence\.current/);
+  assert.match(subscription, /sequence !== detailRefreshSequence\.current \|\| openWorkOrderIdRef\.current !== requestedId/);
 });
