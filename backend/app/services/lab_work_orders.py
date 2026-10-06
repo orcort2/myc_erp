@@ -8,6 +8,7 @@ import json
 import logging
 import zipfile
 from datetime import date, datetime, timezone
+from typing import Literal
 
 from fastapi import HTTPException, status
 from sqlalchemy import String, cast, delete, func, or_, select, text, update
@@ -568,8 +569,15 @@ def _materialize_group(
     *,
     operator_client_id: int | None,
     origin: str,
+    member_workflow_modes: list[Literal["group", "equipment_by_equipment"]] | None = None,
 ) -> LabWorkOrder:
     """Create an anticipated LAB group atomically; caller owns the commit."""
+    # Validate before allocating folios, including direct service callers.
+    if member_workflow_modes is not None and (
+        len(member_workflow_modes) != payload.quantity
+        or any(mode not in ("group", "equipment_by_equipment") for mode in member_workflow_modes)
+    ):
+        raise ValueError("member_workflow_modes debe contener quantity modalidades válidas")
     values = payload.model_dump(exclude={"quantity"})
     lab_client_id = values.get("lab_client_id")
     if lab_client_id is not None:
@@ -593,6 +601,10 @@ def _materialize_group(
     root: LabWorkOrder | None = None
     previous: LabWorkOrder | None = None
     for sequence_number, folio in enumerate(folios, start=1):
+        values["workflow_mode"] = (
+            member_workflow_modes[sequence_number - 1]
+            if member_workflow_modes is not None else payload.workflow_mode
+        )
         item = LabWorkOrder(
             folio=folio,
             root_work_order_id=root.id if root else None,
@@ -620,6 +632,9 @@ def _materialize_group(
             "quantity": payload.quantity,
             "folios": folios,
             "operator_client_id": operator_client_id,
+            # Array position + 1 is sequence_number; homogeneous calls stay compact.
+            **({"member_workflow_modes": member_workflow_modes}
+               if member_workflow_modes is not None else {"workflow_mode": payload.workflow_mode}),
         },
     )
     return root
@@ -631,10 +646,12 @@ def create_work_order_group(
     user: User,
     *,
     operator_client_id: int | None,
+    member_workflow_modes: list[Literal["group", "equipment_by_equipment"]] | None = None,
 ) -> LabWorkOrderRead:
     try:
         root = _materialize_group(
-            db, payload, user, operator_client_id=operator_client_id, origin="staff_direct"
+            db, payload, user, operator_client_id=operator_client_id, origin="staff_direct",
+            member_workflow_modes=member_workflow_modes,
         )
         commit_and_dispatch_notifications(db)
         return _read(db, _get(db, root.id))

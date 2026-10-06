@@ -251,50 +251,59 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
       setFormError(LEAVE_FAILED_MESSAGE);
       return;
     }
+
     setExternalResultsDirty(false);
-    setActiveEquipment(equipment);
-    setSelectedTemplate('');
-    setTemplateSearch('');
-    // PENDIENTE 7 (encargo de corrección LAB, sección "INTEGRACIÓN
-    // LINKED"): un equipo Vinculado nunca pasa por el selector de
-    // plantilla interna -- LAB EXTERNO se crea de forma natural/automática
-    // en cuanto se abre por primera vez.
-    if (!equipment.field_sheet_id && isLabExternalEquipment(equipment)) {
-      setBusy(true);
-      try {
-        const created = await request<LabFieldSheet>(
-          `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${equipment.id}/field-sheet`,
-          { method: 'POST', body: JSON.stringify({ template_key: LAB_EXTERNAL_TEMPLATE_KEY }) },
-        );
-        setSheet(created);
-        setValues(buildValues(created));
-        setViewMode(initialViewMode());
-      } catch (error) {
-        Alert.alert('No fue posible crear la hoja LAB EXTERNO', error instanceof Error ? error.message : 'Intenta nuevamente');
-        setActiveEquipment(null);
-      } finally { setBusy(false); }
-      return;
-    }
-    if (!equipment.field_sheet_id) {
+
+    // Una hoja nueva sin plantilla todavía sí puede abrir inmediatamente
+    // su selector, porque no existe contenido remoto que esperar.
+    if (!equipment.field_sheet_id && !isLabExternalEquipment(equipment)) {
+      setActiveEquipment(equipment);
       setSheet(null);
+      setSelectedTemplate('');
+      setTemplateSearch('');
       setValues({});
       return;
     }
+
+    // Para hojas existentes (o LAB EXTERNO creado automáticamente), mantenemos
+    // la vista anterior hasta tener el nuevo snapshot completo. Así
+    // activeEquipment + sheet cambian juntos y FadeIn se ejecuta una sola vez.
     setBusy(true);
     try {
-      const loaded = await request<LabFieldSheet>(
-        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${equipment.id}/field-sheet`,
+      let nextSheet: LabFieldSheet;
+
+      if (!equipment.field_sheet_id && isLabExternalEquipment(equipment)) {
+        nextSheet = await request<LabFieldSheet>(
+          `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${equipment.id}/field-sheet`,
+          { method: 'POST', body: JSON.stringify({ template_key: LAB_EXTERNAL_TEMPLATE_KEY }) },
+        );
+      } else {
+        nextSheet = await request<LabFieldSheet>(
+          `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${equipment.id}/field-sheet`,
+        );
+      }
+
+      setActiveEquipment(equipment);
+      setSheet(nextSheet);
+      setSelectedTemplate(nextSheet.template_key);
+      setTemplateSearch('');
+      setValues(buildValues(nextSheet));
+
+      // Una hoja existente abre en consulta. LAB EXTERNO recién creado conserva
+      // el modo inicial editable vigente.
+      setViewMode(
+        equipment.field_sheet_id
+          ? 'view'
+          : initialViewMode()
       );
-      setSheet(loaded);
-      setSelectedTemplate(loaded.template_key);
-      setValues(buildValues(loaded));
-      // Reabrir una hoja ya existente entra en modo consulta -- "Editar"
-      // vuelve a habilitar los inputs explícitamente (cierre UX 2026-09).
-      setViewMode('view');
     } catch (error) {
-      Alert.alert('No fue posible abrir la hoja', error instanceof Error ? error.message : 'Intenta nuevamente');
-      setActiveEquipment(null);
-    } finally { setBusy(false); }
+      Alert.alert(
+        equipment.field_sheet_id ? 'No fue posible abrir la hoja' : 'No fue posible crear la hoja LAB EXTERNO',
+        error instanceof Error ? error.message : 'Intenta nuevamente',
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function createSheet() {

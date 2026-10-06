@@ -95,16 +95,23 @@ test('opens linked LAB EXTERNO with groups and no result_sections using common c
 });
 
 
-test('linked sin hoja crea LAB EXTERNO sin mostrar selector interno durante la carga', async () => {
+test('linked sin hoja mantiene la vista anterior durante la creación y abre LAB EXTERNO con el snapshot completo', async () => {
   const render = captureHarness({
     id: 91, template_key: 'lab_externo', status: 'draft',
     template_definition: { kind: 'lab_externo', groups: [] }, capture_values: {}, results_rows: [],
   }, false);
   const open = nodes(render()).find((node) => node.props?.label === 'Seleccionar hoja');
   assert.ok(open);
+
   const pending = (open.props!.onPress as () => Promise<void>)();
-  assert.ok(nodes(render()).some((node) => node.type === 'LoadingState'));
+
+  const whileLoading = nodes(render());
+  assert.ok(!whileLoading.some((node) => node.type === 'LoadingState'));
+  assert.ok(whileLoading.some((node) => node.props?.label === 'Seleccionar hoja'));
+  assert.ok(!whileLoading.some((node) => node.type === 'LabExternalFieldSheet'));
+
   await pending;
+
   const rendered = nodes(render());
   assert.ok(rendered.some((node) => node.type === 'LabExternalFieldSheet'));
   assert.ok(rendered.some((node) => node.props?.label === 'Guardar borrador'));

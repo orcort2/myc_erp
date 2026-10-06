@@ -11,6 +11,8 @@ own root, a group links only its root and additional OT inherit it through
 ``root_work_order_id``. Replace/unlink stay administrative in the ERP bridge.
 """
 
+from typing import Literal
+
 from fastapi import HTTPException
 from sqlalchemy import exists, func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -257,7 +259,8 @@ def create_linked_work_order(
 
 
 def create_linked_work_order_group(
-    db: Session, payload: LabWorkOrderGroupCreate, service_order_id: int, user: User
+    db: Session, payload: LabWorkOrderGroupCreate, service_order_id: int, user: User,
+    *, member_workflow_modes: list[Literal["group", "equipment_by_equipment"]] | None = None,
 ) -> LabWorkOrderRead:
     """Direct staff group: N orders, one link to the root only."""
     return _create_and_link(
@@ -265,6 +268,7 @@ def create_linked_work_order_group(
         service_order_id,
         user,
         lambda: _materialize_group(
-            db, payload, user, operator_client_id=None, origin="staff_direct"
+            db, payload, user, operator_client_id=None, origin="staff_direct",
+            member_workflow_modes=member_workflow_modes,
         ),
     )

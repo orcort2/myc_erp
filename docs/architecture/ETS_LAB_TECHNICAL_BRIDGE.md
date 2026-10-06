@@ -190,6 +190,10 @@ antes de habilitar estas rutas. No se realizó despliegue ni integración visual
 
 ## Fase 2 — ETS de calibración ejecutado en MYC Mobile (2026-09-29)
 
+La creación directa interna admite modalidades iniciales distintas por miembro,
+con el mismo `_materialize_group` y un único vínculo a la raíz en la transacción
+existente. [Contrato de modalidades LAB](LAB_WORK_ORDERS.md#modalidades-iniciales-de-grupos-directos-internos-2026-10-06).
+
 ### Regla estructural
 
 Durante 2026, un ETS **nuevo** cuya composición activa (`ServiceOrderItem.operational_category`,

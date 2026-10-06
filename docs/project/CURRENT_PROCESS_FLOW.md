@@ -605,16 +605,23 @@ desde backend.
 
 ### Grupos mixtos y firma grupal mixta (2026-09-04)
 
-Al crear un grupo de N OT, la modalidad elegida se aplica a las N filas
-materializadas en esa sola operación. "Asignar OT extra" permite elegir una
-modalidad propia para la nueva OT, independiente de sus hermanas -- un
-mismo `root_work_order_id` puede mezclar `group`/`equipment_by_equipment`
-libremente.
+Al generar un grupo directo interno, Mobile permite elegir cantidad, modalidad
+base y “Aplicar a todas” o “Configurar manualmente”. La configuración manual
+inicializa cada OT con la base; al cambiar cantidad conserva las posiciones que
+siguen dentro del rango y usa la base actual para las nuevas. Si cambia la modalidad
+base durante la configuración manual, todas las posiciones se reinicializan con
+la nueva base y las excepciones se configuran después. El grupo nace homogéneo o
+mixto en una sola transacción, también con vínculo ETS opcional a la raíz.
+Las solicitudes externas conservan su flujo histórico y quedan fuera de esta
+configuración.
+“Asignar OT extra” permite elegir una modalidad propia para la nueva OT,
+independiente de sus hermanas. `workflow_mode` pertenece a cada `LabWorkOrder`.
+[Contrato de creación](../architecture/LAB_WORK_ORDERS.md#modalidades-iniciales-de-grupos-directos-internos-2026-10-06).
 
 ```text
 Grupo de 3 OT: OT1/OT2 equipment_by_equipment (captura ya lista en campo),
 OT3 group (su equipo va al laboratorio)
-→ Admin convierte OT3 a "group" con motivo (Cambiar modalidad de trabajo)
+→ Modalidades definidas al crear el grupo interno (o corregidas después por Admin con motivo)
 → prevalidación backend del scope grupal completo (cada miembro según su
   propia modalidad -- OT1/OT2 "listas para terminar", OT3 "lista para
   aceptar recepción", nunca se le exige FieldSheet completa)
