@@ -1,4 +1,4 @@
-import type { LabWorkOrderStatus } from '@/src/types/lab-work-order';
+import type { LabWorkOrderStatus, LabWorkOrderWorkflowMode } from '@/src/types/lab-work-order';
 
 export type Step = 'general' | 'capture' | 'technical' | 'review' | 'signatures' | 'completed';
 
@@ -59,7 +59,14 @@ export function resolveStepAfterStatusUpdate(
   currentStep: Step,
   sameSignatureCohort: boolean,
   nextStatus: LabWorkOrderStatus | string,
+  workflowMode?: LabWorkOrderWorkflowMode,
 ): Step {
+  // Por equipo se puede capturar mientras la OT global sigue en draft.
+  // Un refresh conserva ese paso válido; cualquier otro status se reconcilia.
+  if (workflowMode === 'equipment_by_equipment' && currentStep === 'technical' && nextStatus === 'draft') {
+    return 'technical';
+  }
+
   const preserveSignatures = sameSignatureCohort
     && currentStep === 'signatures'
     && !TERMINAL_STATUSES.has(nextStatus as LabWorkOrderStatus);

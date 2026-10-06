@@ -573,6 +573,14 @@ arriba; o `equipment_by_equipment`). La elección es backend-autoritativa y
 persistente -- sobrevive refresh/kill/logout/reload y nunca se reinterpreta
 para OT históricas.
 
+Al regresar a foreground, Mobile refresca la OT abierta y conserva el paso
+`technical` únicamente si el payload sigue en `draft` con modalidad
+`equipment_by_equipment`. Así la hoja en captura permanece montada. La regla
+vive en `resolveStepAfterStatusUpdate`; `group` continúa resolviendo `draft`
+a `capture`, `ready_to_close` a `review` y los estados terminales a `completed`.
+La protección vigente de firmas del mismo cohorte no cambia. Esto conserva
+el contexto en memoria; no agrega recuperación tras terminar el proceso.
+
 ```text
 Login interno técnico
 → OT's → Generar orden → elegir "Equipo por equipo"

@@ -8,6 +8,29 @@
 
 # Estado operativo actual del ERP MYC
 
+## Hoja de campo Mobile al regresar a foreground (2026-10-06)
+
+- Base `f377b511e5d18d408ef48690d17c45342c70cdeb`, rama
+  `fix/mobile-field-sheet-foreground-navigation`.
+- Causa confirmada: `app.foreground` refrescaba la OT y reconciliaba `technical`
+  a `capture` por su status `draft`, desmontando `LabTechnicalCapture` y su hoja local.
+- El resolver canónico recibe el `workflow_mode` recién refrescado desde sus dos
+  consumidores y conserva sólo `equipment_by_equipment + technical + draft`.
+  Firmas y estados terminales mantienen su autoridad. Apertura por status y
+  selección de otra OT conservan su inferencia vigente.
+- Regresión rojo/verde: 43/45 antes (fallaban los dos casos críticos por cohorte),
+  45/45 después. Pruebas relacionadas OT/notificaciones/realtime: 81/81;
+  suite Mobile completa: 919/919. Lint focal y `git diff --check`: sin errores.
+- TypeScript (`npx tsc --noEmit`) falla con TS2322 en
+  `src/realtime/realtime-client.ts:205,231` (`number | Timeout`). Mismos dos errores
+  reproducidos con iguales dependencias en una extracción de `main` (`f377b511`)
+  dentro de este directorio, sin cambiar de rama ni usar otro worktree.
+- Sin migraciones ni cambios de backend, API, persistencia o componentes de captura.
+- Pendiente: prueba manual en dispositivo del ciclo otra app → Mobile. La suite
+  verifica el resolver y cableado fuente, no montaje React Native.
+  Los errores TypeScript quedan fuera de alcance; no se encontró segunda causa
+  concurrente de expulsión durante la auditoría focal.
+
 ## Endurecimiento edición de recepción LAB / autosave FieldSheet (2026-10-02)
 
 - Base `84f895f`, rama `fix/mobile-lab-reception-editing-hardening`; sin commit/push/migraciones.

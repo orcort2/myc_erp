@@ -53,6 +53,43 @@ test('20. los estados terminales (completed, partially_closed, cancelled) siguen
   assert.equal(inferStepForStatus('cancelled'), 'completed');
 });
 
+// Foreground: draft sigue siendo válido durante captura por equipo.
+for (const sameSignatureCohort of [false, true]) {
+  test(`foreground conserva technical + draft por equipo (cohorte=${sameSignatureCohort})`, () => {
+    assert.equal(resolveStepAfterStatusUpdate('technical', sameSignatureCohort, 'draft', 'equipment_by_equipment'), 'technical');
+  });
+}
+
+test('draft grupal y apertura inicial por equipo siguen llevando a capture', () => {
+  assert.equal(resolveStepAfterStatusUpdate('technical', false, 'draft', 'group'), 'capture');
+  assert.equal(resolveStepAfterStatusUpdate('technical', false, 'draft'), 'capture');
+  assert.equal(resolveStepAfterStatusUpdate('capture', false, 'draft', 'equipment_by_equipment'), 'capture');
+});
+
+for (const [status, expected] of [
+  ['ready_to_close', 'review'],
+  ['completed', 'completed'],
+  ['partially_closed', 'completed'],
+  ['cancelled', 'completed'],
+  ['ready_for_signatures', 'signatures'],
+] as const) {
+  test(`captura por equipo respeta transición a ${status}`, () => {
+    assert.equal(resolveStepAfterStatusUpdate('technical', true, status, 'equipment_by_equipment'), expected);
+  });
+}
+
+for (const workflowMode of ['group', 'equipment_by_equipment'] as const) {
+  test(`semántica de signatures intacta con workflow ${workflowMode}`, () => {
+    for (const status of ['draft', 'in_progress', 'ready_to_close']) {
+      assert.equal(resolveStepAfterStatusUpdate('signatures', true, status, workflowMode), 'signatures');
+      assert.equal(resolveStepAfterStatusUpdate('signatures', false, status, workflowMode), inferStepForStatus(status));
+    }
+    for (const status of ['completed', 'partially_closed', 'cancelled']) {
+      assert.equal(resolveStepAfterStatusUpdate('signatures', true, status, workflowMode), 'completed');
+    }
+  });
+}
+
 // Fase 5: work-orders.tsx evita interrumpir una firma en curso del mismo
 // cohorte conservando el paso 'signatures' cuando llega un evento realtime,
 // pero eso nunca puede sustituir un status terminal ya confirmado por
@@ -77,14 +114,14 @@ test('Fase 5: un cohorte distinto nunca conserva "signatures" -- siempre re-deri
   assert.equal(resolveStepAfterStatusUpdate('signatures', false, 'completed'), 'completed');
 });
 
-test('Fase 5: fuera del paso "signatures" siempre re-deriva del status real, sin excepción', () => {
+test('Fase 5: ready_to_close y terminales re-derivan del status real', () => {
   assert.equal(resolveStepAfterStatusUpdate('technical', true, 'ready_to_close'), 'review');
   assert.equal(resolveStepAfterStatusUpdate('review', true, 'completed'), 'completed');
 });
 
 test('Fase 5: ambos puntos de reconciliación en work-orders.tsx usan resolveStepAfterStatusUpdate, no el carve-out inline anterior', () => {
   const source = screenSource();
-  const occurrences = source.split('resolveStepAfterStatusUpdate(current, sameSignatureCohort, detail.status)').length - 1;
+  const occurrences = source.split('resolveStepAfterStatusUpdate(current, sameSignatureCohort, detail.status, detail.workflow_mode)').length - 1;
   assert.equal(occurrences, 2);
   // El carve-out inline (paso 'signatures' conservado sin mirar si el status
   // ya es terminal) quedó reemplazado por completo -- si reaparece, alguien
