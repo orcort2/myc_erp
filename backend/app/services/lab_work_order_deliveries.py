@@ -66,6 +66,33 @@ def equipment_delivery_block_reason(equipment: LabWorkOrderEquipment) -> str | N
     return None
 
 
+def resolve_current_delivery_for_equipment(
+    db: Session, equipment_id: int
+) -> tuple[LabWorkOrderDelivery, LabDeliveryItem]:
+    """Entrega documental vigente de un equipo: la única exhibición `completed`
+    (no `voided`) que lo incluye. Es la misma autoridad que usa
+    `_delivered_equipment_ids` para decidir qué está entregado.
+
+    No se elige "la última por fecha": si por datos inconsistentes hubiera más
+    de una entrega vigente para el mismo equipo, el documento sería ambiguo y
+    se rechaza en lugar de adivinar."""
+    rows = db.execute(
+        select(LabWorkOrderDelivery, LabDeliveryItem)
+        .join(LabDeliveryItem, LabDeliveryItem.delivery_id == LabWorkOrderDelivery.id)
+        .options(selectinload(LabWorkOrderDelivery.delivered_by))
+        .where(
+            LabDeliveryItem.equipment_id == equipment_id,
+            LabWorkOrderDelivery.status == "completed",
+        )
+        .order_by(LabWorkOrderDelivery.id)
+    ).all()
+    if not rows:
+        raise HTTPException(status_code=409, detail="El equipo no tiene una entrega vigente registrada")
+    if len(rows) > 1:
+        raise HTTPException(status_code=409, detail="El equipo tiene más de una entrega vigente; revisa las entregas")
+    return rows[0][0], rows[0][1]
+
+
 def _ensure_equipment_deliverable(equipment_items: list[LabWorkOrderEquipment]) -> None:
     blocked = [
         {

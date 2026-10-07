@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page {
+      size: Letter; margin: 15mm 15mm 18mm;
+      @bottom-left { content: "{{ document.folio }} · Rev. {{ document.revision_number }}"; color: #637280; font-size: 8pt; font-family: Arial, sans-serif; }
+      @bottom-right { content: "Página " counter(page) " de " counter(pages); color: #637280; font-size: 8pt; font-family: Arial, sans-serif; }
+    }
+    body { color: #173746; font-family: Arial, sans-serif; font-size: 10pt; line-height: 1.35; }
+    .letterhead { align-items: center; display: flex; gap: 4mm; margin-bottom: 2mm; }
+    .letterhead img { height: 14mm; object-fit: contain; width: 14mm; }
+    .brand { color: {{ primary_color }}; font-size: 9pt; font-weight: bold; text-transform: uppercase; }
+    h1 { color: {{ primary_color }}; font-size: 18pt; margin: 2mm 0 1mm; }
+    h2 { background: {{ header_fill }}; border-left: 1.5mm solid {{ primary_color }}; color: {{ primary_color }}; font-size: 10.5pt; margin: 6mm 0 2.5mm; padding: 1.6mm 3mm; page-break-after: avoid; }
+    .label { color: #637280; font-size: 8pt; font-weight: bold; text-transform: uppercase; }
+    .value { margin-top: 0.8mm; white-space: pre-wrap; }
+    table.fields { border-collapse: collapse; width: 100%; }
+    table.fields td { padding: 1mm 4mm 2.5mm 0; vertical-align: top; width: 50%; }
+    table.fields td.wide { width: 100%; }
+    .block { margin-bottom: 2.5mm; orphans: 3; widows: 3; }
+    .block .label { page-break-after: avoid; }
+    table.photos { table-layout: fixed; border-collapse: collapse; margin-top: 2mm; width: 100%; }
+    table.photos tr { page-break-inside: avoid; }
+    table.photos td { padding: 0 2mm 4mm 0; vertical-align: top; width: 50%; }
+    table.photos img { border: 0.3mm solid #d6e1e6; display: block; max-height: 78mm; max-width: 100%; }
+    figcaption { color: #52636f; font-size: 8pt; margin-top: 1mm; }
+    .note { color: #52636f; }
+    .conformity { border: 0.3mm solid #aebfc8; margin-bottom: 4mm; padding: 3mm; }
+    table.signatures { border-collapse: collapse; page-break-inside: avoid; width: 100%; }
+    table.signatures td { text-align: center; vertical-align: bottom; width: 50%; }
+    .signature { border-top: 0.3mm solid #173746; margin: 0 6mm; padding-top: 2mm; }
+    .signature img { display: block; height: 26mm; margin: 0 auto 2mm; max-width: 68mm; object-fit: contain; }
+    .signature-box { margin-top: 4mm; page-break-inside: avoid; }
+  </style>
+</head>
+<body>
+  <div class="letterhead">
+    {% if logo_uri %}<img src="{{ logo_uri }}" alt="MYC">{% endif %}
+    <div class="brand">METROLOGÍA Y SERVICIOS MYC</div>
+  </div>
+  <h1>REPORTE DE INSTALACIÓN</h1>
+  <table class="fields">
+    <tr>
+      <td><div class="label">Folio</div><div class="value"><strong>{{ document.folio }}</strong></div></td>
+      <td><div class="label">OT</div><div class="value">{{ work_order.folio }}</div></td>
+    </tr>
+    <tr>
+      <td><div class="label">Revisión</div><div class="value">{{ document.revision_number }}</div></td>
+      <td><div class="label">Fecha de instalación</div><div class="value">{{ installation_date or '—' }}</div></td>
+    </tr>
+  </table>
+
+  <h2>Cliente</h2>
+  <table class="fields">
+    <tr><td class="wide" colspan="2"><div class="label">Cliente</div><div class="value">{{ client_name }}</div></td></tr>
+    {% if client_address %}<tr><td class="wide" colspan="2"><div class="label">Dirección</div><div class="value">{{ client_address }}</div></td></tr>{% endif %}
+    <tr>
+      {% if client_contact %}<td><div class="label">Contacto</div><div class="value">{{ client_contact }}</div></td>{% endif %}
+      {% if work_order.purchase_order %}<td><div class="label">Orden de compra / referencia</div><div class="value">{{ work_order.purchase_order }}</div></td>{% endif %}
+    </tr>
+  </table>
+
+  <h2>Equipo / producto</h2>
+  <table class="fields">
+    <tr>
+      <td><div class="label">Equipo / producto</div><div class="value">{{ equipment.instrument }}</div></td>
+      <td><div class="label">Marca</div><div class="value">{{ equipment.brand }}</div></td>
+    </tr>
+    <tr>
+      <td><div class="label">Modelo</div><div class="value">{{ equipment.model or '—' }}</div></td>
+      <td><div class="label">Identificación</div><div class="value">{{ equipment.identification or '—' }}</div></td>
+    </tr>
+    <tr><td><div class="label">Número de serie</div><div class="value">{{ equipment.serial_number or '—' }}</div></td></tr>
+  </table>
+
+  <h2>Datos de instalación</h2>
+  <div class="block"><div class="label">Ubicación</div><div class="value">{{ capture.installation_location or '—' }}</div></div>
+  <div class="block"><div class="label">Condición inicial</div><div class="value">{{ capture.initial_condition or '—' }}</div></div>
+  <div class="block"><div class="label">Descripción de la instalación</div><div class="value">{{ capture.installation_description or '—' }}</div></div>
+
+  {% if photo_rows.before %}
+  <h2>Evidencia inicial</h2>
+  <table class="photos">{% for row in photo_rows.before %}<tr>{% for photo in row %}<td><img src="{{ photo.uri }}" alt="before">{% if photo.caption %}<figcaption>{{ photo.caption }}</figcaption>{% endif %}</td>{% endfor %}{% if row|length == 1 %}<td></td>{% endif %}</tr>{% endfor %}</table>
+  {% endif %}
+
+  <h2>Trabajo realizado</h2>
+  <div class="block"><div class="label">Actividades realizadas</div><div class="value">{{ capture.activities_performed or '—' }}</div></div>
+  {% if photo_rows.during %}
+  <table class="photos">{% for row in photo_rows.during %}<tr>{% for photo in row %}<td><img src="{{ photo.uri }}" alt="during">{% if photo.caption %}<figcaption>{{ photo.caption }}</figcaption>{% endif %}</td>{% endfor %}{% if row|length == 1 %}<td></td>{% endif %}</tr>{% endfor %}</table>
+  {% endif %}
+
+  <h2>Incidencias / anomalías</h2>
+  {% if has_incidents %}
+  <div class="block"><div class="label">Descripción de la incidencia</div><div class="value">{{ capture.incident_description or '—' }}</div></div>
+  {% if capture.corrective_action %}<div class="block"><div class="label">Acción correctiva</div><div class="value">{{ capture.corrective_action }}</div></div>{% endif %}
+  {% if photo_rows.incident %}
+  <table class="photos">{% for row in photo_rows.incident %}<tr>{% for photo in row %}<td><img src="{{ photo.uri }}" alt="incident">{% if photo.caption %}<figcaption>{{ photo.caption }}</figcaption>{% endif %}</td>{% endfor %}{% if row|length == 1 %}<td></td>{% endif %}</tr>{% endfor %}</table>
+  {% endif %}
+  {% else %}
+  <div class="note">No se reportaron incidencias durante la instalación.</div>
+  {% endif %}
+
+  <h2>Verificación funcional</h2>
+  <table class="fields">
+    <tr>
+      <td><div class="label">Prueba funcional realizada</div><div class="value">{{ functional_test_label or '—' }}</div></td>
+      {% if effectiveness_label %}<td><div class="label">Resultado</div><div class="value">{{ effectiveness_label }}</div></td>{% endif %}
+    </tr>
+  </table>
+  {% if capture.effectiveness_description %}<div class="block"><div class="label">Descripción de la verificación</div><div class="value">{{ capture.effectiveness_description }}</div></div>{% endif %}
+  {% if capture.effectiveness_notes %}<div class="block"><div class="label">Notas</div><div class="value">{{ capture.effectiveness_notes }}</div></div>{% endif %}
+
+  {% if photo_rows.after %}
+  <h2>Evidencia final</h2>
+  <table class="photos">{% for row in photo_rows.after %}<tr>{% for photo in row %}<td><img src="{{ photo.uri }}" alt="after">{% if photo.caption %}<figcaption>{{ photo.caption }}</figcaption>{% endif %}</td>{% endfor %}{% if row|length == 1 %}<td></td>{% endif %}</tr>{% endfor %}</table>
+  {% endif %}
+
+  {% if capture.final_observations %}
+  <h2>Observaciones finales</h2>
+  <div class="value">{{ capture.final_observations }}</div>
+  {% endif %}
+
+  <h2>Técnico responsable</h2>
+  <table class="fields">
+    <tr>
+      <td><div class="label">Nombre</div><div class="value">{{ technician_name }}</div></td>
+      <td><div class="label">Captura confirmada</div><div class="value">{{ performed_at }}</div></td>
+    </tr>
+  </table>
+
+  <div class="signature-box">
+    <h2>Conformidad y entrega</h2>
+    <div class="conformity">{{ conformity_text }}</div>
+    <table class="fields">
+      <tr>
+        <td><div class="label">Fecha de entrega</div><div class="value">{{ delivered_at_display }}</div></td>
+        <td><div class="label">Método de entrega</div><div class="value">{{ delivery_method_label }}</div></td>
+      </tr>
+    </table>
+    <table class="signatures">
+      <tr>
+        <td><div class="signature"><img src="{{ delivered_by_signature }}" alt="Firma de quien entrega"><strong>Entregado por</strong><br>{{ delivery.delivered_by_name }}</div></td>
+        <td><div class="signature"><img src="{{ recipient_signature }}" alt="Firma de quien recibe"><strong>Recibido por</strong><br>{{ delivery.recipient_name }}</div></td>
+      </tr>
+    </table>
+  </div>
+</body>
+</html>

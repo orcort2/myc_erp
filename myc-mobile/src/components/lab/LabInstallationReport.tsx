@@ -384,7 +384,9 @@ export function LabInstallationReport({
         <AlertBanner tone="info">
           {report.status === 'ready_for_signatures'
             ? 'Captura finalizada: el reporte quedó bloqueado y está listo para entrega.'
-            : canCapture ? 'Este reporte ya no es editable.' : 'Tu perfil permite consultar este reporte, pero no capturarlo.'}
+            : report.status === 'completed'
+              ? 'Reporte final generado: ya no admite cambios.'
+              : canCapture ? 'Este reporte ya no es editable.' : 'Tu perfil permite consultar este reporte, pero no capturarlo.'}
         </AlertBanner>
       )}
       {!!report.performed_by_name_snapshot && (

@@ -38,6 +38,10 @@ export function isReportTypeEnabled(type: TechnicalReportType): boolean {
   return TECHNICAL_REPORT_TYPE_OPTIONS.some((option) => option.value === type && option.enabled);
 }
 
+export function technicalReportPdfPath(workOrderId: number, equipmentId: number): string {
+  return `${technicalReportPath(workOrderId, equipmentId)}/pdf`;
+}
+
 export function technicalReportPath(workOrderId: number, equipmentId: number): string {
   return `/mobile/v1/technician/lab-work-orders/${workOrderId}/equipment/${equipmentId}/technical-report`;
 }

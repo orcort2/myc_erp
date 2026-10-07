@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import date, datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -27,10 +28,20 @@ from app.schemas.technical_report_installation import (
     installation_missing_fields,
 )
 from app.services.audit_logs import write_audit_log
+from app.services.lab_work_order_deliveries import resolve_current_delivery_for_equipment
+from app.services.technical_report_pdfs import (
+    INSTALLATION_REPORT_RENDERER_VERSION,
+    build_installation_final_snapshot,
+    installation_report_filename,
+    load_evidence_images,
+    render_installation_report_pdf,
+    validate_signature_data_url,
+)
 from app.services.file_security import validate_upload
 from app.services.storage_service import (
     delete_if_unreferenced,
     require_deliverable_file,
+    resolve_storage_path,
     save_validated_content,
 )
 
@@ -748,3 +759,127 @@ def confirm_technical_report_capture(
     except Exception:
         db.rollback()
         raise
+
+
+# ---------------------------------------------------------------------------
+# SG-4G: PDF institucional y cierre documental del reporte
+# ---------------------------------------------------------------------------
+
+def finalize_technical_report(
+    db: Session,
+    work_order_id: int,
+    equipment_id: int,
+    user: User,
+) -> TechnicalReportRead:
+    """`ready_for_signatures` + entrega válida -> PDF final + `completed`.
+
+    Todo ocurre en una sola unidad: se valida, se congela el snapshot, se
+    renderiza, se escribe el archivo y SÓLO entonces se confirma la base. Si
+    cualquier paso falla (incluido el commit) la base hace rollback y el
+    archivo recién escrito se elimina: el reporte sigue en
+    `ready_for_signatures` sin ningún `final_pdf_*`. Una segunda llamada sobre
+    un reporte ya completado devuelve el documento existente sin regenerarlo
+    (regenerar = revisión formal, SG-4J)."""
+    written_path: str | None = None
+    try:
+        report = _lock_current_report(db, work_order_id, equipment_id)
+        if report.status == "completed":
+            if not report.final_pdf_path:
+                raise HTTPException(status_code=409, detail="El reporte está completado pero no tiene PDF final")
+            return _read_technical_report_by_id(db, report.id)
+        if report.status != "ready_for_signatures" or report.final_pdf_path:
+            raise HTTPException(
+                status_code=409,
+                detail="El reporte debe tener la captura finalizada antes de generar el documento final",
+            )
+        if report.report_type != "installation" or report.report_schema_version != INSTALLATION_SCHEMA_VERSION:
+            raise HTTPException(status_code=409, detail="Este tipo de reporte todavía no genera documento final")
+        if not (report.performed_by_user_id and report.performed_by_name_snapshot and report.performed_at):
+            raise HTTPException(status_code=409, detail="El reporte no tiene técnico responsable confirmado")
+        if not report.client_conformity_text_snapshot:
+            raise HTTPException(status_code=409, detail="El reporte no tiene texto de conformidad congelado")
+        missing, problems = _installation_confirmation_problems(report)
+        if missing or problems:
+            raise HTTPException(status_code=409, detail="La captura del reporte no es válida para el documento final")
+
+        delivery, item = resolve_current_delivery_for_equipment(db, report.lab_equipment_id)
+        if not delivery.recipient_name.strip() or delivery.delivered_at is None:
+            raise HTTPException(status_code=409, detail="La entrega no tiene receptor o fecha")
+        signatures = {
+            "delivered_by": validate_signature_data_url(delivery.delivered_by_signature_data_url, "firma de quien entrega"),
+            "recipient": validate_signature_data_url(delivery.recipient_signature_data_url, "firma de quien recibe"),
+        }
+        del signatures  # sólo valida; el render usa las data URLs originales
+        now = datetime.now(timezone.utc)
+        snapshot = build_installation_final_snapshot(
+            report, delivery, delivery_item_id=item.id, generated_at=now,
+        )
+        images = load_evidence_images(snapshot)
+        pdf = render_installation_report_pdf(
+            snapshot,
+            images,
+            {
+                "delivered_by": delivery.delivered_by_signature_data_url,
+                "recipient": delivery.recipient_signature_data_url,
+            },
+        )
+        digest = hashlib.sha256(pdf).hexdigest()
+        stored = save_validated_content(
+            directory=Path("technical-reports") / str(report.id) / "final",
+            filename=f"installation-r{report.revision_number}-{digest[:16]}.pdf",
+            content=pdf,
+            original_filename=installation_report_filename(snapshot),
+        )
+        written_path = stored.relative_path
+        report.document_snapshot = snapshot
+        report.pdf_renderer_version = INSTALLATION_REPORT_RENDERER_VERSION
+        report.final_pdf_path = stored.relative_path
+        report.final_pdf_sha256 = digest
+        report.final_pdf_generated_at = now
+        report.completed_at = now
+        report.status = "completed"
+        write_audit_log(
+            db,
+            action="technical_report.finalized",
+            entity="technical_reports",
+            entity_id=report.id,
+            user_id=user.id,
+            previous_values={"status": "ready_for_signatures"},
+            new_values={
+                "status": "completed",
+                "folio": report.folio,
+                "revision_number": report.revision_number,
+                "delivery_id": delivery.id,
+                "final_pdf_sha256": digest,
+                "pdf_renderer_version": INSTALLATION_REPORT_RENDERER_VERSION,
+            },
+        )
+        report_id = report.id
+        db.commit()
+        return _read_technical_report_by_id(db, report_id)
+    except BaseException:
+        db.rollback()
+        if written_path:
+            resolved = resolve_storage_path(written_path)
+            if resolved is not None and resolved.is_file():
+                resolved.unlink(missing_ok=True)
+        raise
+
+
+def read_technical_report_pdf(
+    db: Session,
+    work_order_id: int,
+    equipment_id: int,
+) -> tuple[bytes, str]:
+    """PDF final congelado del reporte vigente; nunca se re-renderiza."""
+    equipment = _get_equipment_for_technical_report(db, work_order_id, equipment_id)
+    report = equipment.current_technical_report
+    if report is None:
+        raise HTTPException(status_code=404, detail="El equipo no tiene reporte técnico vigente")
+    if report.status != "completed" or not report.final_pdf_path:
+        raise HTTPException(status_code=404, detail="El reporte aún no tiene documento final")
+    stored = require_deliverable_file(report.final_pdf_path, not_found_detail="El PDF final no está disponible")
+    content = stored.read_bytes()
+    if not report.final_pdf_sha256 or hashlib.sha256(content).hexdigest() != report.final_pdf_sha256:
+        raise HTTPException(status_code=409, detail="El PDF final no coincide con su SHA-256")
+    return content, installation_report_filename(report.document_snapshot or {"document": {"folio": report.folio, "revision_number": report.revision_number}})

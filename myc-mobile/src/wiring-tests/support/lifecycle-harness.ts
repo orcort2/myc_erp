@@ -57,6 +57,10 @@ function installDom() {
 }
 
 export type Probe = {
+  /** Descargas de PDF (FileSystem.downloadAsync), impresiones y compartidos. */
+  downloads: { url: string; dest: string; headers: unknown }[];
+  prints: unknown[];
+  shares: unknown[];
   log: string[];
   /** Alertas con sus botones, para accionar confirmaciones. */
   alerts: { title: string; buttons: { text?: string; onPress?: () => void }[] }[];
@@ -83,6 +87,9 @@ export type Env = {
   /** Ancho de ventana simulado (iPhone 390 por defecto; 320 = SE/mini). */
   windowWidth: number;
   failEvidenceUpload: boolean;
+  /** Mensaje de 409 para POST .../technical-report/finalize; gate opcional para observar el loading. */
+  finalizeError: string | null;
+  finalizeGate: Promise<void> | null;
   /** Estado de entrega del grupo (GET .../delivery); null = valor por defecto vacío. */
   deliveryStatus: any;
   /** Si es true, POST .../delivery responde 409 con este mensaje. */
@@ -104,7 +111,7 @@ export async function createLifecycleHarness() {
   const { createRoot } = nodeRequire('react-dom/client');
   const { act, createElement: h, useEffect, useRef } = React;
   const ts_ = ts;
-  const probe: Probe = { log: [], alerts: [], requests: [], calls: [], published: [] };
+  const probe: Probe = { downloads: [], prints: [], shares: [], log: [], alerts: [], requests: [], calls: [], published: [] };
   const registry = new Map<string, any>();
   const stubs = new Map<string, any>();
   const textOf = (node: any): string => (Array.isArray(node) ? node.map(textOf).join('') : typeof node === 'string' || typeof node === 'number' ? String(node) : node?.props ? textOf(node.props.children) : '');
@@ -125,7 +132,7 @@ export async function createLifecycleHarness() {
   const allStubs = new Proxy({}, { get: (_t, key) => stub(String(key)) });
   const env: Env = {
     user: { id: 1, full_name: 'Tec', actor_type: 'internal', permissions: ['*', 'mobile.access', 'lab_work_orders.use'] },
-    detail: null, sheet: null, report: null, created: null, signed: null, failTechnicalReportCreate: false, failCaptureSave: false, confirmCaptureError: null, windowWidth: 390, failEvidenceUpload: false, deliveryStatus: null, deliveryError: null, details: {}, detailGates: [], sheetWriteGates: [], params: {}, listeners: new Set(), session: { access_token: 't' },
+    detail: null, sheet: null, report: null, created: null, signed: null, failTechnicalReportCreate: false, failCaptureSave: false, confirmCaptureError: null, windowWidth: 390, failEvidenceUpload: false, finalizeError: null, finalizeGate: null, deliveryStatus: null, deliveryError: null, details: {}, detailGates: [], sheetWriteGates: [], params: {}, listeners: new Set(), session: { access_token: 't' },
   };
   const response = (body: unknown) => ({ ok: true, status: 200, headers: { get: () => null }, json: async () => body });
   let detailCalls = 0;
@@ -135,6 +142,15 @@ export async function createLifecycleHarness() {
     probe.requests.push(`${init.method ?? 'GET'} ${path}`);
     probe.calls.push({ method: init.method ?? 'GET', path, body: init.body ? (typeof init.body === 'string' ? JSON.parse(init.body) : Object.fromEntries((init.body as unknown as { entries(): Iterable<[string, unknown]> }).entries())) : undefined });
     if (/\/signatures(\/individual)?$/.test(path) && init.method === 'POST') return response(env.signed ?? env.detail);
+    if (/\/technical-report\/finalize$/.test(path) && init.method === 'POST') {
+      if (env.finalizeGate) await env.finalizeGate;
+      if (env.finalizeError) return { ok: false, status: 409, headers: { get: () => null }, json: async () => ({ detail: env.finalizeError }) };
+      env.report.status = 'completed';
+      env.report.completed_at = '2026-10-08T18:00:00+00:00';
+      env.report.final_pdf_generated_at = '2026-10-08T18:00:00+00:00';
+      for (const equipment of env.detail?.equipment ?? []) if (equipment.technical_report_id === env.report.id) equipment.technical_report_status = 'completed';
+      return response(structuredClone(env.report));
+    }
     if (/\/technical-report\/confirm-capture$/.test(path) && init.method === 'POST') {
       if (env.confirmCaptureError) {
         return { ok: false, status: 422, headers: { get: () => null }, json: async () => ({ detail: { code: 'TECHNICAL_REPORT_INCOMPLETE', message: env.confirmCaptureError, missing_fields: ['installation_date'] } }) };
@@ -220,6 +236,9 @@ export async function createLifecycleHarness() {
     react: React,
     'react/jsx-runtime': nodeRequire('react/jsx-runtime'),
     'react-native': rn,
+    'expo-file-system/legacy': { cacheDirectory: '/cache/', downloadAsync: async (url: string, dest: string, options: { headers?: unknown }) => { probe.downloads.push({ url, dest, headers: options?.headers }); return { uri: dest }; } },
+    'expo-print': { printAsync: async (options: unknown) => { probe.prints.push(options); } },
+    'expo-sharing': { isAvailableAsync: async () => true, shareAsync: async (uri: unknown) => { probe.shares.push(uri); } },
     'react-native-safe-area-context': allStubs,
     'expo-router': { Redirect: stub('Redirect'), router: { push() {}, navigate() {} }, useLocalSearchParams: () => env.params },
     '@react-navigation/native': { useFocusEffect: (cb: () => void) => { useEffect(cb, [cb]); } },

@@ -77,5 +77,8 @@ export type TechnicalReportRead = {
   /** Se fijan al confirmar la captura: el usuario autenticado que confirma. */
   performed_by_name_snapshot: string | null;
   performed_at: string | null;
+  /** Se fijan al generar el PDF final (completed). */
+  completed_at: string | null;
+  final_pdf_generated_at: string | null;
   evidence: TechnicalReportEvidence[];
 };

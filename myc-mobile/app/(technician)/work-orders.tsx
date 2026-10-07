@@ -78,6 +78,7 @@ import {
 } from '@/src/services/technical-report';
 import { LabInstallationReport } from '@/src/components/lab/LabInstallationReport';
 import { createTechnicalReportApi } from '@/src/services/technical-report-api';
+import { technicalReportPdfPath } from '@/src/services/technical-report';
 import { LabTechnicalReportCard } from '@/src/components/lab/LabTechnicalReportCard';
 import { shouldResetFormAfterSubmit } from '@/src/services/lab-client-selector';
 import { generalWithLabClient } from '@/src/services/lab-work-order-client';
@@ -331,6 +332,7 @@ export default function WorkOrdersScreen() {
   // la trae del backend (workOrder.operational_category).
   const [operationalCategory, setOperationalCategory] = useState<LabOperationalCategory>(DEFAULT_OPERATIONAL_CATEGORY);
   // Servicio General: selector de tipo de reporte / vista base del reporte.
+  const [finalizingEquipmentId, setFinalizingEquipmentId] = useState<number | null>(null);
   const [reportFlow, setReportFlow] = useState<{ mode: 'select' | 'view'; equipmentId: number } | null>(null);
   const [workOrder, setWorkOrder] = useState<LabWorkOrder | null>(null);
   const [receptionOrders, setReceptionOrders] = useState<LabWorkOrder[]>([]);
@@ -422,12 +424,20 @@ export default function WorkOrdersScreen() {
   const receptionOrderIds = workOrder?.related_work_orders.map((item) => item.id).join(',') ?? '';
   // Cambia cuando un reporte de Servicio General se finaliza: re-consulta la elegibilidad de entrega.
   const reportProjectionKey = workOrder?.equipment.map((item) => `${item.id}:${item.technical_report_status ?? ''}`).join(',') ?? '';
-  // Servicio General: con entrega registrada y algún reporte aún en ready_for_signatures el cierre
-  // histórico (/complete: FieldSheets + firma de RECEPCIÓN) no aplica; el cierre category-aware es SG-4H.
-  const generalServiceAwaitingReportDocument = !!workOrder
+  // Servicio General: equipos cuya entrega ya quedó registrada (exhibiciones vigentes).
+  const deliveredEquipmentIds = new Set(
+    (deliveryStatus?.exhibitions ?? [])
+      .filter((exhibition) => exhibition.status === 'completed')
+      .flatMap((exhibition) => exhibition.items.map((item) => item.equipment_id)),
+  );
+  // Con entrega registrada el cierre histórico (/complete: FieldSheets + firma de RECEPCIÓN) no aplica a
+  // Servicio General, ni siquiera con el reporte ya completado: el cierre category-aware es SG-4H.
+  const generalServiceClosureDeferred = !!workOrder
     && isGeneralService(workOrder)
     && (deliveryStatus?.delivered_equipment ?? 0) > 0
-    && workOrder.equipment.some((item) => item.technical_report_status === 'ready_for_signatures');
+    && workOrder.equipment.some((item) => ['ready_for_signatures', 'completed'].includes(item.technical_report_status ?? ''));
+  const generalServiceAwaitingReportDocument = generalServiceClosureDeferred
+    && !!workOrder?.equipment.some((item) => item.technical_report_status === 'ready_for_signatures');
 
   useEffect(() => {
     if (!workOrder || step !== 'signatures' || workOrder.status !== 'draft') {
@@ -1472,6 +1482,37 @@ export default function WorkOrdersScreen() {
     }
   }
 
+  // SG-4G: genera el PDF institucional (backend decide completed). Acción explícita:
+  // los errores se muestran aquí, no se esconden dentro del registro de entrega.
+  async function finalizeTechnicalReport(equipmentId: number) {
+    if (!workOrder || finalizingEquipmentId !== null) return;
+    setFinalizingEquipmentId(equipmentId);
+    try {
+      await createTechnicalReportApi({
+        accessToken: session?.access_token ?? '', apiUrl, equipmentId, request, workOrderId: workOrder.id,
+      }).finalize();
+      await refreshAfterReportChange();
+    } catch (error) {
+      Alert.alert('No fue posible generar el reporte final', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally { setFinalizingEquipmentId(null); }
+  }
+
+  async function openTechnicalReportPdf(equipmentId: number, action: 'print' | 'share') {
+    if (!workOrder) return;
+    setBusy(true);
+    try {
+      const result = await FileSystem.downloadAsync(
+        apiUrl(technicalReportPdfPath(workOrder.id, equipmentId)),
+        `${FileSystem.cacheDirectory}reporte-instalacion-OT-${workOrder.folio}-equipo-${equipmentId}.pdf`,
+        { headers: { Authorization: `Bearer ${session?.access_token ?? ''}` } },
+      );
+      if (action === 'print') await Print.printAsync({ uri: result.uri });
+      else if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(result.uri, { UTI: 'com.adobe.pdf', mimeType: 'application/pdf' });
+    } catch (error) {
+      Alert.alert('No fue posible abrir el reporte', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally { setBusy(false); }
+  }
+
   function closeReportFlow() {
     setReportFlow(null);
     void refreshAfterReportChange();
@@ -1629,7 +1670,7 @@ export default function WorkOrdersScreen() {
   // (LAB_DRAFT_SHEETS_INVALID), no se completa ni se cierra nada -- se
   // muestran los blockers exactos y la OT sigue abierta.
   async function completeClosure(scope: LabClosureScope = closureScope, confirmDraftCompletion = false) {
-    if (!workOrder || generalServiceAwaitingReportDocument) return;
+    if (!workOrder || generalServiceClosureDeferred) return;
     setBusy(true);
     try {
       const detail = await postLabCompletion({ confirmDraftCompletion, request, scope, workOrder });
@@ -2307,9 +2348,14 @@ export default function WorkOrdersScreen() {
                     <LabTechnicalReportCard
                       key={item.id}
                       canCaptureReports={canCaptureTechnicalReports}
+                      canFinalize={canCaptureTechnicalReports && item.technical_report_status === 'ready_for_signatures' && deliveredEquipmentIds.has(item.id)}
                       canReadReports={canReadTechnicalReports}
                       clientName={workOrder.client_name}
                       equipment={item}
+                      finalizing={finalizingEquipmentId === item.id}
+                      onDownloadPdf={(equipment) => { void openTechnicalReportPdf(equipment.id, 'share'); }}
+                      onFinalize={(equipment) => { void finalizeTechnicalReport(equipment.id); }}
+                      onViewPdf={(equipment) => { void openTechnicalReportPdf(equipment.id, 'print'); }}
                       onOpenReport={(equipment) => setReportFlow({ mode: 'view', equipmentId: equipment.id })}
                       onSelectReport={(equipment) => setReportFlow({ mode: 'select', equipmentId: equipment.id })}
                     />
@@ -2328,8 +2374,12 @@ export default function WorkOrdersScreen() {
                     workOrder={workOrder}
                   />}
                   {isGeneralService(workOrder) && renderDelivery()}
-                  {generalServiceAwaitingReportDocument && deliveryPanel === 'closed' && (
-                    <AlertBanner tone="info">Entrega registrada. El reporte técnico está pendiente de generación documental final; la OT permanece abierta.</AlertBanner>
+                  {generalServiceClosureDeferred && deliveryPanel === 'closed' && (
+                    <AlertBanner tone="info">
+                      {generalServiceAwaitingReportDocument
+                        ? 'Entrega registrada. El reporte técnico está pendiente de generación documental final; la OT permanece abierta.'
+                        : 'La entrega y el reporte están completos. La OT está pendiente de cierre.'}
+                    </AlertBanner>
                   )}
                   <OperationalActionStack>
                     {editable && <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => setStep('capture')} />}
@@ -2340,7 +2390,7 @@ export default function WorkOrdersScreen() {
                         atómica (sección 31 del encargo: nunca vuelve a
                         aparecer una etapa manual de Captura Técnica ni cierre
                         aparte para esta modalidad). */}
-                    {workOrder.workflow_mode !== 'equipment_by_equipment' && canExecuteWorkOrders && !generalServiceAwaitingReportDocument && (
+                    {workOrder.workflow_mode !== 'equipment_by_equipment' && canExecuteWorkOrders && !generalServiceClosureDeferred && (
                       <PrimaryButton icon="arrow-right-circle" label="Continuar a cierre" onPress={() => setStep('review')} />
                     )}
                     {canDownloadLabPackages && <SecondaryButton icon="download" label="Descargar paquete disponible" onPress={() => downloadPackage('share')} />}

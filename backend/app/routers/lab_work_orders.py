@@ -111,7 +111,9 @@ from app.services.technical_reports import (
     confirm_technical_report_capture,
     create_technical_report,
     delete_technical_report_evidence,
+    finalize_technical_report,
     read_technical_report,
+    read_technical_report_pdf,
     resolve_technical_report_evidence_file,
     update_technical_report_capture,
 )
@@ -833,6 +835,43 @@ def post_confirm_technical_report_capture(
     _ensure_internal_report_writer(context)
     ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
     return confirm_technical_report_capture(db, work_order_id, equipment_id, context.user)
+
+
+@router.post(
+    "/{work_order_id}/equipment/{equipment_id}/technical-report/finalize",
+    response_model=TechnicalReportRead,
+)
+def post_finalize_technical_report(
+    work_order_id: int,
+    equipment_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(*_TECHNICAL_REPORT_WRITE)
+    ),
+) -> TechnicalReportRead:
+    """Genera el PDF institucional y completa el reporte (requiere entrega
+    vigente). Transición explícita: ni PATCH ni el cliente deciden `completed`."""
+    _ensure_internal_report_writer(context)
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    return finalize_technical_report(db, work_order_id, equipment_id, context.user)
+
+
+@router.get("/{work_order_id}/equipment/{equipment_id}/technical-report/pdf")
+def get_technical_report_pdf(
+    work_order_id: int,
+    equipment_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(*_TECHNICAL_REPORT_READ)
+    ),
+) -> Response:
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    content, filename = read_technical_report_pdf(db, work_order_id, equipment_id)
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 @router.post(

@@ -20,6 +20,12 @@ type Props = {
   canReadReports: boolean;
   /** Cliente de la OT: Servicio General no tiene cliente documental por equipo. */
   clientName: string;
+  /** Entrega registrada + reporte listo: puede generarse el documento final. */
+  canFinalize?: boolean;
+  finalizing?: boolean;
+  onFinalize?(equipment: LabEquipment): void;
+  onViewPdf?(equipment: LabEquipment): void;
+  onDownloadPdf?(equipment: LabEquipment): void;
   onEdit?(equipment: LabEquipment): void;
   onOpenReport(equipment: LabEquipment): void;
   onSelectReport(equipment: LabEquipment): void;
@@ -32,10 +38,15 @@ type Props = {
  */
 export function LabTechnicalReportCard({
   canCaptureReports,
+  canFinalize = false,
   canReadReports,
   clientName,
   equipment,
+  finalizing = false,
+  onDownloadPdf,
   onEdit,
+  onFinalize,
+  onViewPdf,
   onOpenReport,
   onSelectReport,
 }: Props) {
@@ -61,6 +72,21 @@ export function LabTechnicalReportCard({
           label={state.actionLabel}
           onPress={() => (action === 'open' ? onOpenReport(equipment) : onSelectReport(equipment))}
         />
+      )}
+      {canFinalize && (
+        <PrimaryButton
+          disabled={finalizing}
+          icon="file-document-check-outline"
+          label="Generar reporte final"
+          loading={finalizing}
+          onPress={() => onFinalize?.(equipment)}
+        />
+      )}
+      {equipment.technical_report_status === 'completed' && canReadReports && (
+        <>
+          <PrimaryButton icon="file-pdf-box" label="Ver reporte" onPress={() => onViewPdf?.(equipment)} />
+          <SecondaryButton icon="download" label="Descargar reporte" onPress={() => onDownloadPdf?.(equipment)} />
+        </>
       )}
       {onEdit && (
         <SecondaryButton icon="pencil-outline" label="Editar datos" onPress={() => onEdit(equipment)} />
