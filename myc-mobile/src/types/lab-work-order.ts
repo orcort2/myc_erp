@@ -182,6 +182,12 @@ export type LabDeliveryPendingEquipmentItem = {
   identification: string;
   serial_number: string;
   certificate_folio: string | null;
+  /** Servicio General: sólo entregable con su reporte finalizado (backend decide). */
+  delivery_eligible?: boolean;
+  delivery_blocked_reason?: string | null;
+  technical_report_folio?: string | null;
+  /** Declaración congelada del reporte; el receptor la acepta al firmar. */
+  client_conformity_text?: string | null;
 };
 
 export type LabDeliveryGroupStatus = {

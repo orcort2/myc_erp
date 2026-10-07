@@ -4,7 +4,7 @@ import {
   isValidSignerName,
   type SignatureCapture,
 } from '@/src/components/signatures/signature-flow-state';
-import type { LabDeliveryCreatePayload, LabDeliveryMethod } from '@/src/types/lab-work-order';
+import type { LabDeliveryCreatePayload, LabDeliveryMethod, LabDeliveryPendingEquipmentItem } from '@/src/types/lab-work-order';
 
 /**
  * Estado y política PURA del wizard de Delivery (LabDeliveryFlow) --
@@ -73,4 +73,16 @@ export function buildDeliveryPayload(state: DeliveryWizardState): LabDeliveryCre
     recipient_signature_data_url: state.recipientCapture.dataUrl,
     notes: state.notes.trim() || null,
   };
+}
+
+/** Declaraciones de conformidad (congeladas por backend) de los equipos que se
+ * entregan, sin repetir; vacío para calibración. */
+export function deliveryConformityTexts(equipment: Pick<LabDeliveryPendingEquipmentItem, 'client_conformity_text'>[]): string[] {
+  return Array.from(new Set(equipment.map((item) => item.client_conformity_text?.trim()).filter((text): text is string => !!text)));
+}
+
+/** Hay una firma capturada localmente que aún no se envió (se pierde al salir). */
+export function hasUnsubmittedSignature(state: DeliveryWizardState): boolean {
+  return state.step !== 'success'
+    && (hasSignificantSignatureCapture(state.deliveredByCapture) || hasSignificantSignatureCapture(state.recipientCapture));
 }

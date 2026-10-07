@@ -54,7 +54,7 @@ test('tarjeta con reporte: estado, folio MYC-IN y Abrir reporte', () => {
 
 test('estados visuales del reporte', () => {
   const label = (status: 'ready_for_signatures' | 'completed') => describeTechnicalReportCard({ ...withReport, technical_report_status: status }).badgeLabel;
-  assert.equal(label('ready_for_signatures'), 'LISTO PARA FIRMAS');
+  assert.equal(label('ready_for_signatures'), 'LISTO PARA ENTREGA');
   assert.equal(label('completed'), 'COMPLETADO');
 });
 

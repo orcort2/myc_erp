@@ -83,6 +83,10 @@ export type Env = {
   /** Ancho de ventana simulado (iPhone 390 por defecto; 320 = SE/mini). */
   windowWidth: number;
   failEvidenceUpload: boolean;
+  /** Estado de entrega del grupo (GET .../delivery); null = valor por defecto vacío. */
+  deliveryStatus: any;
+  /** Si es true, POST .../delivery responde 409 con este mensaje. */
+  deliveryError: string | null;
   /** Respuesta por OT para GET detalle; si no existe se usa `detail`. */
   details: Record<number, any>;
   /** Gate opcional por petición de detalle (secuencia de llamadas). */
@@ -121,7 +125,7 @@ export async function createLifecycleHarness() {
   const allStubs = new Proxy({}, { get: (_t, key) => stub(String(key)) });
   const env: Env = {
     user: { id: 1, full_name: 'Tec', actor_type: 'internal', permissions: ['*', 'mobile.access', 'lab_work_orders.use'] },
-    detail: null, sheet: null, report: null, created: null, signed: null, failTechnicalReportCreate: false, failCaptureSave: false, confirmCaptureError: null, windowWidth: 390, failEvidenceUpload: false, details: {}, detailGates: [], sheetWriteGates: [], params: {}, listeners: new Set(), session: { access_token: 't' },
+    detail: null, sheet: null, report: null, created: null, signed: null, failTechnicalReportCreate: false, failCaptureSave: false, confirmCaptureError: null, windowWidth: 390, failEvidenceUpload: false, deliveryStatus: null, deliveryError: null, details: {}, detailGates: [], sheetWriteGates: [], params: {}, listeners: new Set(), session: { access_token: 't' },
   };
   const response = (body: unknown) => ({ ok: true, status: 200, headers: { get: () => null }, json: async () => body });
   let detailCalls = 0;
@@ -174,7 +178,18 @@ export async function createLifecycleHarness() {
     if (/\/equipment\/configured$|\/equipment\/\d+\/configured$/.test(path)) return response(env.detail);
     if (/\/mobile\/v1\/technician\/lab-work-orders(\/groups)?$/.test(path) && init.method === 'POST') return response(env.created ?? env.detail);
     if (/field-sheet-templates/.test(path)) return response([]);
-    if (/\/delivery$/.test(path)) return response({ exhibitions: [], delivered_equipment: 0, total_equipment: 1, pending_partial_delivery_ticket_id: null });
+    if (/\/delivery$/.test(path) && init.method === 'POST') {
+      if (env.deliveryError) return { ok: false, status: 409, headers: { get: () => null }, json: async () => ({ detail: env.deliveryError }) };
+      const status = env.deliveryStatus;
+      if (status) {
+        status.exhibitions = [...status.exhibitions, { id: 900, exhibition_number: status.exhibitions.length + 1, delivery_type: 'full', status: 'completed', delivered_at: '2026-10-08T17:00:00+00:00', recipient_name: 'Persona Recibe', items: [] }];
+        status.delivered_equipment = status.total_equipment;
+        status.pending_equipment = [];
+        status.group_complete = true;
+      }
+      return response({ id: 900 });
+    }
+    if (/\/delivery$/.test(path)) return response(structuredClone(env.deliveryStatus ?? { exhibitions: [], delivered_equipment: 0, total_equipment: 1, pending_equipment: [], group_complete: false, pending_partial_delivery_ticket_id: null }));
     if (/\/field-sheet$/.test(path)) {
       if (init.method && init.method !== 'GET') { const gate = env.sheetWriteGates[sheetWrites++] ?? null; if (gate) await gate; }
       return response(env.sheet);
@@ -217,8 +232,8 @@ export async function createLifecycleHarness() {
     '@/src/design/primitives': new Proxy({}, { get: (_t, key) => (key === 'FadeIn' ? FadeIn : stub(String(key))) }),
   };
   const stubbedModules = new Set([
-    '@/src/components/lab/LabClientSelector', '@/src/components/lab/LabDeliveryFlow',
-    '@/src/components/lab/LabPartialDeliveryRequest', '@/src/components/lab/ErpCalibrationLinkField',
+    '@/src/components/lab/LabClientSelector',
+    '@/src/components/lab/ErpCalibrationLinkField',
     '@/src/design/MycDatePickerField',
   ]);
   const cache = new Map<string, { exports: any }>();
@@ -245,6 +260,13 @@ export async function createLifecycleHarness() {
     if (name === '@/src/components/signatures/MobileSignatureFlow') {
       // Expone onSubmit/onComplete: la prueba firma con el flujo real de WorkOrdersScreen.
       return { MobileSignatureFlow: (props: any) => { registry.set('MobileSignatureFlow', props); return null; } };
+    }
+    if (name === '@/src/components/lab/LabPartialDeliveryRequest') {
+      return { LabPartialDeliveryRequest: (props: any) => { registry.set('LabPartialDeliveryRequest', props); return h('div', null, 'LabPartialDeliveryRequest'); } };
+    }
+    if (name === '@/src/components/lab/LabDeliveryFlow') {
+      // Expone las props reales del wizard de entrega (equipos, conformidad, onSubmit...).
+      return { LabDeliveryFlow: (props: any) => { registry.set('LabDeliveryFlow', props); return h('div', null, 'LabDeliveryFlow'); } };
     }
     if (name === '@/src/components/lab/LabWorkOrderClientField') {
       // Expone sus props (onSelect) para elegir cliente desde la prueba.

@@ -146,7 +146,7 @@ test('4B: error de autosave es visible, conserva lo escrito y bloquea la salida'
 
 test('4B: un reporte listo para firmas o de sólo lectura no es editable', async () => {
   const locked = await openReport({ report: freshInstallationReport({ status: 'ready_for_signatures' }) });
-  assert.ok(locked.text().includes('Captura confirmada: el reporte quedó bloqueado'));
+  assert.ok(locked.text().includes('Captura finalizada: el reporte quedó bloqueado'));
   assert.equal(locked.registry.get('Lugar de instalación')?.onChange, undefined, 'sólo lectura: sin campo editable');
   const readOnly = await openReport({ permissions: ['mobile.access', 'work_orders.read_organization', 'technical_reports.read'] });
   assert.ok(readOnly.text().includes('no capturarlo'));
@@ -493,7 +493,7 @@ test('4E: el error de validación del backend se muestra completo y el reporte s
   assert.equal(confirmPosts(h).length, 1);
   assert.ok(h.probe.log.includes('Alert:No se puede confirmar la captura'));
   assert.ok(h.text().includes('Confirmar captura'), 'sigue editable');
-  assert.ok(!h.text().includes('LISTO PARA FIRMAS'));
+  assert.ok(!h.text().includes('LISTO PARA ENTREGA'));
 });
 
 test('4E: antes de confirmar se guarda lo último escrito; si no se puede guardar no se confirma', async () => {
@@ -507,7 +507,7 @@ test('4E: antes de confirmar se guarda lo último escrito; si no se puede guarda
   assert.ok(h.text().includes('No se pudo guardar tu captura'));
 });
 
-test('4E: confirmación exitosa -> LISTO PARA FIRMAS, formulario de sólo lectura y galería no editable', async () => {
+test('4E: confirmación exitosa -> LISTO PARA ENTREGA, formulario de sólo lectura y galería no editable', async () => {
   const h = await openReport({ report: evidenceReport({ before: 2 }) });
   await type(h, 'Lugar de instalación', 'Bodega');
   await h.press('Confirmar captura');
@@ -516,7 +516,7 @@ test('4E: confirmación exitosa -> LISTO PARA FIRMAS, formulario de sólo lectur
   assert.equal(confirmPosts(h).length, 1);
   assert.equal(patches(h).length, 1, 'el flush previo guardó el último valor antes de confirmar');
   const text = h.text();
-  assert.ok(text.includes('LISTO PARA FIRMAS'));
+  assert.ok(text.includes('LISTO PARA ENTREGA'));
   assert.ok(text.includes('Captura confirmada'));
   assert.ok(text.includes('Técnico responsable'));
   assert.ok(!text.includes('Al confirmar se valida'), 'la sección Confirmar captura desaparece');

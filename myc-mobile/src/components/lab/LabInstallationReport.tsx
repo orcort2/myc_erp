@@ -383,7 +383,7 @@ export function LabInstallationReport({
       {!editable && (
         <AlertBanner tone="info">
           {report.status === 'ready_for_signatures'
-            ? 'Captura confirmada: el reporte quedó bloqueado y está listo para firmas.'
+            ? 'Captura finalizada: el reporte quedó bloqueado y está listo para entrega.'
             : canCapture ? 'Este reporte ya no es editable.' : 'Tu perfil permite consultar este reporte, pero no capturarlo.'}
         </AlertBanner>
       )}

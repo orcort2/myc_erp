@@ -420,6 +420,14 @@ export default function WorkOrdersScreen() {
   }, [deliveryStatus?.pending_partial_delivery_ticket_id, request]);
 
   const receptionOrderIds = workOrder?.related_work_orders.map((item) => item.id).join(',') ?? '';
+  // Cambia cuando un reporte de Servicio General se finaliza: re-consulta la elegibilidad de entrega.
+  const reportProjectionKey = workOrder?.equipment.map((item) => `${item.id}:${item.technical_report_status ?? ''}`).join(',') ?? '';
+  // Servicio General: con entrega registrada y algún reporte aún en ready_for_signatures el cierre
+  // histórico (/complete: FieldSheets + firma de RECEPCIÓN) no aplica; el cierre category-aware es SG-4H.
+  const generalServiceAwaitingReportDocument = !!workOrder
+    && isGeneralService(workOrder)
+    && (deliveryStatus?.delivered_equipment ?? 0) > 0
+    && workOrder.equipment.some((item) => item.technical_report_status === 'ready_for_signatures');
 
   useEffect(() => {
     if (!workOrder || step !== 'signatures' || workOrder.status !== 'draft') {
@@ -440,7 +448,13 @@ export default function WorkOrdersScreen() {
   }, [receptionOrderIds, request, step, workOrder]);
 
   useEffect(() => {
-    if (!workOrder || !['completed', 'partially_closed'].includes(workOrder.status)) {
+    // Calibración entrega con la OT cerrada; Servicio General entrega antes de
+    // cerrar (con la recepción firmada), así que consulta desde ahí.
+    const deliverable = !!workOrder && (
+      ['completed', 'partially_closed'].includes(workOrder.status)
+      || (isGeneralService(workOrder) && ['received_signed', 'in_progress', 'ready_to_close'].includes(workOrder.status))
+    );
+    if (!workOrder || !deliverable) {
       setDeliveryStatus(null);
       return;
     }
@@ -449,7 +463,7 @@ export default function WorkOrdersScreen() {
     // mutaciones de entrega (registrar/anular/ejecutar parcial) refrescan
     // explícitamente en su propio handler.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workOrder?.id, workOrder?.status]);
+  }, [workOrder?.id, workOrder?.status, reportProjectionKey]);
 
   const commitListLoad = useCallback((next: ListLoadState) => {
     listLoadRef.current = next;
@@ -1107,6 +1121,127 @@ export default function WorkOrdersScreen() {
     } finally { setBusy(false); }
   }
 
+  // Panel de entrega compartido: calibración lo muestra con la OT cerrada
+  // (step 'completed'); Servicio General lo muestra desde la captura técnica,
+  // porque entrega ANTES de cerrar. Mismo LabDeliveryFlow en ambos casos.
+  function renderDelivery() {
+    if (!workOrder || !user) return null;
+    const generalService = isGeneralService(workOrder);
+    const pendingAll = deliveryStatus?.pending_equipment ?? [];
+    const deliverablePending = pendingAll.filter((item) => item.delivery_eligible !== false);
+    const blockedPending = pendingAll.filter((item) => item.delivery_eligible === false);
+    // Entrega completa = todo lo pendiente; sólo es posible si todo está finalizado.
+    const canProceed = deliverablePending.length > 0 && blockedPending.length === 0;
+    return (
+      <>
+        {deliveryPanel === 'full' && deliveryStatus && (
+          <LabDeliveryFlow
+            clientName={workOrder.client_name}
+            defaultRecipientName={workOrder.contact_name ?? ''}
+            deliveredByName={user.full_name}
+            equipment={deliverablePending}
+            isPartial={false}
+            nextExhibitionNumber={Math.max(0, ...deliveryStatus.exhibitions.map((item) => item.exhibition_number)) + 1}
+            onCancel={closeDeliveryPanel}
+            onComplete={closeDeliveryPanel}
+            onDrawingChange={setSignatureDrawing}
+            onSubmit={completeDelivery}
+          />
+        )}
+        {deliveryPanel === 'partial_execute' && deliveryStatus && partialTicket && (
+          <LabDeliveryFlow
+            clientName={workOrder.client_name}
+            defaultRecipientName={workOrder.contact_name ?? ''}
+            deliveredByName={user.full_name}
+            equipment={deliveryStatus.pending_equipment.filter((item) => (
+              (partialTicket.resolution_snapshot?.requested_equipment_ids as number[] | undefined)?.includes(item.equipment_id)
+            ))}
+            isPartial
+            nextExhibitionNumber={Math.max(0, ...deliveryStatus.exhibitions.map((item) => item.exhibition_number)) + 1}
+            onCancel={closeDeliveryPanel}
+            onComplete={closeDeliveryPanel}
+            onDrawingChange={setSignatureDrawing}
+            onSubmit={(payload) => executePartialDelivery(partialTicket.id, payload)}
+          />
+        )}
+        {deliveryPanel === 'partial_request' && deliveryStatus && (
+          <LabPartialDeliveryRequest
+            busy={busy}
+            onCancel={() => setDeliveryPanel('closed')}
+            onSubmit={requestPartialDeliveryTicket}
+            pendingEquipment={deliverablePending}
+          />
+        )}
+        {deliveryPanel === 'closed' && deliveryStatus && (
+          <View>
+            <Text style={styles.sectionEyebrow}>ENTREGA DE EQUIPOS</Text>
+              {generalService && blockedPending.length > 0 && (
+                <AlertBanner tone="info">
+                  {`La entrega completa requiere el reporte finalizado de cada equipo. Pendientes de finalizar: ${blockedPending.map((item) => item.instrument).join(', ')}.`}
+                </AlertBanner>
+              )}
+            {deliveryStatus.group_complete ? (
+              <>
+                <Text style={styles.notice}>Entrega completada · {deliveryStatus.exhibitions.filter((item) => item.status === 'completed').length} exhibición(es)</Text>
+                <OperationalActionStack>
+                  <SecondaryButton icon="printer" label="Ver / imprimir acuse final" onPress={() => downloadFinalReceiptPdf('print')} />
+                  <SecondaryButton icon="share-variant" label="Compartir / descargar acuse final" onPress={() => downloadFinalReceiptPdf('share')} />
+                </OperationalActionStack>
+              </>
+            ) : deliveryStatus.exhibitions.length === 0 ? (
+              <>
+                <Text style={styles.notice}>Pendiente de entrega</Text>
+                {partialTicket?.status === 'pending' && <AlertBanner tone="info">Entrega parcial pendiente de autorización.</AlertBanner>}
+                <OperationalActionStack>
+                  {partialTicket?.status === 'approved' ? (
+                    <PrimaryButton icon="package-check" label="Ejecutar entrega parcial autorizada" onPress={() => setDeliveryPanel('partial_execute')} />
+                  ) : (
+                    canRegisterLabDelivery && <PrimaryButton disabled={generalService && !canProceed} icon="package-check" label={generalService ? 'Proceder a entrega' : 'Registrar entrega'} onPress={() => setDeliveryPanel('full')} />
+                  )}
+                  {!partialTicket && canRequestPartialDelivery && <AdministrativeButton icon="send" label="Solicitar entrega parcial" onPress={() => setDeliveryPanel('partial_request')} />}
+                </OperationalActionStack>
+              </>
+            ) : (
+              <>
+                <Text style={styles.notice}>{deliveryStatus.delivered_equipment} de {deliveryStatus.total_equipment} equipos entregados · {deliveryStatus.exhibitions.filter((item) => item.status === 'completed').length} exhibición(es)</Text>
+                {partialTicket?.status === 'pending' && <AlertBanner tone="info">Entrega parcial pendiente de autorización.</AlertBanner>}
+                <OperationalActionStack>
+                  {partialTicket?.status === 'approved' ? (
+                    <PrimaryButton icon="package-check" label="Ejecutar entrega parcial autorizada" onPress={() => setDeliveryPanel('partial_execute')} />
+                  ) : (
+                    canRegisterLabDelivery && <PrimaryButton disabled={generalService && !canProceed} icon="package-check" label={generalService ? 'Proceder a entrega' : 'Completar entrega'} onPress={() => setDeliveryPanel('full')} />
+                  )}
+                  {!partialTicket && canRequestPartialDelivery && <AdministrativeButton icon="send" label="Solicitar otra entrega parcial" onPress={() => setDeliveryPanel('partial_request')} />}
+                </OperationalActionStack>
+              </>
+            )}
+            {!!deliveryStatus.exhibitions.length && (
+              <OperationalActionStack>
+                <SecondaryButton icon="history" label={deliveryHistoryOpen ? 'Ocultar historial de entregas' : 'Ver historial de entregas'} onPress={() => setDeliveryHistoryOpen((current) => !current)} />
+              </OperationalActionStack>
+            )}
+            {deliveryHistoryOpen && deliveryStatus.exhibitions.map((exhibition) => (
+              <View key={exhibition.id} style={styles.deliveryHistoryRow}>
+                <Text style={styles.deliveryHistoryTitle}>
+                  Exhibición {exhibition.exhibition_number}{exhibition.delivery_type === 'partial' ? ' (parcial)' : ''} · {exhibition.status === 'voided' ? 'Anulada' : 'Completada'}
+                </Text>
+                <Text style={styles.detail}>{new Date(exhibition.delivered_at).toLocaleString('es-MX')} · Recibió: {exhibition.recipient_name}</Text>
+                <OperationalActionStack>
+                  <SecondaryButton icon="printer" label="Ver / imprimir acuse" onPress={() => downloadDeliveryPdf(exhibition.id, 'print')} />
+                  <SecondaryButton icon="share-variant" label="Compartir / descargar acuse" onPress={() => downloadDeliveryPdf(exhibition.id, 'share')} />
+                  {activeDeliveryCount > 1 && exhibition.status === 'completed' && canVoidLabDelivery
+                    && exhibition.items.some((item) => item.work_order_id === workOrder.id) && (
+                    <AdministrativeButton icon="undo" label="Anular esta exhibición" onPress={() => { setVoidingDelivery(exhibition); setTicketDialogMode('void_delivery'); setTicketOpen(true); }} />
+                  )}
+                </OperationalActionStack>
+              </View>
+            ))}
+          </View>
+        )}
+      </>
+    );
+  }
+
   function closeDeliveryPanel() {
     setDeliveryPanel('closed');
     setSignatureDrawing(false);
@@ -1494,7 +1629,7 @@ export default function WorkOrdersScreen() {
   // (LAB_DRAFT_SHEETS_INVALID), no se completa ni se cierra nada -- se
   // muestran los blockers exactos y la OT sigue abierta.
   async function completeClosure(scope: LabClosureScope = closureScope, confirmDraftCompletion = false) {
-    if (!workOrder) return;
+    if (!workOrder || generalServiceAwaitingReportDocument) return;
     setBusy(true);
     try {
       const detail = await postLabCompletion({ confirmDraftCompletion, request, scope, workOrder });
@@ -2168,7 +2303,7 @@ export default function WorkOrdersScreen() {
                     <Text style={styles.sectionEyebrow}>CAPTURA TÉCNICA</Text>
                     <Text style={styles.sectionTitle}>{equipmentFormProfile(workOrder.operational_category).technicalSectionTitle}</Text>
                   </View>
-                  {isGeneralService(workOrder) ? workOrder.equipment.map((item) => (
+                  {isGeneralService(workOrder) ? (deliveryPanel !== 'closed' ? null : workOrder.equipment.map((item) => (
                     <LabTechnicalReportCard
                       key={item.id}
                       canCaptureReports={canCaptureTechnicalReports}
@@ -2178,7 +2313,7 @@ export default function WorkOrdersScreen() {
                       onOpenReport={(equipment) => setReportFlow({ mode: 'view', equipmentId: equipment.id })}
                       onSelectReport={(equipment) => setReportFlow({ mode: 'select', equipmentId: equipment.id })}
                     />
-                  )) : <LabTechnicalCapture
+                  ))) : <LabTechnicalCapture
                     // Una OT distinta nunca hereda equipo/hoja activos de la
                     // anterior: el contexto de captura pertenece a UNA OT.
                     key={workOrder.id}
@@ -2192,6 +2327,10 @@ export default function WorkOrdersScreen() {
                     request={request}
                     workOrder={workOrder}
                   />}
+                  {isGeneralService(workOrder) && renderDelivery()}
+                  {generalServiceAwaitingReportDocument && deliveryPanel === 'closed' && (
+                    <AlertBanner tone="info">Entrega registrada. El reporte técnico está pendiente de generación documental final; la OT permanece abierta.</AlertBanner>
+                  )}
                   <OperationalActionStack>
                     {editable && <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => setStep('capture')} />}
                     {/* equipment_by_equipment nunca pasa por 'review'/Technical
@@ -2201,7 +2340,7 @@ export default function WorkOrdersScreen() {
                         atómica (sección 31 del encargo: nunca vuelve a
                         aparecer una etapa manual de Captura Técnica ni cierre
                         aparte para esta modalidad). */}
-                    {workOrder.workflow_mode !== 'equipment_by_equipment' && canExecuteWorkOrders && (
+                    {workOrder.workflow_mode !== 'equipment_by_equipment' && canExecuteWorkOrders && !generalServiceAwaitingReportDocument && (
                       <PrimaryButton icon="arrow-right-circle" label="Continuar a cierre" onPress={() => setStep('review')} />
                     )}
                     {canDownloadLabPackages && <SecondaryButton icon="download" label="Descargar paquete disponible" onPress={() => downloadPackage('share')} />}
@@ -2394,105 +2533,7 @@ export default function WorkOrdersScreen() {
                 <>
                   <Text style={styles.sectionTitle}>OT {workOrder.folio} · {statusPresentation(workOrder.status).label}</Text>
                   <Text style={styles.notice}>Selecciona arriba cada folio para abrir, imprimir o compartir su PDF individual.</Text>
-                  {deliveryPanel === 'full' && deliveryStatus && (
-                    <LabDeliveryFlow
-                      clientName={workOrder.client_name}
-                      defaultRecipientName={workOrder.contact_name ?? ''}
-                      deliveredByName={user.full_name}
-                      equipment={deliveryStatus.pending_equipment}
-                      isPartial={false}
-                      nextExhibitionNumber={Math.max(0, ...deliveryStatus.exhibitions.map((item) => item.exhibition_number)) + 1}
-                      onCancel={closeDeliveryPanel}
-                      onComplete={closeDeliveryPanel}
-                      onDrawingChange={setSignatureDrawing}
-                      onSubmit={completeDelivery}
-                    />
-                  )}
-                  {deliveryPanel === 'partial_execute' && deliveryStatus && partialTicket && (
-                    <LabDeliveryFlow
-                      clientName={workOrder.client_name}
-                      defaultRecipientName={workOrder.contact_name ?? ''}
-                      deliveredByName={user.full_name}
-                      equipment={deliveryStatus.pending_equipment.filter((item) => (
-                        (partialTicket.resolution_snapshot?.requested_equipment_ids as number[] | undefined)?.includes(item.equipment_id)
-                      ))}
-                      isPartial
-                      nextExhibitionNumber={Math.max(0, ...deliveryStatus.exhibitions.map((item) => item.exhibition_number)) + 1}
-                      onCancel={closeDeliveryPanel}
-                      onComplete={closeDeliveryPanel}
-                      onDrawingChange={setSignatureDrawing}
-                      onSubmit={(payload) => executePartialDelivery(partialTicket.id, payload)}
-                    />
-                  )}
-                  {deliveryPanel === 'partial_request' && deliveryStatus && (
-                    <LabPartialDeliveryRequest
-                      busy={busy}
-                      onCancel={() => setDeliveryPanel('closed')}
-                      onSubmit={requestPartialDeliveryTicket}
-                      pendingEquipment={deliveryStatus.pending_equipment}
-                    />
-                  )}
-                  {deliveryPanel === 'closed' && deliveryStatus && (
-                    <View>
-                      <Text style={styles.sectionEyebrow}>ENTREGA DE EQUIPOS</Text>
-                      {deliveryStatus.group_complete ? (
-                        <>
-                          <Text style={styles.notice}>Entrega completada · {deliveryStatus.exhibitions.filter((item) => item.status === 'completed').length} exhibición(es)</Text>
-                          <OperationalActionStack>
-                            <SecondaryButton icon="printer" label="Ver / imprimir acuse final" onPress={() => downloadFinalReceiptPdf('print')} />
-                            <SecondaryButton icon="share-variant" label="Compartir / descargar acuse final" onPress={() => downloadFinalReceiptPdf('share')} />
-                          </OperationalActionStack>
-                        </>
-                      ) : deliveryStatus.exhibitions.length === 0 ? (
-                        <>
-                          <Text style={styles.notice}>Pendiente de entrega</Text>
-                          {partialTicket?.status === 'pending' && <AlertBanner tone="info">Entrega parcial pendiente de autorización.</AlertBanner>}
-                          <OperationalActionStack>
-                            {partialTicket?.status === 'approved' ? (
-                              <PrimaryButton icon="package-check" label="Ejecutar entrega parcial autorizada" onPress={() => setDeliveryPanel('partial_execute')} />
-                            ) : (
-                              canRegisterLabDelivery && <PrimaryButton icon="package-check" label="Registrar entrega" onPress={() => setDeliveryPanel('full')} />
-                            )}
-                            {!partialTicket && canRequestPartialDelivery && <AdministrativeButton icon="send" label="Solicitar entrega parcial" onPress={() => setDeliveryPanel('partial_request')} />}
-                          </OperationalActionStack>
-                        </>
-                      ) : (
-                        <>
-                          <Text style={styles.notice}>{deliveryStatus.delivered_equipment} de {deliveryStatus.total_equipment} equipos entregados · {deliveryStatus.exhibitions.filter((item) => item.status === 'completed').length} exhibición(es)</Text>
-                          {partialTicket?.status === 'pending' && <AlertBanner tone="info">Entrega parcial pendiente de autorización.</AlertBanner>}
-                          <OperationalActionStack>
-                            {partialTicket?.status === 'approved' ? (
-                              <PrimaryButton icon="package-check" label="Ejecutar entrega parcial autorizada" onPress={() => setDeliveryPanel('partial_execute')} />
-                            ) : (
-                              canRegisterLabDelivery && <PrimaryButton icon="package-check" label="Completar entrega" onPress={() => setDeliveryPanel('full')} />
-                            )}
-                            {!partialTicket && canRequestPartialDelivery && <AdministrativeButton icon="send" label="Solicitar otra entrega parcial" onPress={() => setDeliveryPanel('partial_request')} />}
-                          </OperationalActionStack>
-                        </>
-                      )}
-                      {!!deliveryStatus.exhibitions.length && (
-                        <OperationalActionStack>
-                          <SecondaryButton icon="history" label={deliveryHistoryOpen ? 'Ocultar historial de entregas' : 'Ver historial de entregas'} onPress={() => setDeliveryHistoryOpen((current) => !current)} />
-                        </OperationalActionStack>
-                      )}
-                      {deliveryHistoryOpen && deliveryStatus.exhibitions.map((exhibition) => (
-                        <View key={exhibition.id} style={styles.deliveryHistoryRow}>
-                          <Text style={styles.deliveryHistoryTitle}>
-                            Exhibición {exhibition.exhibition_number}{exhibition.delivery_type === 'partial' ? ' (parcial)' : ''} · {exhibition.status === 'voided' ? 'Anulada' : 'Completada'}
-                          </Text>
-                          <Text style={styles.detail}>{new Date(exhibition.delivered_at).toLocaleString('es-MX')} · Recibió: {exhibition.recipient_name}</Text>
-                          <OperationalActionStack>
-                            <SecondaryButton icon="printer" label="Ver / imprimir acuse" onPress={() => downloadDeliveryPdf(exhibition.id, 'print')} />
-                            <SecondaryButton icon="share-variant" label="Compartir / descargar acuse" onPress={() => downloadDeliveryPdf(exhibition.id, 'share')} />
-                            {activeDeliveryCount > 1 && exhibition.status === 'completed' && canVoidLabDelivery
-                              && exhibition.items.some((item) => item.work_order_id === workOrder.id) && (
-                              <AdministrativeButton icon="undo" label="Anular esta exhibición" onPress={() => { setVoidingDelivery(exhibition); setTicketDialogMode('void_delivery'); setTicketOpen(true); }} />
-                            )}
-                          </OperationalActionStack>
-                        </View>
-                      ))}
-                    </View>
-                  )}
+                  {renderDelivery()}
                   {deliveryPanel === 'closed' && !deliveryStatus && !!workOrder.departure_date && (
                     <AlertBanner tone="info">Fecha de salida histórica: {workOrder.departure_date}. Sin acuse digital.</AlertBanner>
                   )}

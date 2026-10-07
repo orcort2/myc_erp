@@ -529,6 +529,14 @@ class LabDeliveryPendingEquipmentItem(BaseModel):
     identification: str
     serial_number: str
     certificate_folio: str | None
+    # Servicio General: la entrega exige un TechnicalReport vigente con la
+    # captura finalizada. Calibración siempre es elegible aquí (sus reglas de
+    # entrega no cambian).
+    delivery_eligible: bool = True
+    delivery_blocked_reason: str | None = None
+    technical_report_folio: str | None = None
+    # Declaración que el receptor acepta al firmar; la congela el backend.
+    client_conformity_text: str | None = None
 
 
 class LabDeliveryGroupStatusRead(BaseModel):

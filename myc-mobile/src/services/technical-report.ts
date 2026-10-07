@@ -60,7 +60,8 @@ export type TechnicalReportBadgeTone = 'neutral' | 'info' | 'warning' | 'success
 const STATUS_PRESENTATION: Record<TechnicalReportStatus, { label: string; tone: TechnicalReportBadgeTone }> = {
   draft: { label: 'BORRADOR', tone: 'info' },
   in_progress: { label: 'EN CAPTURA', tone: 'info' },
-  ready_for_signatures: { label: 'LISTO PARA FIRMAS', tone: 'warning' },
+  // Internamente sigue siendo ready_for_signatures; significa captura finalizada / lista para entrega.
+  ready_for_signatures: { label: 'LISTO PARA ENTREGA', tone: 'warning' },
   completed: { label: 'COMPLETADO', tone: 'success' },
   cancelled: { label: 'CANCELADO', tone: 'danger' },
 };

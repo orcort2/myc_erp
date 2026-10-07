@@ -30,6 +30,63 @@ from app.services.lab_delivery_pdfs import (
 from app.services.lab_work_orders import _decode_signature, _get, _group, _lock_historical_group, _root_id
 
 
+# La entrega de calibración ocurre con la OT ya cerrada. Servicio General
+# entrega ANTES de cerrar (el cierre exige la entrega, SG-4H): basta con la
+# recepción firmada.
+_DELIVERY_ORDER_STATUSES = {"completed", "partially_closed"}
+_GENERAL_SERVICE_DELIVERY_ORDER_STATUSES = {
+    "received_signed", "in_progress", "ready_to_close", "completed", "partially_closed",
+}
+
+
+def _delivery_order_statuses(order: LabWorkOrder) -> set[str]:
+    if order.operational_category == "general_service":
+        return _GENERAL_SERVICE_DELIVERY_ORDER_STATUSES
+    return _DELIVERY_ORDER_STATUSES
+
+
+def _orders_ready_for_delivery(members: list[LabWorkOrder]) -> bool:
+    return bool(members) and all(item.status in _delivery_order_statuses(item) for item in members)
+
+
+def equipment_delivery_block_reason(equipment: LabWorkOrderEquipment) -> str | None:
+    """Autoridad de elegibilidad de entrega por equipo (category-aware).
+
+    - calibration: sin requisito adicional (comportamiento histórico).
+    - general_service: TechnicalReport vigente con la captura finalizada
+      (`ready_for_signatures`, que ahora significa "listo para entrega").
+      El PDF final y `completed` llegan en SG-4G; no se exigen aquí."""
+    if equipment.work_order.operational_category != "general_service":
+        return None
+    report = equipment.current_technical_report
+    if report is None:
+        return "Sin reporte técnico"
+    if report.status != "ready_for_signatures":
+        return "El reporte técnico aún no está finalizado"
+    return None
+
+
+def _ensure_equipment_deliverable(equipment_items: list[LabWorkOrderEquipment]) -> None:
+    blocked = [
+        {
+            "work_order_id": equipment.work_order_id,
+            "work_order_folio": equipment.work_order.folio,
+            "equipment_id": equipment.id,
+            "equipment_position": equipment.position,
+            "equipment": equipment.instrument,
+            "reason": reason,
+        }
+        for equipment in equipment_items
+        for reason in [equipment_delivery_block_reason(equipment)]
+        if reason is not None
+    ]
+    if blocked:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "LAB_DELIVERY_REPORT_NOT_READY", "items": blocked},
+        )
+
+
 def _relevant_group_members(group: list[LabWorkOrder]) -> list[LabWorkOrder]:
     """OT vigentes del grupo para efectos de entrega: las canceladas nunca
     sucedieron operativamente y quedan fuera; partially_closed cuenta como
@@ -166,6 +223,20 @@ def get_lab_delivery_group_status(db: Session, work_order_id: int) -> LabDeliver
         delivered_equipment=total_equipment - len(pending),
         pending_equipment=[
             LabDeliveryPendingEquipmentItem(
+                delivery_eligible=equipment_delivery_block_reason(equipment) is None,
+                delivery_blocked_reason=equipment_delivery_block_reason(equipment),
+                technical_report_folio=(
+                    equipment.current_technical_report.folio
+                    if equipment.current_technical_report is not None
+                    and equipment.work_order.operational_category == "general_service"
+                    else None
+                ),
+                client_conformity_text=(
+                    equipment.current_technical_report.client_conformity_text_snapshot
+                    if equipment.current_technical_report is not None
+                    and equipment.work_order.operational_category == "general_service"
+                    else None
+                ),
                 work_order_id=equipment.work_order_id,
                 work_order_folio=equipment.work_order.folio,
                 equipment_id=equipment.id,
@@ -193,6 +264,25 @@ def _next_exhibition_number(db: Session, root_id: int) -> int:
         )
     )
     return (current_max or 0) + 1
+
+
+def _delivery_reference_folio(equipment: LabWorkOrderEquipment) -> str | None:
+    """Folio documental que el acuse muestra por equipo. Servicio General no
+    tiene certificado: referencia el folio institucional del reporte vigente
+    (la relación reporte <-> entrega sigue resolviéndose por equipment_id)."""
+    if equipment.work_order.operational_category == "general_service":
+        report = equipment.current_technical_report
+        return report.folio if report is not None else None
+    return equipment.certificate_folio or equipment.report_number
+
+
+def _delivered_technical_report_ids(equipment_items: list[LabWorkOrderEquipment]) -> list[int]:
+    return [
+        equipment.current_technical_report.id
+        for equipment in equipment_items
+        if equipment.work_order.operational_category == "general_service"
+        and equipment.current_technical_report is not None
+    ]
 
 
 def _create_delivery_event(
@@ -242,7 +332,7 @@ def _create_delivery_event(
                 brand_snapshot=equipment.brand,
                 identification_snapshot=equipment.identification,
                 serial_number_snapshot=equipment.serial_number,
-                certificate_folio_snapshot=equipment.certificate_folio or equipment.report_number,
+                certificate_folio_snapshot=_delivery_reference_folio(equipment),
             )
         )
     db.flush()
@@ -322,8 +412,15 @@ def _generate_final_receipt(
 
 
 def _finalize_delivery(
-    db: Session, *, root_work_order: LabWorkOrder, members: list[LabWorkOrder], delivery: LabWorkOrderDelivery, user: User
+    db: Session,
+    *,
+    root_work_order: LabWorkOrder,
+    members: list[LabWorkOrder],
+    delivery: LabWorkOrderDelivery,
+    user: User,
+    technical_report_ids: list[int] | None = None,
 ) -> None:
+    technical_report_ids = technical_report_ids or []
     delivered_ids = _delivered_equipment_ids(db, root_work_order.id)
     _sync_departure_dates(members, delivered_ids)
     pending = _pending_equipment(members, delivered_ids)
@@ -343,6 +440,7 @@ def _finalize_delivery(
             "delivered_at": delivery.delivered_at.isoformat(),
             "recipient_name": delivery.recipient_name,
             "equipment_ids": [item.equipment_id for item in delivery.items],
+            "technical_report_ids": technical_report_ids,
             "voucher_sha256": delivery.voucher_pdf_sha256,
         },
     )
@@ -365,15 +463,19 @@ def complete_lab_delivery(
         work_order, group = _lock_historical_group(db, work_order_id)
         root_work_order = _resolve_root_work_order(work_order, group)
         members = _relevant_group_members(group)
-        if not members or any(item.status not in {"completed", "partially_closed"} for item in members):
+        if not _orders_ready_for_delivery(members):
             raise HTTPException(
                 status_code=409,
-                detail="La entrega sólo puede registrarse cuando todas las OT relevantes del grupo están cerradas",
+                detail=(
+                    "La entrega sólo puede registrarse cuando todas las OT relevantes del grupo están cerradas "
+                    "(Servicio General: con la recepción firmada)"
+                ),
             )
         delivered_ids = _delivered_equipment_ids(db, root_work_order.id)
         pending = _pending_equipment(members, delivered_ids)
         if not pending:
             raise HTTPException(status_code=409, detail="El grupo no tiene equipos pendientes de entrega")
+        _ensure_equipment_deliverable(pending)
         delivery = _create_delivery_event(
             db,
             root_work_order=root_work_order,
@@ -383,7 +485,10 @@ def complete_lab_delivery(
             user=user,
             partial_delivery_ticket_id=None,
         )
-        _finalize_delivery(db, root_work_order=root_work_order, members=members, delivery=delivery, user=user)
+        _finalize_delivery(
+            db, root_work_order=root_work_order, members=members, delivery=delivery, user=user,
+            technical_report_ids=_delivered_technical_report_ids(pending),
+        )
         db.commit()
         return _read_delivery(_reload_delivery(db, delivery.id))
     except Exception:
@@ -416,6 +521,7 @@ def execute_partial_delivery(
                 detail="El set autorizado ya no coincide con los equipos pendientes del grupo",
             )
         equipment_items = [pending_by_id[eid] for eid in requested_ids]
+        _ensure_equipment_deliverable(equipment_items)
         delivery = _create_delivery_event(
             db,
             root_work_order=root_work_order,
@@ -425,7 +531,10 @@ def execute_partial_delivery(
             user=user,
             partial_delivery_ticket_id=ticket.id,
         )
-        _finalize_delivery(db, root_work_order=root_work_order, members=members, delivery=delivery, user=user)
+        _finalize_delivery(
+            db, root_work_order=root_work_order, members=members, delivery=delivery, user=user,
+            technical_report_ids=_delivered_technical_report_ids(equipment_items),
+        )
         now = datetime.now(timezone.utc)
         ticket.status = "resolved"
         ticket.resolved_at = now
