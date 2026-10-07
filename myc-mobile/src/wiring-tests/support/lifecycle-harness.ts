@@ -87,6 +87,10 @@ export type Env = {
   /** Ancho de ventana simulado (iPhone 390 por defecto; 320 = SE/mini). */
   windowWidth: number;
   failEvidenceUpload: boolean;
+  /** Listado de OT (GET .../lab-work-orders?...); vacío por defecto. */
+  list: any[];
+  /** Si se define, POST .../complete responde 409 con este detalle estructurado. */
+  completeError: { code: string; message: string; items: unknown[] } | null;
   /** Mensaje de 409 para POST .../technical-report/finalize; gate opcional para observar el loading. */
   finalizeError: string | null;
   finalizeGate: Promise<void> | null;
@@ -132,7 +136,7 @@ export async function createLifecycleHarness() {
   const allStubs = new Proxy({}, { get: (_t, key) => stub(String(key)) });
   const env: Env = {
     user: { id: 1, full_name: 'Tec', actor_type: 'internal', permissions: ['*', 'mobile.access', 'lab_work_orders.use'] },
-    detail: null, sheet: null, report: null, created: null, signed: null, failTechnicalReportCreate: false, failCaptureSave: false, confirmCaptureError: null, windowWidth: 390, failEvidenceUpload: false, finalizeError: null, finalizeGate: null, deliveryStatus: null, deliveryError: null, details: {}, detailGates: [], sheetWriteGates: [], params: {}, listeners: new Set(), session: { access_token: 't' },
+    detail: null, sheet: null, report: null, created: null, signed: null, failTechnicalReportCreate: false, failCaptureSave: false, confirmCaptureError: null, windowWidth: 390, failEvidenceUpload: false, list: [], completeError: null, finalizeError: null, finalizeGate: null, deliveryStatus: null, deliveryError: null, details: {}, detailGates: [], sheetWriteGates: [], params: {}, listeners: new Set(), session: { access_token: 't' },
   };
   const response = (body: unknown) => ({ ok: true, status: 200, headers: { get: () => null }, json: async () => body });
   let detailCalls = 0;
@@ -192,6 +196,12 @@ export async function createLifecycleHarness() {
       return response(structuredClone(env.report));
     }
     if (/\/equipment\/configured$|\/equipment\/\d+\/configured$/.test(path)) return response(env.detail);
+    if (/\/lab-work-orders\/\d+\/complete(\/individual)?(\?.*)?$/.test(path) && init.method === 'POST') {
+      if (env.completeError) return { ok: false, status: 409, headers: { get: () => null }, json: async () => ({ detail: env.completeError }) };
+      env.detail = { ...env.detail, status: 'completed' };
+      return response(structuredClone(env.detail));
+    }
+    if (/\/mobile\/v1\/technician\/lab-work-orders(\?.*)?$/.test(path) && (init.method ?? 'GET') === 'GET') return response(structuredClone(env.list));
     if (/\/mobile\/v1\/technician\/lab-work-orders(\/groups)?$/.test(path) && init.method === 'POST') return response(env.created ?? env.detail);
     if (/field-sheet-templates/.test(path)) return response([]);
     if (/\/delivery$/.test(path) && init.method === 'POST') {

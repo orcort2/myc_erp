@@ -158,14 +158,14 @@ test('4F: con equipos mezclados (uno listo, otro en captura) la entrega completa
 const completePosts = (h: LifecycleHarness) => h.probe.calls.filter((call) => call.method === 'POST' && /\/complete(\/individual)?(\?.*)?$/.test(call.path));
 const delivered = (items: Record<string, unknown>[] = []) => statusOf(items, {
   delivered_equipment: 1, group_complete: items.length === 0,
-  exhibitions: [{ id: 800, exhibition_number: 1, delivery_type: 'full', status: 'completed', delivered_at: '2026-10-08T17:00:00+00:00', recipient_name: 'Persona Recibe', items: [] }],
+  exhibitions: [{ id: 800, exhibition_number: 1, delivery_type: 'full', status: 'completed', delivered_at: '2026-10-08T17:00:00+00:00', recipient_name: 'Persona Recibe', items: [{ id: 1, work_order_id: 72, work_order_folio: 6072, equipment_id: 289 }] }],
 });
 
 test('4F: Servicio General entregado con reporte ready_for_signatures no ofrece cierre ni llama /complete', async () => {
   const h = await openGeneralService({ delivery: delivered() });
   const text = h.text();
   assert.ok(!text.includes('Continuar a cierre'));
-  assert.ok(text.includes('Entrega registrada. El reporte técnico está pendiente de generación documental final'));
+  assert.ok(text.includes('La entrega está registrada. Falta generar el reporte técnico final.'));
   assert.equal(completePosts(h).length, 0);
   assert.ok(!h.probe.requests.some((request) => /\/complete/.test(request)));
 });
@@ -173,7 +173,7 @@ test('4F: Servicio General entregado con reporte ready_for_signatures no ofrece 
 test('4F: Servicio General sin entrega conserva la acción de entrega y no muestra el estado documental', async () => {
   const h = await openGeneralService();
   assert.ok(h.text().includes('Proceder a entrega'));
-  assert.ok(!h.text().includes('pendiente de generación documental final'));
+  assert.ok(!h.text().includes('Falta generar el reporte técnico final'));
 });
 
 test('4F: calibración completed conserva "Continuar a cierre" y su cierre histórico', async () => {
@@ -183,7 +183,7 @@ test('4F: calibración completed conserva "Continuar a cierre" y su cierre hist�
   await h.mount();
   await h.flush();
   assert.ok(h.text().includes('Continuar a cierre'), 'calibración en captura técnica');
-  assert.ok(!h.text().includes('pendiente de generación documental final'));
+  assert.ok(!h.text().includes('Falta generar el reporte técnico final'));
   await h.press('Continuar a cierre');
   assert.ok(h.text().includes('Confirmar cierre'));
 });

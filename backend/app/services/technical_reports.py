@@ -11,7 +11,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.folio_sequence import InstitutionalFolioSequence
-from app.models.lab_work_order import LabWorkOrderEquipment
+from app.models.lab_work_order import LabWorkOrder, LabWorkOrderEquipment
 from app.models.technical_report import TechnicalReport, TechnicalReportEvidence
 from app.models.user import User
 from app.schemas.technical_report import (
@@ -29,6 +29,7 @@ from app.schemas.technical_report_installation import (
 )
 from app.services.audit_logs import write_audit_log
 from app.services.lab_work_order_deliveries import resolve_current_delivery_for_equipment
+from app.services.lab_work_orders import sync_general_service_readiness
 from app.services.technical_report_pdfs import (
     INSTALLATION_REPORT_RENDERER_VERSION,
     build_installation_final_snapshot,
@@ -855,6 +856,17 @@ def finalize_technical_report(
             },
         )
         report_id = report.id
+        # SG-4H: el último reporte completado puede dejar la OT lista para cerrar.
+        # La fila de la OT se bloquea como lo hace /complete (serializa ambos).
+        order = db.scalar(
+            select(LabWorkOrder)
+            .join(LabWorkOrderEquipment, LabWorkOrderEquipment.work_order_id == LabWorkOrder.id)
+            .where(LabWorkOrderEquipment.id == report.lab_equipment_id)
+            .with_for_update()
+        )
+        db.flush()
+        if order is not None:
+            sync_general_service_readiness(db, order, user)
         db.commit()
         return _read_technical_report_by_id(db, report_id)
     except BaseException:

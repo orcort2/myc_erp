@@ -283,7 +283,8 @@ def test_delivery_voucher_and_calibration_are_unaffected(sg3):
     status = delivery_status(client, headers, order)
     voucher = client.get(f"{BASE}/{order['id']}/delivery/{status['exhibitions'][0]['id']}/pdf", headers=headers)
     assert voucher.status_code == 200 and voucher.content.startswith(b"%PDF")
-    assert client.get(f"{BASE}/{order['id']}", headers=headers).json()["status"] == "in_progress", "la OT no se cierra"
+    # SG-4H: el reporte completado + entrega deja la OT lista para cerrar, pero NO la cierra.
+    assert client.get(f"{BASE}/{order['id']}", headers=headers).json()["status"] == "ready_to_close"
     calibration = create_order(client, headers)
     assert client.post(report_url(calibration["id"], 1, "/finalize"), headers=headers).status_code == 404
 

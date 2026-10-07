@@ -33,11 +33,11 @@ const undeliveredStatus = () => ({
   }],
 });
 
-async function open(options: { delivered?: boolean; reportStatus?: string; permissions?: string[] } = {}): Promise<LifecycleHarness> {
+async function open(options: { delivered?: boolean; reportStatus?: string; permissions?: string[]; orderStatus?: string } = {}): Promise<LifecycleHarness> {
   const h = await createLifecycleHarness();
   const reportStatus = options.reportStatus ?? 'ready_for_signatures';
   h.env.detail = workOrderFixture({
-    operational_category: 'general_service', status: 'in_progress',
+    operational_category: 'general_service', status: options.orderStatus ?? 'in_progress',
     equipment: [generalServiceEquipmentFixture(installationProjection({ technical_report_status: reportStatus }))],
   });
   h.env.report = freshInstallationReport({ status: reportStatus, performed_by_user_id: 1, performed_by_name_snapshot: 'Tec' });
@@ -111,17 +111,15 @@ test('4G: Ver reporte abre el PDF final autenticado; Descargar lo comparte', asy
   assert.equal(h.probe.shares.length, 1);
 });
 
-test('4G: reporte completado no muestra edición, fotos ni cierre; la OT no se cierra', async () => {
-  const h = await open({ reportStatus: 'completed' });
-  assert.ok(!h.text().includes('Continuar a cierre'));
-  assert.ok(h.text().includes('La entrega y el reporte están completos. La OT está pendiente de cierre.'));
+test('4G: reporte completado no muestra edición ni fotos y no cierra la OT por sí solo', async () => {
+  const h = await open({ reportStatus: 'completed', orderStatus: 'ready_to_close' });
+  await h.press('Revisar captura técnica');
   await h.press('Abrir reporte');
   const text = h.text();
   assert.ok(text.includes('Reporte final generado'));
   assert.ok(!text.includes('Confirmar captura') && !text.includes('Agregar foto'));
   assert.equal(h.registry.get('Lugar de instalación')?.onChange, undefined, 'campos de sólo lectura');
-  assert.equal(completePosts(h).length, 0);
-  assert.ok(!h.probe.requests.some((request) => /\/complete/.test(request)));
+  assert.equal(completePosts(h).length, 0, 'generar el reporte nunca cierra la OT');
 });
 
 test('4G: sin permiso de captura no se ofrece generar el reporte', async () => {

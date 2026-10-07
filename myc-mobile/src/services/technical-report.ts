@@ -115,3 +115,36 @@ export function technicalReportAction(
   if (equipment.technical_report_id != null) return permissions.canRead || permissions.canCapture ? 'open' : null;
   return permissions.canCapture ? 'select' : null;
 }
+
+export type GeneralServiceClosureState = {
+  /** Sólo el backend decide: la OT debe estar en `ready_to_close`. */
+  canClose: boolean;
+  message: string | null;
+};
+
+/** Qué mostrar en el paso técnico de una OT de Servicio General respecto al cierre.
+ * `canClose` no se deduce de reportes/entregas: lo dicta el estado de la OT que
+ * calcula el backend (autoridad técnica category-aware). Los reportes/entregas
+ * sólo eligen el mensaje de lo que falta. */
+export function describeGeneralServiceClosure(input: {
+  orderStatus: string;
+  equipment: Pick<LabEquipment, 'id' | 'technical_report_status'>[];
+  deliveredEquipmentIds: ReadonlySet<number | null>;
+}): GeneralServiceClosureState {
+  if (input.orderStatus === 'ready_to_close') {
+    return { canClose: true, message: 'La entrega y documentación técnica están completas.' };
+  }
+  const reportCompletedWithoutDelivery = input.equipment.some(
+    (item) => item.technical_report_status === 'completed' && !input.deliveredEquipmentIds.has(item.id),
+  );
+  if (reportCompletedWithoutDelivery) {
+    return { canClose: false, message: 'El reporte técnico está completo, pero falta registrar la entrega.' };
+  }
+  const deliveredWithoutFinalReport = input.equipment.some(
+    (item) => item.technical_report_status === 'ready_for_signatures' && input.deliveredEquipmentIds.has(item.id),
+  );
+  if (deliveredWithoutFinalReport) {
+    return { canClose: false, message: 'La entrega está registrada. Falta generar el reporte técnico final.' };
+  }
+  return { canClose: false, message: null };
+}

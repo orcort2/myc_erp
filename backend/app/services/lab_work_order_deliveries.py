@@ -27,7 +27,15 @@ from app.services.lab_delivery_pdfs import (
     generate_lab_delivery_final_receipt,
     generate_lab_delivery_receipt,
 )
-from app.services.lab_work_orders import _decode_signature, _get, _group, _lock_historical_group, _root_id
+from app.services.lab_work_orders import (
+    _decode_signature,
+    _get,
+    _group,
+    _lock_historical_group,
+    _root_id,
+    current_deliveries_for_equipment,
+    sync_general_service_readiness,
+)
 
 
 # La entrega de calibración ocurre con la OT ya cerrada. Servicio General
@@ -76,21 +84,12 @@ def resolve_current_delivery_for_equipment(
     No se elige "la última por fecha": si por datos inconsistentes hubiera más
     de una entrega vigente para el mismo equipo, el documento sería ambiguo y
     se rechaza en lugar de adivinar."""
-    rows = db.execute(
-        select(LabWorkOrderDelivery, LabDeliveryItem)
-        .join(LabDeliveryItem, LabDeliveryItem.delivery_id == LabWorkOrderDelivery.id)
-        .options(selectinload(LabWorkOrderDelivery.delivered_by))
-        .where(
-            LabDeliveryItem.equipment_id == equipment_id,
-            LabWorkOrderDelivery.status == "completed",
-        )
-        .order_by(LabWorkOrderDelivery.id)
-    ).all()
+    rows = current_deliveries_for_equipment(db, equipment_id)
     if not rows:
         raise HTTPException(status_code=409, detail="El equipo no tiene una entrega vigente registrada")
     if len(rows) > 1:
         raise HTTPException(status_code=409, detail="El equipo tiene más de una entrega vigente; revisa las entregas")
-    return rows[0][0], rows[0][1]
+    return rows[0]
 
 
 def _ensure_equipment_deliverable(equipment_items: list[LabWorkOrderEquipment]) -> None:
@@ -453,6 +452,9 @@ def _finalize_delivery(
     pending = _pending_equipment(members, delivered_ids)
     if not pending:
         _generate_final_receipt(db, root_work_order=root_work_order, user=user)
+    for item in members:
+        # SG-4H: una entrega nueva puede completar la autoridad técnica de la OT.
+        sync_general_service_readiness(db, item, user)
     write_audit_log(
         db,
         action="lab_work_order.delivery_completed",
@@ -612,6 +614,10 @@ def void_lab_delivery(
         pending = _pending_equipment(members, delivered_ids)
         if pending:
             _supersede_final_receipt_if_any(db, root_work_order.id, now)
+        db.flush()
+        for item in members:
+            # SG-4H: anular la entrega que respaldaba un equipo revoca ready_to_close.
+            sync_general_service_readiness(db, item, user)
         write_audit_log(
             db,
             action="lab_work_order.delivery_voided",

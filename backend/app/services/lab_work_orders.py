@@ -937,9 +937,11 @@ def list_work_orders(
             workflow_mode=item.workflow_mode,
             operational_category=item.operational_category,
             equipment_count=len(item.active_equipment),
+            # Autoridad category-aware. En el listado no se re-hashea cada PDF
+            # (costoso); el cierre sí verifica el archivo.
             completed_equipment_count=sum(
                 1 for equipment in item.active_equipment
-                if equipment.field_sheet is not None and equipment.field_sheet.status == "completed"
+                if equipment_technically_complete(db, item, equipment, verify_files=False)
             ),
             created_at=item.created_at,
             revision_number=item.revision_number,
@@ -2857,6 +2859,188 @@ def _missing_completed_sheets(members: list[LabWorkOrder]) -> list[dict]:
     ]
 
 
+# ---------------------------------------------------------------------------
+# SG-4H: autoridad técnica category-aware
+#
+# "¿Está técnicamente completo este equipo?" depende de operational_category:
+#   - calibration: FieldSheet completed (más las reglas de folio/certificado
+#     que ya aplica el cierre -- ver _missing_completed_sheets /
+#     _unresolved_folio_equipment, que siguen siendo EXCLUSIVAS de calibración).
+#   - general_service: TechnicalReport vigente `completed` + PDF final válido
+#     + entrega `completed` vigente que incluya el equipo. Sin FieldSheet, sin
+#     MYCA/MYCT, sin service_type. La firma de RECEPCIÓN de la OT
+#     (signature_session_id) NO cuenta como entrega: la autoridad de entrega es
+#     LabWorkOrderDelivery.
+# ---------------------------------------------------------------------------
+
+TECHNICAL_REPORT_INCOMPLETE = "TECHNICAL_REPORT_INCOMPLETE"
+TECHNICAL_REPORT_DOCUMENT_INVALID = "TECHNICAL_REPORT_DOCUMENT_INVALID"
+TECHNICAL_REPORT_DELIVERY_INCOMPLETE = "TECHNICAL_REPORT_DELIVERY_INCOMPLETE"
+# Prioridad al elegir el `code` del error agregado (qué atender primero).
+_GENERAL_SERVICE_BLOCKER_PRIORITY = (
+    TECHNICAL_REPORT_INCOMPLETE,
+    TECHNICAL_REPORT_DOCUMENT_INVALID,
+    TECHNICAL_REPORT_DELIVERY_INCOMPLETE,
+)
+_GENERAL_SERVICE_BLOCKER_MESSAGES = {
+    TECHNICAL_REPORT_INCOMPLETE: "Falta completar el reporte técnico de: {names}.",
+    TECHNICAL_REPORT_DOCUMENT_INVALID: "El documento final del reporte técnico no es válido para: {names}.",
+    TECHNICAL_REPORT_DELIVERY_INCOMPLETE: "Falta registrar la entrega de: {names}.",
+}
+
+
+def current_deliveries_for_equipment(db: Session, equipment_id: int) -> list[tuple[LabWorkOrderDelivery, LabDeliveryItem]]:
+    """Entregas VIGENTES (`completed`, nunca `voided`) que incluyen el equipo.
+    Única consulta de esta relación: la reutilizan el cierre y
+    `lab_work_order_deliveries.resolve_current_delivery_for_equipment`."""
+    rows = db.execute(
+        select(LabWorkOrderDelivery, LabDeliveryItem)
+        .join(LabDeliveryItem, LabDeliveryItem.delivery_id == LabWorkOrderDelivery.id)
+        .where(
+            LabDeliveryItem.equipment_id == equipment_id,
+            LabWorkOrderDelivery.status == "completed",
+        )
+        .order_by(LabWorkOrderDelivery.id)
+    ).all()
+    return [(row[0], row[1]) for row in rows]
+
+
+def _technical_report_pdf_problem(report, *, verify_file: bool) -> str | None:
+    """None si el PDF final del reporte es utilizable. Con `verify_file` el
+    archivo debe resolverse en el storage administrado y coincidir con su
+    SHA-256 (nunca se regenera aquí)."""
+    if not (report.final_pdf_path and report.final_pdf_sha256 and report.final_pdf_generated_at):
+        return "El reporte no tiene PDF final"
+    if not verify_file:
+        return None
+    from app.services.storage_service import resolve_storage_path
+
+    resolved = resolve_storage_path(report.final_pdf_path)
+    if resolved is None or resolved.is_symlink() or not resolved.is_file():
+        return "El PDF final del reporte no está disponible"
+    if hashlib.sha256(resolved.read_bytes()).hexdigest() != report.final_pdf_sha256:
+        return "El PDF final del reporte no coincide con su SHA-256"
+    return None
+
+
+def _general_service_blockers(
+    db: Session, item: LabWorkOrder, equipment: LabWorkOrderEquipment, *, verify_files: bool
+) -> list[dict]:
+    base = {
+        "work_order_id": item.id,
+        "work_order_folio": item.folio,
+        "equipment_id": equipment.id,
+        "equipment_position": equipment.position,
+        "equipment": equipment.instrument,
+    }
+    report = equipment.current_technical_report
+    if report is None:
+        return [{**base, "code": TECHNICAL_REPORT_INCOMPLETE, "reason": "Sin reporte técnico"}]
+    if report.status != "completed":
+        return [{**base, "code": TECHNICAL_REPORT_INCOMPLETE, "reason": "El reporte técnico no está completado"}]
+    problem = _technical_report_pdf_problem(report, verify_file=verify_files)
+    if problem is not None:
+        return [{**base, "code": TECHNICAL_REPORT_DOCUMENT_INVALID, "reason": problem}]
+    deliveries = current_deliveries_for_equipment(db, equipment.id)
+    if len(deliveries) != 1:
+        reason = "Sin entrega vigente registrada" if not deliveries else "Más de una entrega vigente"
+        return [{**base, "code": TECHNICAL_REPORT_DELIVERY_INCOMPLETE, "reason": reason}]
+    return []
+
+
+def work_order_technical_blockers(
+    db: Session, members: list[LabWorkOrder], *, verify_files: bool = True
+) -> list[dict]:
+    """Qué le falta a cada equipo activo para estar técnicamente completo.
+    Calibración conserva su autoridad histórica (`_missing_completed_sheets`,
+    con su propia disciplina de hoja); Servicio General usa
+    TechnicalReport + PDF + entrega."""
+    general = [item for item in members if item.operational_category == "general_service"]
+    legacy = [item for item in members if item.operational_category != "general_service"]
+    blockers = [
+        {**item_blocker, "code": "LAB_FIELD_SHEETS_INCOMPLETE"}
+        for item_blocker in _missing_completed_sheets(legacy)
+    ]
+    for item in general:
+        for equipment in item.active_equipment:
+            blockers.extend(_general_service_blockers(db, item, equipment, verify_files=verify_files))
+    return blockers
+
+
+def equipment_technically_complete(
+    db: Session, item: LabWorkOrder, equipment: LabWorkOrderEquipment, *, verify_files: bool = True
+) -> bool:
+    """Autoridad por equipo, usada por contadores y proyecciones."""
+    if item.operational_category == "general_service":
+        return not _general_service_blockers(db, item, equipment, verify_files=verify_files)
+    return equipment.field_sheet is not None and equipment.field_sheet.status == "completed"
+
+
+def work_order_technically_complete(db: Session, item: LabWorkOrder) -> bool:
+    return bool(item.active_equipment) and not _general_service_blockers_for_order(db, item)
+
+
+def _general_service_blockers_for_order(db: Session, item: LabWorkOrder) -> list[dict]:
+    return [
+        blocker
+        for equipment in item.active_equipment
+        for blocker in _general_service_blockers(db, item, equipment, verify_files=True)
+    ]
+
+
+def _ensure_general_service_technical_completion(db: Session, members: list[LabWorkOrder]) -> None:
+    """Frontera de cierre de Servicio General: error estructurado, sin
+    terminología de FieldSheet."""
+    blockers = [
+        blocker for item in members for blocker in _general_service_blockers_for_order(db, item)
+    ]
+    blockers += [
+        {
+            "work_order_id": item.id, "work_order_folio": item.folio, "equipment_id": None,
+            "equipment_position": None, "equipment": f"OT {item.folio}",
+            "code": TECHNICAL_REPORT_INCOMPLETE, "reason": "La OT no tiene equipos",
+        }
+        for item in members if not item.active_equipment
+    ]
+    if not blockers:
+        return
+    code = next(c for c in _GENERAL_SERVICE_BLOCKER_PRIORITY if any(b["code"] == c for b in blockers))
+    names = ", ".join(sorted({b["equipment"] for b in blockers if b["code"] == code}))
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "code": code,
+            "message": _GENERAL_SERVICE_BLOCKER_MESSAGES[code].format(names=names),
+            "items": blockers,
+        },
+    )
+
+
+def sync_general_service_readiness(db: Session, item: LabWorkOrder, user: User) -> None:
+    """`in_progress <-> ready_to_close` de una OT de Servicio General según la
+    autoridad técnica. Única transición: la invocan la finalización del reporte,
+    el registro y la anulación de entregas (nunca Mobile)."""
+    if item.operational_category != "general_service":
+        return
+    complete = work_order_technically_complete(db, item)
+    previous = item.status
+    if previous == "in_progress" and complete:
+        item.status = "ready_to_close"
+    elif previous == "ready_to_close" and not complete:
+        item.status = "in_progress"
+    else:
+        return
+    write_audit_log(
+        db,
+        action="lab_work_order.ready_to_close" if item.status == "ready_to_close" else "lab_work_order.ready_to_close_revoked",
+        entity="lab_work_orders",
+        entity_id=item.id,
+        user_id=user.id,
+        previous_values={"status": previous},
+        new_values={"status": item.status},
+    )
+
+
 def equipment_certificate_folio_resolved(equipment: LabWorkOrderEquipment) -> bool:
     """Folio documental efectivamente resuelto: MYCA/MYCT reservado o
     autorizado; Vinculado sólo autorizado. Única regla, compartida por el
@@ -3129,6 +3313,22 @@ def _complete_members(
         raise HTTPException(
             status_code=409, detail="La cohorte requiere las firmas de técnico y cliente"
         )
+    # SG-4H: Servicio General cierra por TechnicalReport + PDF + entrega, nunca por
+    # FieldSheet/folio metrológico. La firma de recepción (exigida arriba) sólo
+    # prueba que la OT avanzó; no sustituye a la entrega. Calibración sigue el
+    # camino histórico con exactamente los mismos miembros que antes.
+    general_members = [item for item in members if item.operational_category == "general_service"]
+    if general_members:
+        if len(general_members) != len(members):
+            raise HTTPException(status_code=409, detail="La cohorte mezcla categorías operativas")
+        _ensure_general_service_technical_completion(db, members)
+        if any(item.status not in {"in_progress", "ready_to_close"} for item in members):
+            raise HTTPException(status_code=409, detail="INVALID_STATE_TRANSITION")
+        for item in members:
+            # Se re-valida todo aquí: un `ready_to_close` previo no es evidencia.
+            if item.status == "in_progress":
+                item.status = "ready_to_close"
+        return _finish_complete_members(db, work_order=work_order, members=members, user=user, scope=scope)
     if require_completed_sheets:
         # Cierre UX 2026-09: una OT con FieldSheets todavía en borrador ya no
         # bloquea el cierre de entrada -- si el usuario confirma, se

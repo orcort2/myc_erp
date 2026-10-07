@@ -78,7 +78,7 @@ import {
 } from '@/src/services/technical-report';
 import { LabInstallationReport } from '@/src/components/lab/LabInstallationReport';
 import { createTechnicalReportApi } from '@/src/services/technical-report-api';
-import { technicalReportPdfPath } from '@/src/services/technical-report';
+import { describeGeneralServiceClosure, technicalReportPdfPath } from '@/src/services/technical-report';
 import { LabTechnicalReportCard } from '@/src/components/lab/LabTechnicalReportCard';
 import { shouldResetFormAfterSubmit } from '@/src/services/lab-client-selector';
 import { generalWithLabClient } from '@/src/services/lab-work-order-client';
@@ -430,14 +430,10 @@ export default function WorkOrdersScreen() {
       .filter((exhibition) => exhibition.status === 'completed')
       .flatMap((exhibition) => exhibition.items.map((item) => item.equipment_id)),
   );
-  // Con entrega registrada el cierre histórico (/complete: FieldSheets + firma de RECEPCIÓN) no aplica a
-  // Servicio General, ni siquiera con el reporte ya completado: el cierre category-aware es SG-4H.
-  const generalServiceClosureDeferred = !!workOrder
-    && isGeneralService(workOrder)
-    && (deliveryStatus?.delivered_equipment ?? 0) > 0
-    && workOrder.equipment.some((item) => ['ready_for_signatures', 'completed'].includes(item.technical_report_status ?? ''));
-  const generalServiceAwaitingReportDocument = generalServiceClosureDeferred
-    && !!workOrder?.equipment.some((item) => item.technical_report_status === 'ready_for_signatures');
+  // Servicio General: el cierre lo habilita el backend (OT en ready_to_close); aquí sólo se elige el mensaje.
+  const generalServiceClosure = workOrder && isGeneralService(workOrder)
+    ? describeGeneralServiceClosure({ orderStatus: workOrder.status, equipment: workOrder.equipment, deliveredEquipmentIds })
+    : null;
 
   useEffect(() => {
     if (!workOrder || step !== 'signatures' || workOrder.status !== 'draft') {
@@ -1670,7 +1666,7 @@ export default function WorkOrdersScreen() {
   // (LAB_DRAFT_SHEETS_INVALID), no se completa ni se cierra nada -- se
   // muestran los blockers exactos y la OT sigue abierta.
   async function completeClosure(scope: LabClosureScope = closureScope, confirmDraftCompletion = false) {
-    if (!workOrder || generalServiceClosureDeferred) return;
+    if (!workOrder || (generalServiceClosure && !generalServiceClosure.canClose)) return;
     setBusy(true);
     try {
       const detail = await postLabCompletion({ confirmDraftCompletion, request, scope, workOrder });
@@ -1699,6 +1695,11 @@ export default function WorkOrdersScreen() {
           return `• ${equipmentLabel}: falta ${missing}`;
         }).join('\n');
         Alert.alert('No se puede cerrar todavía', `Completa estas hojas antes de cerrar:\n${bullets}`);
+        return;
+      }
+      if (error instanceof ApiError && error.code?.startsWith('TECHNICAL_REPORT_')) {
+        // Servicio General: el backend ya devuelve un mensaje legible (sin hojas de campo).
+        Alert.alert('No se puede cerrar todavía', error.message);
         return;
       }
       Alert.alert('No fue posible finalizar el grupo', error instanceof Error ? error.message : 'Intenta nuevamente');
@@ -2374,12 +2375,8 @@ export default function WorkOrdersScreen() {
                     workOrder={workOrder}
                   />}
                   {isGeneralService(workOrder) && renderDelivery()}
-                  {generalServiceClosureDeferred && deliveryPanel === 'closed' && (
-                    <AlertBanner tone="info">
-                      {generalServiceAwaitingReportDocument
-                        ? 'Entrega registrada. El reporte técnico está pendiente de generación documental final; la OT permanece abierta.'
-                        : 'La entrega y el reporte están completos. La OT está pendiente de cierre.'}
-                    </AlertBanner>
+                  {generalServiceClosure?.message && deliveryPanel === 'closed' && (
+                    <AlertBanner tone="info">{generalServiceClosure.message}</AlertBanner>
                   )}
                   <OperationalActionStack>
                     {editable && <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => setStep('capture')} />}
@@ -2390,7 +2387,7 @@ export default function WorkOrdersScreen() {
                         atómica (sección 31 del encargo: nunca vuelve a
                         aparecer una etapa manual de Captura Técnica ni cierre
                         aparte para esta modalidad). */}
-                    {workOrder.workflow_mode !== 'equipment_by_equipment' && canExecuteWorkOrders && !generalServiceClosureDeferred && (
+                    {workOrder.workflow_mode !== 'equipment_by_equipment' && canExecuteWorkOrders && (!generalServiceClosure || generalServiceClosure.canClose) && (
                       <PrimaryButton icon="arrow-right-circle" label="Continuar a cierre" onPress={() => setStep('review')} />
                     )}
                     {canDownloadLabPackages && <SecondaryButton icon="download" label="Descargar paquete disponible" onPress={() => downloadPackage('share')} />}
