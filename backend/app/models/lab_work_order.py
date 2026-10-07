@@ -56,6 +56,10 @@ class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
             "workflow_mode IN ('group', 'equipment_by_equipment')",
             name="ck_lab_work_order_workflow_mode",
         ),
+        CheckConstraint(
+            "operational_category IN ('calibration', 'general_service')",
+            name="ck_lab_work_order_operational_category",
+        ),
     )
 
     folio: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
@@ -105,6 +109,18 @@ class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
     # histórico: default/backfill es siempre "group".
     workflow_mode: Mapped[str] = mapped_column(
         String(30), default="group", server_default="group", nullable=False
+    )
+
+    # Categoría técnica de la OT.
+    # Todo histórico anterior a Servicio General pertenece a calibración.
+    # No confundir con LabWorkOrderEquipment.service_type, que sigue siendo
+    # exclusivamente accredited/traceable/linked para calibración.
+    operational_category: Mapped[str] = mapped_column(
+        String(40),
+        default="calibration",
+        server_default="calibration",
+        nullable=False,
+        index=True,
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     partially_closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -351,6 +367,25 @@ class LabWorkOrderEquipment(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Bas
         primaryjoin=(
             "and_(LabWorkOrderEquipment.id == foreign(FieldSheet.lab_equipment_id), "
             "FieldSheet.is_current.is_(True))"
+        ),
+        uselist=False,
+        viewonly=True,
+        lazy="selectin",
+    )
+
+    # Reportes técnicos de Servicio General. Igual que FieldSheet, se conserva
+    # el historial completo y current_technical_report identifica únicamente
+    # la revisión operativa vigente.
+    technical_reports: Mapped[list["TechnicalReport"]] = relationship(
+        back_populates="lab_equipment",
+        order_by="TechnicalReport.revision_number.desc()",
+    )
+
+    current_technical_report: Mapped["TechnicalReport | None"] = relationship(
+        "TechnicalReport",
+        primaryjoin=(
+            "and_(LabWorkOrderEquipment.id == foreign(TechnicalReport.lab_equipment_id), "
+            "TechnicalReport.is_current.is_(True))"
         ),
         uselist=False,
         viewonly=True,

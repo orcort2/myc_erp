@@ -302,3 +302,45 @@ test('DEV-0: canAccessDeveloper exige actor interno y developer.access explícit
   assert.equal(deriveMobileCapabilities(user('internal', ['*', 'developer.access'])).canAccessDeveloper, true);
   assert.equal(deriveMobileCapabilities(null).canAccessDeveloper, false);
 });
+
+test('technical_reports.capture habilita lectura y captura de reportes tecnicos', () => {
+  const capabilities = deriveMobileCapabilities(user('internal', [
+    'mobile.access',
+    'technical_reports.capture',
+  ]));
+
+  assert.equal(capabilities.canReadTechnicalReports, true);
+  assert.equal(capabilities.canCaptureTechnicalReports, true);
+  assert.equal(capabilities.canCaptureFieldSheets, false);
+});
+
+test('technical_reports.read permite lectura sin captura', () => {
+  const capabilities = deriveMobileCapabilities(user('internal', [
+    'mobile.access',
+    'technical_reports.read',
+  ]));
+
+  assert.equal(capabilities.canReadTechnicalReports, true);
+  assert.equal(capabilities.canCaptureTechnicalReports, false);
+});
+
+test('field_sheets.capture no concede capacidades de reportes tecnicos', () => {
+  const capabilities = deriveMobileCapabilities(user('internal', [
+    'mobile.access',
+    'field_sheets.capture',
+  ]));
+
+  assert.equal(capabilities.canCaptureFieldSheets, true);
+  assert.equal(capabilities.canReadTechnicalReports, false);
+  assert.equal(capabilities.canCaptureTechnicalReports, false);
+});
+
+test('un actor cliente no puede capturar reportes tecnicos aunque tenga el permiso', () => {
+  const capabilities = deriveMobileCapabilities(user('client', [
+    'mobile.access',
+    'technical_reports.capture',
+  ]));
+
+  assert.equal(capabilities.canReadTechnicalReports, true);
+  assert.equal(capabilities.canCaptureTechnicalReports, false);
+});

@@ -42,6 +42,10 @@ from app.schemas.field_sheet import FieldSheetRead, FieldSheetUpdate
 from app.schemas.field_sheet_template import FieldSheetTemplateRead
 from app.schemas.lab_field_sheet_external import LabExternalStructureWrite
 from app.schemas.operational_ticket import LabRevisionRead
+from app.schemas.technical_report import (
+    TechnicalReportCreate,
+    TechnicalReportRead,
+)
 from app.services.lab_work_orders import (
     add_equipment,
     assign_equipment_service,
@@ -98,6 +102,10 @@ from app.services.lab_field_sheets import (
 )
 from app.services.lab_field_sheets_external import apply_lab_external_structure
 from app.services.lab_packages import generate_lab_package
+from app.services.technical_reports import (
+    create_technical_report,
+    read_technical_report,
+)
 from app.models.linked_company import LinkedCompany
 from sqlalchemy import select
 from app.services.operational_tickets import get_revision_pdf, list_revisions, reopen_work_order_directly
@@ -164,13 +172,31 @@ def create_mobile_staff_group(
             status_code=403,
             detail="La creación directa de grupos está reservada a staff MYC",
         )
-    base = LabWorkOrderGroupCreate(**payload.model_dump(exclude={"service_order_id", "member_workflow_modes"}))
-    if payload.service_order_id is None:
-        # Grupo LAB sin vínculo ERP; sin configuración individual conserva el legacy.
-        return create_work_order_group(
-            db, base, context.user, operator_client_id=None,
-            member_workflow_modes=payload.member_workflow_modes,
+    base = LabWorkOrderGroupCreate(
+        **payload.model_dump(
+            exclude={
+                "service_order_id",
+                "member_workflow_modes",
+                "operational_category",
+            }
         )
+    )
+    if payload.service_order_id is None:
+        return create_work_order_group(
+            db,
+            base,
+            context.user,
+            operator_client_id=None,
+            member_workflow_modes=payload.member_workflow_modes,
+            operational_category=payload.operational_category,
+        )
+
+    if payload.operational_category != "calibration":
+        raise HTTPException(
+            status_code=409,
+            detail="El vínculo ERP actual sólo admite OTs LAB de calibración",
+        )
+
     return create_linked_work_order_group(
         db, base, payload.service_order_id, context.user,
         member_workflow_modes=payload.member_workflow_modes,
@@ -311,16 +337,33 @@ def create_lab_work_order(
             status_code=403,
             detail="Los actores externos deben solicitar un grupo de OT",
         )
-    base = LabWorkOrderCreate(**payload.model_dump(exclude={"service_order_id"}))
+    base = LabWorkOrderCreate(
+        **payload.model_dump(
+            exclude={"service_order_id", "operational_category"}
+        )
+    )
+
     if payload.service_order_id is None:
-        # Legacy exacto: OT LAB sin vínculo ERP.
         return create_work_order(
             db,
             base,
             context.user,
             operator_client_id=context.client_id,
+            operational_category=payload.operational_category,
         )
-    return create_linked_work_order(db, base, payload.service_order_id, context.user)
+
+    if payload.operational_category != "calibration":
+        raise HTTPException(
+            status_code=409,
+            detail="El vínculo ERP actual sólo admite OTs LAB de calibración",
+        )
+
+    return create_linked_work_order(
+        db,
+        base,
+        payload.service_order_id,
+        context.user,
+    )
 
 
 @router.get("", response_model=list[LabWorkOrderListItem])
@@ -665,6 +708,68 @@ def patch_lab_equipment_certificate_client(
         payload,
         context.user,
         operator_client_id=context.client_id,
+    )
+
+
+@router.post(
+    "/{work_order_id}/equipment/{equipment_id}/technical-report",
+    response_model=TechnicalReportRead,
+    status_code=201,
+)
+def post_technical_report(
+    work_order_id: int,
+    equipment_id: int,
+    payload: TechnicalReportCreate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(
+            "technical_reports.capture",
+            "lab_work_orders.use",
+        )
+    ),
+) -> TechnicalReportRead:
+    """Crea el documento técnico vigente de un equipo de Servicio General."""
+    ensure_lab_work_order_scope(
+        db,
+        context=context,
+        work_order_id=work_order_id,
+    )
+
+    return create_technical_report(
+        db,
+        work_order_id,
+        equipment_id,
+        payload,
+        context.user,
+    )
+
+
+@router.get(
+    "/{work_order_id}/equipment/{equipment_id}/technical-report",
+    response_model=TechnicalReportRead,
+)
+def get_technical_report(
+    work_order_id: int,
+    equipment_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(
+            "technical_reports.read",
+            "technical_reports.capture",
+            "lab_work_orders.use",
+        )
+    ),
+) -> TechnicalReportRead:
+    ensure_lab_work_order_scope(
+        db,
+        context=context,
+        work_order_id=work_order_id,
+    )
+
+    return read_technical_report(
+        db,
+        work_order_id,
+        equipment_id,
     )
 
 

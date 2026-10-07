@@ -111,6 +111,12 @@ def _query_with_relations():
         selectinload(LabWorkOrder.equipment).selectinload(
             LabWorkOrderEquipment.current_field_sheet
         ),
+        selectinload(LabWorkOrder.equipment).selectinload(
+            LabWorkOrderEquipment.technical_reports
+        ),
+        selectinload(LabWorkOrder.equipment).selectinload(
+            LabWorkOrderEquipment.current_technical_report
+        ),
         selectinload(LabWorkOrder.signature_session).selectinload(
             LabWorkOrderSignatureSession.signatures
         ),
@@ -349,6 +355,19 @@ def _read(db: Session, work_order: LabWorkOrder) -> LabWorkOrderRead:
         source = by_id[projected.id]
         projected.field_sheet_id = source.field_sheet.id if source.field_sheet else None
         projected.field_sheet_status = source.field_sheet.status if source.field_sheet else None
+
+        current_report = source.current_technical_report
+        projected.technical_report_id = current_report.id if current_report else None
+        projected.technical_report_type = (
+            current_report.report_type if current_report else None
+        )
+        projected.technical_report_folio = (
+            current_report.folio if current_report else None
+        )
+        projected.technical_report_status = (
+            current_report.status if current_report else None
+        )
+        projected.technical_report_revision_count = len(source.technical_reports)
     result.signature_scope = _recorded_signature_scope(
         db, work_order.signature_session_id
     )
@@ -506,9 +525,14 @@ def create_work_order(
     user: User,
     *,
     operator_client_id: int | None = None,
+    operational_category: Literal["calibration", "general_service"] = "calibration",
 ) -> LabWorkOrderRead:
     work_order = _create_work_order_row(
-        db, payload, user, operator_client_id=operator_client_id
+        db,
+        payload,
+        user,
+        operator_client_id=operator_client_id,
+        operational_category=operational_category,
     )
     commit_and_dispatch_notifications(db)
     return _read(db, _get(db, work_order.id))
@@ -520,6 +544,7 @@ def _create_work_order_row(
     user: User,
     *,
     operator_client_id: int | None = None,
+    operational_category: Literal["calibration", "general_service"] = "calibration",
 ) -> LabWorkOrder:
     """Create one LAB order as its own root; caller owns the commit."""
     values = payload.model_dump()
@@ -546,6 +571,7 @@ def _create_work_order_row(
         sequence_number=1,
         created_by_user_id=user.id,
         operator_client_id=operator_client_id,
+        operational_category=operational_category,
         **values,
     )
     db.add(work_order)
@@ -557,7 +583,11 @@ def _create_work_order_row(
         entity="lab_work_orders",
         entity_id=work_order.id,
         user_id=user.id,
-        new_values={"folio": work_order.folio, "root_work_order_id": work_order.id},
+        new_values={
+            "folio": work_order.folio,
+            "root_work_order_id": work_order.id,
+            "operational_category": work_order.operational_category,
+        },
     )
     return work_order
 
@@ -570,6 +600,7 @@ def _materialize_group(
     operator_client_id: int | None,
     origin: str,
     member_workflow_modes: list[Literal["group", "equipment_by_equipment"]] | None = None,
+    operational_category: Literal["calibration", "general_service"] = "calibration",
 ) -> LabWorkOrder:
     """Create an anticipated LAB group atomically; caller owns the commit."""
     # Validate before allocating folios, including direct service callers.
@@ -612,6 +643,7 @@ def _materialize_group(
             sequence_number=sequence_number,
             created_by_user_id=user.id,
             operator_client_id=operator_client_id,
+            operational_category=operational_category,
             **values,
         )
         db.add(item)
@@ -632,6 +664,7 @@ def _materialize_group(
             "quantity": payload.quantity,
             "folios": folios,
             "operator_client_id": operator_client_id,
+            "operational_category": operational_category,
             # Array position + 1 is sequence_number; homogeneous calls stay compact.
             **({"member_workflow_modes": member_workflow_modes}
                if member_workflow_modes is not None else {"workflow_mode": payload.workflow_mode}),
@@ -647,11 +680,17 @@ def create_work_order_group(
     *,
     operator_client_id: int | None,
     member_workflow_modes: list[Literal["group", "equipment_by_equipment"]] | None = None,
+    operational_category: Literal["calibration", "general_service"] = "calibration",
 ) -> LabWorkOrderRead:
     try:
         root = _materialize_group(
-            db, payload, user, operator_client_id=operator_client_id, origin="staff_direct",
+            db,
+            payload,
+            user,
+            operator_client_id=operator_client_id,
+            origin="staff_direct",
             member_workflow_modes=member_workflow_modes,
+            operational_category=operational_category,
         )
         commit_and_dispatch_notifications(db)
         return _read(db, _get(db, root.id))
@@ -875,6 +914,7 @@ def list_work_orders(
             reception_date=item.reception_date,
             status=item.status,
             workflow_mode=item.workflow_mode,
+            operational_category=item.operational_category,
             equipment_count=len(item.active_equipment),
             completed_equipment_count=sum(
                 1 for equipment in item.active_equipment
@@ -2463,6 +2503,7 @@ def create_additional_work_order(
         # "equipment_by_equipment" libremente (sección 5 -- nunca una
         # constraint de igualdad por root).
         workflow_mode=workflow_mode or source.workflow_mode,
+        operational_category=source.operational_category,
         **values,
     )
     db.add(additional)

@@ -36,9 +36,14 @@ class LabWorkOrderGroupCreate(LabWorkOrderCreate):
 class LabWorkOrderInternalCreate(LabWorkOrderCreate):
     service_order_id: int | None = Field(default=None, gt=0)
 
+    # Categoría técnica de la OT interna MYC Mobile.
+    # El contrato externo permanece sin este campo y conserva calibración.
+    operational_category: Literal["calibration", "general_service"] = "calibration"
+
 
 class LabWorkOrderInternalGroupCreate(LabWorkOrderGroupCreate):
     service_order_id: int | None = Field(default=None, gt=0)
+    operational_category: Literal["calibration", "general_service"] = "calibration"
     member_workflow_modes: list[Literal["group", "equipment_by_equipment"]] | None = None
 
     @model_validator(mode="after")
@@ -201,6 +206,14 @@ class LabEquipmentRead(LabEquipmentBase):
     folio_ticket_id: int | None = None
     field_sheet_id: int | None = None
     field_sheet_status: str | None = None
+
+    # Documento técnico vigente de Servicio General.
+    technical_report_id: int | None = None
+    technical_report_type: str | None = None
+    technical_report_folio: str | None = None
+    technical_report_status: str | None = None
+    technical_report_revision_count: int = 0
+
     certificate_client_mode: str = "order"
     final_lab_client_id: int | None = None
     final_client_company_snapshot: str | None = None
@@ -565,6 +578,7 @@ class LabWorkOrderRead(BaseModel):
     signature_required: bool
     signature_preserved: bool
     workflow_mode: str
+    operational_category: Literal["calibration", "general_service"]
     created_at: datetime
     updated_at: datetime
     equipment: list[LabEquipmentRead]
@@ -584,6 +598,7 @@ class LabWorkOrderListItem(BaseModel):
     reception_date: date
     status: str
     workflow_mode: str
+    operational_category: Literal["calibration", "general_service"]
     equipment_count: int
     completed_equipment_count: int = 0
     created_at: datetime

@@ -10,6 +10,8 @@ export type MobileCapabilities = {
   canCloseWorkOrders: boolean;
   canManageEquipment: boolean;
   canCaptureFieldSheets: boolean;
+  canReadTechnicalReports: boolean;
+  canCaptureTechnicalReports: boolean;
   canCaptureSignatures: boolean;
   canCreateTickets: boolean;
   canReadTickets: boolean;
@@ -75,6 +77,16 @@ export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilit
     canCaptureFieldSheets: hasLegacyLabAccess
       || hasPermission(permissions, 'field_sheets.capture')
       || hasPermission(permissions, 'lab_field_sheets.capture'),
+
+    canReadTechnicalReports: hasLegacyLabAccess
+      || hasPermission(permissions, 'technical_reports.read')
+      || hasPermission(permissions, 'technical_reports.capture'),
+
+    canCaptureTechnicalReports: user?.actor_type === 'internal' && (
+      hasLegacyLabAccess
+      || hasPermission(permissions, 'technical_reports.capture')
+    ),
+
     canCaptureSignatures: hasLegacyLabAccess
       || hasPermission(permissions, 'signatures.capture'),
     canCreateTickets: hasPermission(permissions, 'tickets.create')
