@@ -208,6 +208,14 @@ def _create_technical_report_uncommitted(
             detail="Los reportes técnicos sólo están disponibles para Servicio General",
         )
 
+    # Mismo lifecycle que la captura de FieldSheets: el reporte pertenece a la
+    # etapa técnica, es decir, DESPUÉS de firmar la recepción.
+    if order.status not in {"received_signed", "in_progress"}:
+        raise HTTPException(
+            status_code=409,
+            detail="La OT no admite captura técnica: firma primero la recepción",
+        )
+
     if payload.report_type not in ENABLED_TECHNICAL_REPORT_TYPES:
         raise HTTPException(
             status_code=409,
@@ -272,6 +280,20 @@ def _create_technical_report_uncommitted(
 
     db.add(report)
     db.flush()
+
+    # Primera mutación técnica real: received_signed -> in_progress, igual que
+    # la primera FieldSheet de calibración (backend-authoritative).
+    if order.status == "received_signed":
+        order.status = "in_progress"
+        write_audit_log(
+            db,
+            action="lab_work_order.capture_started",
+            entity="lab_work_orders",
+            entity_id=order.id,
+            user_id=user.id,
+            previous_values={"status": "received_signed"},
+            new_values={"status": "in_progress", "technical_report_id": report.id},
+        )
 
     write_audit_log(
         db,

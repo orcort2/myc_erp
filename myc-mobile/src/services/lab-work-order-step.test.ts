@@ -216,9 +216,9 @@ test('4, 5, 6. cada equipo en la revisión de recepción muestra cliente documen
   // (incluyendo "Pendiente" para vinculado sin autorizar, ver
   // lab-equipment-configured-payload.test.ts); aquí sólo se confirma que la
   // revisión de recepción efectivamente los muestra.
-  assert.match(source, /describeEquipmentSummary\(item, receptionOrder\.client_name\)/);
+  assert.match(source, /describeEquipmentSummary\(item, receptionOrder\.client_name, receptionOrder\.operational_category\)/);
   assert.match(source, /summary\.client.*summary\.service/);
-  assert.match(source, /Folio: \{summary\.folio\}/);
+  assert.match(source, /Folio: \{summary\.folio\}/); // sólo cuando existe (Servicio General no tiene folio de certificado)
 });
 
 test('10. received_signed muestra "Recepción firmada" con acción para continuar a captura técnica', () => {

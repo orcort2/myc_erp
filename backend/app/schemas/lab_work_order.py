@@ -274,7 +274,11 @@ class LabEquipmentServiceWrite(BaseModel):
 class LabEquipmentConfiguredCreate(BaseModel):
     """Fase 2E: alta integrada (equipo + cliente documental + servicio/folio)
     como una sola operación. Compone los contratos existentes en vez de
-    duplicarlos: cada sección se valida con su propio schema de Fase 1/2."""
+    duplicarlos: cada sección se valida con su propio schema de Fase 1/2.
+
+    Servicio General (operational_category='general_service') omite
+    `certificate_client` y `service`: no hay modalidad ni cliente documental
+    metrológicos, y el equipo conserva service_type=None."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -283,7 +287,10 @@ class LabEquipmentConfiguredCreate(BaseModel):
         default=None,
         description="Si se omite, el equipo queda en certificate_client_mode='order' (default).",
     )
-    service: LabEquipmentServiceWrite
+    # Calibración exige modalidad metrológica; Servicio General la prohíbe.
+    # La obligatoriedad depende de la categoría de la OT (no del payload), por
+    # lo que se valida en el servicio con la OT bloqueada, no aquí.
+    service: LabEquipmentServiceWrite | None = None
 
 
 class LabManualFolioRequest(BaseModel):

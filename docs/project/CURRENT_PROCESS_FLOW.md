@@ -517,6 +517,28 @@ esa empresa y protege al último administrador activo.
 - Estados legacy de certificados se normalizan para compatibilidad.
 - Las firmas directas y el número de OT en `service_orders` siguen presentes como compatibilidad junto a las estructuras vigentes por ciclos y `service_work_orders`.
 
+## Servicio General en OT LAB móvil (SG-3)
+
+Una OT LAB nace con `operational_category`: `calibration` (default) o
+`general_service`. Comparten el lifecycle `draft → recepción firmada
+(received_signed) → captura técnica (in_progress) → cierre`; sólo cambia el
+documento técnico y la configuración del equipo:
+
+- `calibration`: modalidad (acreditado/trazable/vinculado), folio MYCA/MYCT/
+  vinculado, cliente documental y FieldSheet. Sin cambios.
+- `general_service`: el equipo/producto no lleva modalidad, folio de
+  certificado ni cliente documental (`service_type=null`); su documento es un
+  `TechnicalReport` (hoy sólo Installation, folio `MYC-INMM-AA-XXXX`). Sólo usa
+  la modalidad de trabajo por grupo y no admite el puente ERP de calibración.
+
+`_equipment_reception_gap` es la autoridad category-aware de la recepción:
+calibración conserva sus blockers; Servicio General no tiene blockers
+metrológicos y firma con el mismo flujo/modal de recepción. El reporte técnico
+se crea desde la captura técnica (el backend rechaza crearlo en `draft`) y la
+primera creación promueve `received_signed → in_progress`. Formulario,
+evidencias, firma final de conformidad, PDF y cierre de Servicio General
+pertenecen a SG-4.
+
 ## Flujo temporal OT LAB móvil
 
 ```text

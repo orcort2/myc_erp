@@ -194,11 +194,11 @@ test('error y vacío son estados explícitos', async () => {
 });
 
 test('work-orders: el campo es interno, separado de purchase_order y sólo al crear', () => {
-  assert.match(workOrders, /\{user\.actor_type === 'internal' && canAttachErpLink\(groupMode, !!workOrder\) && \(/);
+  assert.match(workOrders, /\{user\.actor_type === 'internal' && canAttachErpLink\(groupMode, !!workOrder\) && categoryAllowsErpLink\(operationalCategory\) && \(/);
   assert.match(workOrders, /<FormSection title="Vincular con cotización ERP \(opcional\)">/);
   assert.match(workOrders, /<ErpCalibrationLinkField labClientName=\{general\.client_name\} onChange=\{setErpLink\}/);
   assert.match(workOrders, /<Field label="Orden de compra \/ cotización" value=\{general\.purchase_order\}/);
-  assert.match(workOrders, /body: JSON\.stringify\(withErpLink\(\{[\s\S]*?\}, erpLink, groupMode, !!workOrder\)\)/);
+  assert.match(workOrders, /body: JSON\.stringify\(withOperationalCategory\(withErpLink\(\{[\s\S]*?\}, erpLink, groupMode, !!workOrder\), operationalCategory, groupMode, !!workOrder\)\)/);
   assert.match(workOrders, /setGeneral\(emptyGeneral\(\)\);\n\s*setErpLink\(null\);/);
 });
 

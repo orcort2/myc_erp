@@ -56,10 +56,25 @@ function installDom() {
   return doc;
 }
 
-export type Probe = { log: string[]; requests: string[] };
+export type Probe = {
+  log: string[];
+  requests: string[];
+  /** Peticiones con cuerpo ya parseado, en orden de emisión. */
+  calls: { method: string; path: string; body: any }[];
+  /** Eventos publicados con publishLocalChange. */
+  published: Record<string, unknown>[];
+};
 export type Env = {
   user: Record<string, unknown>;
   detail: any; sheet: any;
+  /** TechnicalReport devuelto por POST/GET technical-report. */
+  report: any;
+  /** Respuesta de POST /lab-work-orders (alta de OT). */
+  created: any;
+  /** Respuesta de POST .../signatures (recepción firmada). */
+  signed: any;
+  /** Si es true, POST technical-report responde 409. */
+  failTechnicalReportCreate: boolean;
   /** Respuesta por OT para GET detalle; si no existe se usa `detail`. */
   details: Record<number, any>;
   /** Gate opcional por petición de detalle (secuencia de llamadas). */
@@ -77,7 +92,7 @@ export async function createLifecycleHarness() {
   const { createRoot } = nodeRequire('react-dom/client');
   const { act, createElement: h, useEffect, useRef } = React;
   const ts_ = ts;
-  const probe: Probe = { log: [], requests: [] };
+  const probe: Probe = { log: [], requests: [], calls: [], published: [] };
   const registry = new Map<string, any>();
   const stubs = new Map<string, any>();
   const textOf = (node: any): string => (Array.isArray(node) ? node.map(textOf).join('') : typeof node === 'string' || typeof node === 'number' ? String(node) : node?.props ? textOf(node.props.children) : '');
@@ -89,7 +104,7 @@ export async function createLifecycleHarness() {
         else if (name === 'Pressable' && typeof props.onPress === 'function') registry.set(`pressable:${textOf(props.children)}`, props);
         if (name === 'Modal' && props.visible === false) return null;
         const children = typeof props.children === 'function' ? null : props.children;
-        return h('div', null, typeof props.label === 'string' ? props.label : null, children);
+        return h('div', null, typeof props.label === 'string' ? props.label : null, name === 'ReadOnlyField' && typeof props.value === 'string' ? props.value : null, children);
       };
       C.displayName = name; stubs.set(name, C);
     }
@@ -98,13 +113,23 @@ export async function createLifecycleHarness() {
   const allStubs = new Proxy({}, { get: (_t, key) => stub(String(key)) });
   const env: Env = {
     user: { id: 1, full_name: 'Tec', actor_type: 'internal', permissions: ['*', 'mobile.access', 'lab_work_orders.use'] },
-    detail: null, sheet: null, details: {}, detailGates: [], sheetWriteGates: [], params: {}, listeners: new Set(), session: { access_token: 't' },
+    detail: null, sheet: null, report: null, created: null, signed: null, failTechnicalReportCreate: false, details: {}, detailGates: [], sheetWriteGates: [], params: {}, listeners: new Set(), session: { access_token: 't' },
   };
   const response = (body: unknown) => ({ ok: true, status: 200, headers: { get: () => null }, json: async () => body });
   let detailCalls = 0;
   let sheetWrites = 0;
-  const authorizedFetch = async (path: string, init: { method?: string } = {}) => {
+  const authorizedFetch = async (path: string, init: { method?: string; body?: string } = {}) => {
     probe.requests.push(`${init.method ?? 'GET'} ${path}`);
+    probe.calls.push({ method: init.method ?? 'GET', path, body: init.body ? JSON.parse(init.body) : undefined });
+    if (/\/signatures(\/individual)?$/.test(path) && init.method === 'POST') return response(env.signed ?? env.detail);
+    if (/\/technical-report$/.test(path)) {
+      if (init.method === 'POST' && env.failTechnicalReportCreate) {
+        return { ok: false, status: 409, headers: { get: () => null }, json: async () => ({ detail: 'El equipo ya tiene un reporte técnico vigente' }) };
+      }
+      return response(env.report);
+    }
+    if (/\/equipment\/configured$|\/equipment\/\d+\/configured$/.test(path)) return response(env.detail);
+    if (/\/mobile\/v1\/technician\/lab-work-orders(\/groups)?$/.test(path) && init.method === 'POST') return response(env.created ?? env.detail);
     if (/field-sheet-templates/.test(path)) return response([]);
     if (/\/delivery$/.test(path)) return response({ exhibitions: [], delivered_equipment: 0, total_equipment: 1, pending_partial_delivery_ticket_id: null });
     if (/\/field-sheet$/.test(path)) {
@@ -143,14 +168,14 @@ export async function createLifecycleHarness() {
     '@expo/vector-icons': allStubs,
     '@/src/auth/AuthProvider': { useAuth: () => ({ authorizedFetch, isLoading: false, refreshSession: async () => env.session, session: env.session, user: env.user }) },
     '@/src/notifications/NotificationSyncProvider': {
-      useNotificationSync: () => ({ publishLocalChange() {}, subscribe: (l: (e: any) => void) => { env.listeners.add(l); return () => env.listeners.delete(l); } }),
+      useNotificationSync: () => ({ publishLocalChange(event: Record<string, unknown>) { probe.published.push(event); }, subscribe: (l: (e: any) => void) => { env.listeners.add(l); return () => env.listeners.delete(l); } }),
     },
     '@/src/api/client': { apiUrl: (p: string) => p, ApiError: class extends Error {}, readApiErrorDetail: async () => ({ message: 'x' }) },
     '@/src/design/primitives': new Proxy({}, { get: (_t, key) => (key === 'FadeIn' ? FadeIn : stub(String(key))) }),
   };
   const stubbedModules = new Set([
-    '@/src/components/signatures/MobileSignatureFlow', '@/src/components/lab/LabEquipmentForm', '@/src/components/lab/LabDeliveryFlow',
-    '@/src/components/lab/LabPartialDeliveryRequest', '@/src/components/lab/LabWorkOrderClientField', '@/src/components/lab/ErpCalibrationLinkField',
+    '@/src/components/lab/LabClientSelector', '@/src/components/lab/LabDeliveryFlow',
+    '@/src/components/lab/LabPartialDeliveryRequest', '@/src/components/lab/ErpCalibrationLinkField',
     '@/src/design/MycDatePickerField',
   ]);
   const cache = new Map<string, { exports: any }>();
@@ -174,6 +199,14 @@ export async function createLifecycleHarness() {
   const requireFrom = (dir: string, name: string): any => {
     if (name in ports) return ports[name];
     if (stubbedModules.has(name)) return allStubs;
+    if (name === '@/src/components/signatures/MobileSignatureFlow') {
+      // Expone onSubmit/onComplete: la prueba firma con el flujo real de WorkOrdersScreen.
+      return { MobileSignatureFlow: (props: any) => { registry.set('MobileSignatureFlow', props); return null; } };
+    }
+    if (name === '@/src/components/lab/LabWorkOrderClientField') {
+      // Expone sus props (onSelect) para elegir cliente desde la prueba.
+      return { LabWorkOrderClientField: (props: any) => { registry.set('LabWorkOrderClientField', props); return null; } };
+    }
     if (name === '@/src/components/lab/LabTechnicalCapture') {
       // Mismo componente real, observado: cada instancia registra montaje/desmontaje.
       wrapped ??= { LabTechnicalCapture: (props: any) => {

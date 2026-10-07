@@ -729,6 +729,12 @@ def post_technical_report(
     ),
 ) -> TechnicalReportRead:
     """Crea el documento técnico vigente de un equipo de Servicio General."""
+    if context.actor_type != "internal":
+        # Misma regla que Mobile (canCaptureTechnicalReports): sólo staff MYC.
+        raise HTTPException(
+            status_code=403,
+            detail="Los reportes técnicos sólo los captura staff MYC",
+        )
     ensure_lab_work_order_scope(
         db,
         context=context,

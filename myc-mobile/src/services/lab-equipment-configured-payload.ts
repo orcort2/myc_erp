@@ -1,4 +1,4 @@
-import type { LabEquipment } from '@/src/types/lab-work-order';
+import type { LabEquipment, LabOperationalCategory } from '@/src/types/lab-work-order';
 
 export type EquipmentBasicData = {
   instrument: string;
@@ -148,24 +148,77 @@ export type EquipmentFormValues = {
   equipment: EquipmentBasicData;
   documentaryClient: DocumentaryClientSelection;
   service: ServiceSelection;
+  /** Ausente o 'calibration': flujo metrológico histórico. */
+  operationalCategory?: 'calibration';
 };
+
+/** Servicio General: sólo datos base del equipo/producto. Sin cliente
+ * documental ni modalidad metrológica -- el equipo conserva service_type=null. */
+export type GeneralServiceEquipmentFormValues = {
+  equipment: EquipmentBasicData;
+  operationalCategory: 'general_service';
+};
+
+export type AnyEquipmentFormValues = EquipmentFormValues | GeneralServiceEquipmentFormValues;
+
+export function isGeneralServiceValues(values: AnyEquipmentFormValues): values is GeneralServiceEquipmentFormValues {
+  return values.operationalCategory === 'general_service';
+}
+
+export type GeneralServiceEquipmentPayload = {
+  equipment: EquipmentBasicData & { expected_edit_version?: number };
+};
+
+/** Builds the POST/PATCH .../equipment/configured body for Servicio General:
+ * sin `service` ni `certificate_client`, jamás un service_type ficticio. */
+export function buildGeneralServiceEquipmentPayload(
+  equipment: EquipmentBasicData,
+  expectedEditVersion?: number,
+): GeneralServiceEquipmentPayload {
+  return {
+    equipment: expectedEditVersion == null ? equipment : { ...equipment, expected_edit_version: expectedEditVersion },
+  };
+}
+
+/** Única autoridad del cuerpo de ALTA por categoría; calibración delega sin
+ * cambios en buildConfiguredEquipmentPayload. */
+export function buildEquipmentCreateBody(values: GeneralServiceEquipmentFormValues, expectedEditVersion?: number): GeneralServiceEquipmentPayload;
+export function buildEquipmentCreateBody(values: EquipmentFormValues, expectedEditVersion?: number): ConfiguredEquipmentPayload;
+export function buildEquipmentCreateBody(values: AnyEquipmentFormValues, expectedEditVersion?: number): ConfiguredEquipmentPayload | GeneralServiceEquipmentPayload;
+export function buildEquipmentCreateBody(values: AnyEquipmentFormValues, expectedEditVersion?: number): ConfiguredEquipmentPayload | GeneralServiceEquipmentPayload {
+  if (isGeneralServiceValues(values)) return buildGeneralServiceEquipmentPayload(values.equipment, expectedEditVersion);
+  return buildConfiguredEquipmentPayload(values.equipment, values.documentaryClient, values.service, expectedEditVersion);
+}
+
+function basicDataFromEquipment(equipment: LabEquipment): EquipmentBasicData {
+  return {
+    instrument: equipment.instrument,
+    brand: equipment.brand,
+    model: equipment.model,
+    identification: equipment.identification,
+    serial_number: equipment.serial_number,
+    report_number: equipment.report_number,
+    observations: equipment.observations,
+    is_good_condition: equipment.is_good_condition,
+  };
+}
 
 /** Fase 2 hardening: hidrata el formulario desde un equipo ya guardado (modo
  * edición). Los snapshots que se muestran vienen de lo ya persistido -- son
  * lectura, no una nueva autoridad; cualquier cambio real vuelve a pasar por
  * buildCertificateClientPayload/el backend. */
-export function hydrateEquipmentFormValues(equipment: LabEquipment): EquipmentFormValues {
+export function hydrateEquipmentFormValues(equipment: LabEquipment, category: 'general_service'): GeneralServiceEquipmentFormValues;
+export function hydrateEquipmentFormValues(equipment: LabEquipment, category?: 'calibration'): EquipmentFormValues;
+export function hydrateEquipmentFormValues(equipment: LabEquipment, category: LabOperationalCategory): AnyEquipmentFormValues;
+export function hydrateEquipmentFormValues(
+  equipment: LabEquipment,
+  category: LabOperationalCategory = 'calibration',
+): AnyEquipmentFormValues {
+  if (category === 'general_service') {
+    return { equipment: basicDataFromEquipment(equipment), operationalCategory: 'general_service' };
+  }
   return {
-    equipment: {
-      instrument: equipment.instrument,
-      brand: equipment.brand,
-      model: equipment.model,
-      identification: equipment.identification,
-      serial_number: equipment.serial_number,
-      report_number: equipment.report_number,
-      observations: equipment.observations,
-      is_good_condition: equipment.is_good_condition,
-    },
+    equipment: basicDataFromEquipment(equipment),
     documentaryClient: equipment.certificate_client_mode === 'different'
       ? {
         mode: 'different',
@@ -211,11 +264,16 @@ export type EquipmentEditChanges = {
  * hasEquipmentEditChanges): si algo cambió, se manda la configuración
  * completa y el backend aplica o revierte todo junto. */
 export function diffEquipmentEdit(
-  initial: EquipmentFormValues,
-  current: EquipmentFormValues,
+  initial: AnyEquipmentFormValues,
+  current: AnyEquipmentFormValues,
 ): EquipmentEditChanges {
+  const equipmentChanged = JSON.stringify(initial.equipment) !== JSON.stringify(current.equipment);
+  // Servicio General no tiene cliente documental ni modalidad: sólo el equipo cambia.
+  if (isGeneralServiceValues(initial) || isGeneralServiceValues(current)) {
+    return { equipmentChanged, certificateClientChanged: false, serviceChanged: false };
+  }
   return {
-    equipmentChanged: JSON.stringify(initial.equipment) !== JSON.stringify(current.equipment),
+    equipmentChanged,
     certificateClientChanged: initial.documentaryClient.mode !== current.documentaryClient.mode
       || initial.documentaryClient.finalLabClientId !== current.documentaryClient.finalLabClientId
       || (current.documentaryClient.mode === 'different'
@@ -239,10 +297,22 @@ export function hasEquipmentEditChanges(changes: EquipmentEditChanges): boolean 
  * concurrency. There is deliberately only one shape here -- edition sends the
  * full configuration in a single call, never partial per-field patches. */
 export function buildEquipmentEditRequestBody(
+  values: GeneralServiceEquipmentFormValues,
+  expectedEditVersion: number,
+): GeneralServiceEquipmentPayload & { equipment: EquipmentBasicData & { expected_edit_version: number } };
+export function buildEquipmentEditRequestBody(
   values: EquipmentFormValues,
   expectedEditVersion: number,
-): ConfiguredEquipmentPayload & { equipment: EquipmentBasicData & { expected_edit_version: number } } {
-  const payload = buildConfiguredEquipmentPayload(values.equipment, values.documentaryClient, values.service);
+): ConfiguredEquipmentPayload & { equipment: EquipmentBasicData & { expected_edit_version: number } };
+export function buildEquipmentEditRequestBody(
+  values: AnyEquipmentFormValues,
+  expectedEditVersion: number,
+): (ConfiguredEquipmentPayload | GeneralServiceEquipmentPayload) & { equipment: EquipmentBasicData & { expected_edit_version: number } };
+export function buildEquipmentEditRequestBody(
+  values: AnyEquipmentFormValues,
+  expectedEditVersion: number,
+): (ConfiguredEquipmentPayload | GeneralServiceEquipmentPayload) & { equipment: EquipmentBasicData & { expected_edit_version: number } } {
+  const payload = buildEquipmentCreateBody(values);
   return { ...payload, equipment: { ...payload.equipment, expected_edit_version: expectedEditVersion } };
 }
 
@@ -256,10 +326,13 @@ export type EquipmentSummary = {
   client: string;
   service: string;
   linkedCompany: string | null;
-  folio: string;
+  /** null en Servicio General: no existe folio de certificado. */
+  folio: string | null;
 };
 
-/** Compact, ID-free summary for an already-saved equipment row (Fase 2I). */
+/** Compact, ID-free summary for an already-saved equipment row (Fase 2I).
+ * Servicio General no tiene cliente documental, modalidad ni folio de
+ * certificado: su resumen es el cliente de la OT y la categoría. */
 export function describeEquipmentSummary(
   equipment: Pick<
     LabEquipment,
@@ -271,7 +344,11 @@ export function describeEquipmentSummary(
     | 'folio_status'
   >,
   workOrderClientName: string,
+  category: LabOperationalCategory = 'calibration',
 ): EquipmentSummary {
+  if (category === 'general_service') {
+    return { client: workOrderClientName, service: 'SERVICIO GENERAL', linkedCompany: null, folio: null };
+  }
   const client = equipment.certificate_client_mode === 'different'
     ? (equipment.final_client_company_snapshot || '-')
     : workOrderClientName;

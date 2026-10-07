@@ -538,6 +538,23 @@ def create_work_order(
     return _read(db, _get(db, work_order.id))
 
 
+def _ensure_category_workflow_modes(
+    operational_category: str,
+    modes: list[str],
+) -> None:
+    """Servicio General no usa FieldSheets, así que `equipment_by_equipment`
+    (capturar una hoja completa por equipo antes de la firma final) no tiene
+    sentido ahí: su lifecycle es group (recepción -> captura técnica ->
+    reporte)."""
+    if operational_category == "general_service" and any(
+        mode == "equipment_by_equipment" for mode in modes
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Servicio General sólo admite la modalidad de trabajo por grupo",
+        )
+
+
 def _create_work_order_row(
     db: Session,
     payload: LabWorkOrderCreate,
@@ -547,6 +564,7 @@ def _create_work_order_row(
     operational_category: Literal["calibration", "general_service"] = "calibration",
 ) -> LabWorkOrder:
     """Create one LAB order as its own root; caller owns the commit."""
+    _ensure_category_workflow_modes(operational_category, [payload.workflow_mode])
     values = payload.model_dump()
     lab_client_id = values.get("lab_client_id")
     if lab_client_id is not None:
@@ -609,6 +627,9 @@ def _materialize_group(
         or any(mode not in ("group", "equipment_by_equipment") for mode in member_workflow_modes)
     ):
         raise ValueError("member_workflow_modes debe contener quantity modalidades válidas")
+    _ensure_category_workflow_modes(
+        operational_category, list(member_workflow_modes or [payload.workflow_mode])
+    )
     values = payload.model_dump(exclude={"quantity"})
     lab_client_id = values.get("lab_client_id")
     if lab_client_id is not None:
@@ -1820,6 +1841,9 @@ def _set_equipment_certificate_client_core(
     el LabClient real. Sólo si no hay final_lab_client_id (cliente final sin
     referencia de catálogo) se confía en el snapshot que trae el payload.
     """
+    _ensure_not_general_service(
+        equipment.work_order, "El cliente documental de certificado"
+    )
     company_snapshot = payload.final_client_company_snapshot
     address_snapshot = payload.final_client_address_snapshot
     attention_snapshot = payload.final_client_attention_snapshot
@@ -2042,6 +2066,7 @@ def _assign_equipment_service_core(
     - Folio 'authorized' (autorización explícita de un actor con
       lab_folios.resolve) y hoja ya completada siguen bloqueando con 409.
     """
+    _ensure_not_general_service(work_order, "La modalidad metrológica")
     folio_already_secured = (
         equipment.certificate_folio is not None
         or equipment.folio_status in {"reserved", "authorized"}
@@ -2203,6 +2228,43 @@ def assign_equipment_service(
     return _read(db, _get(db, work_order.id))
 
 
+def _ensure_calibration_equipment_config(
+    work_order: LabWorkOrder,
+    payload: LabEquipmentConfiguredCreate,
+) -> None:
+    """Contrato por categoría del alta/edición integrada de equipo.
+
+    - calibration: la modalidad metrológica (`service`) es obligatoria, igual
+      que antes de Servicio General.
+    - general_service: no existe configuración metrológica; recibirla es un
+      error explícito (nunca se ignora en silencio ni se rellena con
+      placeholders) y el equipo conserva service_type=None.
+    """
+    if work_order.operational_category == "general_service":
+        if payload.service is not None or payload.certificate_client is not None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Servicio General no admite modalidad metrológica ni "
+                    "cliente documental de certificado"
+                ),
+            )
+        return
+    if payload.service is None:
+        raise HTTPException(
+            status_code=422,
+            detail="La modalidad de servicio es obligatoria para calibración",
+        )
+
+
+def _ensure_not_general_service(work_order: LabWorkOrder, what: str) -> None:
+    if work_order.operational_category == "general_service":
+        raise HTTPException(
+            status_code=409,
+            detail=f"{what} no aplica a una OT de Servicio General",
+        )
+
+
 def create_configured_equipment(
     db: Session,
     work_order_id: int,
@@ -2226,6 +2288,7 @@ def create_configured_equipment(
         work_order = _get(db, work_order_id, lock=True)
         group = _group(db, work_order, lock=True)
         _ensure_members_editable([work_order])
+        _ensure_calibration_equipment_config(work_order, payload)
         editable_members = _editable_group_members(group)
         equipment_values = payload.equipment.model_dump()
         expected_edit_version = equipment_values.pop("expected_edit_version", None)
@@ -2234,6 +2297,11 @@ def create_configured_equipment(
         equipment = _add_equipment_core(
             db, work_order, group, editable_members, equipment_values, user
         )
+
+        if work_order.operational_category == "general_service":
+            # Sin modalidad, folio ni cliente documental metrológicos.
+            commit_and_dispatch_notifications(db)
+            return _read(db, _get(db, work_order.id))
 
         certificate_client = payload.certificate_client
         if certificate_client is not None and certificate_client.certificate_client_mode == "different":
@@ -2290,6 +2358,7 @@ def update_configured_equipment(
         work_order = _get(db, work_order_id, lock=True)
         group = _group(db, work_order, lock=True)
         _ensure_members_editable([work_order])
+        _ensure_calibration_equipment_config(work_order, payload)
         editable_members = _editable_group_members(group)
         equipment = db.scalar(
             select(LabWorkOrderEquipment)
@@ -2311,6 +2380,11 @@ def update_configured_equipment(
         version_before = max(item.edit_version for item in editable_members)
 
         _update_equipment_core(db, work_order, group, editable_members, equipment, equipment_values, user)
+
+        if work_order.operational_category == "general_service":
+            # Sin cliente documental ni modalidad que reconciliar.
+            commit_and_dispatch_notifications(db)
+            return _read(db, _get(db, work_order.id))
 
         # A diferencia de create_configured_equipment, aquí SIEMPRE se aplica
         # el cliente documental (incluido el 'order' implícito por omisión):
@@ -2600,6 +2674,10 @@ def _equipment_reception_gap(equipment: LabWorkOrderEquipment) -> str | None:
     'order' siempre hereda client_name (NOT NULL en la OT) y 'different'
     siempre exige un snapshot de empresa no vacío (CHECK constraint de Fase
     1), así que ambos modos son resolubles por construcción."""
+    if equipment.work_order.operational_category == "general_service":
+        # Servicio General no tiene modalidad ni folio metrológicos: los datos
+        # base del equipo/producto ya son obligatorios en LabEquipmentBase.
+        return None
     if equipment.service_type is None:
         return "Selecciona el tipo de servicio"
     if equipment.service_type in {"accredited", "traceable"} and equipment.folio_status not in {
@@ -3804,6 +3882,9 @@ def change_lab_work_order_workflow_mode(
     'group'/'equipment_by_equipment' libremente (sección 5), y esta acción
     afecta sólo la fila indicada."""
     work_order = _get(db, work_order_id, lock=True)
+    _ensure_category_workflow_modes(
+        work_order.operational_category, [payload.new_workflow_mode]
+    )
     if work_order.workflow_mode == payload.new_workflow_mode:
         raise HTTPException(status_code=409, detail="La OT ya tiene esa modalidad de trabajo")
     if work_order.status != "draft" or work_order.signature_session_id is not None:

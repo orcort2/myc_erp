@@ -323,7 +323,10 @@ def test_quotation_contact_migration_is_the_single_head():
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert script.get_heads() == ["c3e6a9b2d4f8"]
+    # SG-2 (technical reports) sits on top of the quotation-contact migration.
+    assert script.get_heads() == ["ef09a7ea9e97"]
+    lineage = {rev.revision for rev in script.walk_revisions()}
+    assert "c3e6a9b2d4f8" in lineage
     assert script.get_revision("c3e6a9b2d4f8").down_revision == "b2d5f8a1c3e7"
     column = Quotation.__table__.c.contact_id
     assert column.nullable and next(iter(column.foreign_keys)).ondelete == "SET NULL"

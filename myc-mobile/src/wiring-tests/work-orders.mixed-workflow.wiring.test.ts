@@ -59,8 +59,8 @@ test('nunca se refetch/parcha localmente: la respuesta de backend reemplaza el w
 });
 
 test('la creación directa muestra modalidad y aplicación; la solicitud externa queda excluida', () => {
-  assert.match(source, /!workOrder && groupMode !== 'request' && \(\s*<FormSection title="Modalidad de trabajo"/);
-  assert.match(source, /!workOrder && groupMode === 'direct' && \(\s*<FormSection title="Aplicación de modalidad"/);
+  assert.match(source, /!workOrder && groupMode !== 'request' && categoryAllowsWorkflowChoice\(operationalCategory\) && \(\s*<FormSection title="Modalidad de trabajo"/);
+  assert.match(source, /!workOrder && groupMode === 'direct' && categoryAllowsWorkflowChoice\(operationalCategory\) && \(\s*<FormSection title="Aplicación de modalidad"/);
   assert.match(source, /memberWorkflowModes\.map/);
   assert.match(source, /onChangeText=\{changeGroupQuantity\}/);
 });

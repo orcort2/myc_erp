@@ -99,7 +99,7 @@ class TechnicalReport(IntegerPkMixin, TimestampMixin, Base):
         JSON,
         nullable=False,
         default=dict,
-        server_default=text("'{}'::json"),
+        server_default=text("'{}'"),
     )
 
     # Snapshot de OT + cliente + equipo usado por esta revisión.
@@ -223,6 +223,10 @@ class TechnicalReportEvidence(IntegerPkMixin, TimestampMixin, Base):
             "position",
             name="uq_technical_report_evidence_position",
         ),
+        # Nombres explícitos: son los que crea la migración ef09a7ea9e97
+        # (index=True generaría ix_<tabla>_<columna> y produciría drift).
+        Index("ix_technical_report_evidence_report_id", "technical_report_id"),
+        Index("ix_technical_report_evidence_type", "evidence_type"),
     )
 
     technical_report_id: Mapped[int] = mapped_column(
@@ -232,13 +236,11 @@ class TechnicalReportEvidence(IntegerPkMixin, TimestampMixin, Base):
             ondelete="CASCADE",
         ),
         nullable=False,
-        index=True,
     )
 
     evidence_type: Mapped[str] = mapped_column(
         String(30),
         nullable=False,
-        index=True,
     )
 
     storage_path: Mapped[str] = mapped_column(

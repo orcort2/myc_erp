@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import type { LabClient } from '@/src/types/lab-work-order';
+import type { LabClient, LabOperationalCategory } from '@/src/types/lab-work-order';
 import { LabClientSelector } from '@/src/components/lab/LabClientSelector';
 import {
   ActionRow,
@@ -9,6 +9,7 @@ import {
   PrimaryButton,
   SecondaryButton,
 } from '@/src/design/primitives';
+import { equipmentFormProfile } from '@/src/services/lab-operational-category';
 import {
   defaultDocumentaryClient,
   selectFinalClient,
@@ -16,6 +17,7 @@ import {
   validateServiceSelection,
   type DocumentaryClientSelection,
   type EquipmentBasicData,
+  type AnyEquipmentFormValues,
   type EquipmentFormValues,
   type LabServiceType,
 } from '@/src/services/lab-equipment-configured-payload';
@@ -27,10 +29,12 @@ type Props = {
   /** Sólo aplica en mode='edit': el folio ya asignado se muestra de solo
    * lectura -- nunca se edita desde este formulario (Fase 2 hardening). */
   folioDisplay?: string | null;
-  initialValues?: EquipmentFormValues;
+  initialValues?: AnyEquipmentFormValues;
   mode: 'create' | 'edit';
+  /** Ausente = 'calibration': el flujo metrológico histórico no cambia. */
+  operationalCategory?: LabOperationalCategory;
   onCancel(): void;
-  onSubmit(values: EquipmentFormValues): void;
+  onSubmit(values: AnyEquipmentFormValues): void;
   request: Request;
   workOrderClientName: string;
   canResolveLabFolios: boolean;
@@ -72,20 +76,25 @@ export function LabEquipmentForm({
   onCancel,
   onFieldChange,
   onSubmit,
+  operationalCategory = 'calibration',
   request,
   workOrderClientName,
 }: Props) {
+  const profile = equipmentFormProfile(operationalCategory);
+  // La configuración metrológica sólo se hidrata/edita en calibración.
+  const calibrationInitial: EquipmentFormValues | undefined =
+    initialValues && initialValues.operationalCategory !== 'general_service' ? initialValues : undefined;
   const [equipment, setEquipment] = useState<EquipmentBasicData>(
     initialValues?.equipment ?? BLANK_EQUIPMENT,
   );
 
   const [documentaryClient, setDocumentaryClient] =
     useState<DocumentaryClientSelection>(
-      initialValues?.documentaryClient ?? defaultDocumentaryClient(),
+      calibrationInitial?.documentaryClient ?? defaultDocumentaryClient(),
     );
 
   const [service, setService] = useState<LabServiceType>(
-    initialValues?.service.serviceType ?? 'accredited',
+    calibrationInitial?.service.serviceType ?? 'accredited',
   );
 
   const [validationError, setValidationError] = useState('');
@@ -97,7 +106,7 @@ export function LabEquipmentForm({
       && equipment.serial_number.trim(),
   );
 
-  const changeNotice = serviceChangeNotice(mode, initialValues?.service.serviceType, service);
+  const changeNotice = serviceChangeNotice(mode, calibrationInitial?.service.serviceType, service);
 
   const folioIsSecured =
     mode === 'edit'
@@ -106,6 +115,12 @@ export function LabEquipmentForm({
     && folioDisplay !== 'Sin asignar';
 
   function submit() {
+    if (!profile.showsMetrologicalConfiguration) {
+      setValidationError('');
+      onSubmit({ equipment, operationalCategory: 'general_service' });
+      return;
+    }
+
     const error = validateServiceSelection({
       serviceType: service,
       linkedCompanyId: null,
@@ -142,11 +157,11 @@ export function LabEquipmentForm({
 
   return (
     <View style={styles.panel}>
-      <Text style={styles.sectionTitle}>Datos del equipo</Text>
+      <Text style={styles.sectionTitle}>{profile.sectionTitle}</Text>
 
       <Field
         error={fieldErrors.instrument}
-        label="Instrumento"
+        label={profile.instrumentLabel}
         required
         value={equipment.instrument}
         onChange={(value) => updateEquipment('instrument', value)}
@@ -183,7 +198,16 @@ export function LabEquipmentForm({
         onChange={(value) => updateEquipment('serial_number', value)}
       />
 
-      {service === 'linked' ? (
+      {profile.showsReportNumberField && (
+        <Field
+          error={fieldErrors.report_number}
+          label="Número de reporte"
+          value={equipment.report_number ?? ''}
+          onChange={(value) => updateEquipment('report_number', value || null)}
+        />
+      )}
+
+      {profile.showsMetrologicalConfiguration && (service === 'linked' ? (
         <Field
           hint={
             canResolveLabFolios
@@ -206,7 +230,7 @@ export function LabEquipmentForm({
               : 'Generado por el sistema'}
           </Text>
         </View>
-      )}
+      ))}
 
       <Field
         error={fieldErrors.observations}
@@ -217,7 +241,7 @@ export function LabEquipmentForm({
         onChange={(value) => updateEquipment('observations', value || null)}
       />
 
-      <Text style={styles.fieldLabel}>Estado físico</Text>
+      <Text style={styles.fieldLabel}>{profile.conditionLabel}</Text>
 
       <View style={styles.row}>
         <Pressable
@@ -251,116 +275,120 @@ export function LabEquipmentForm({
         </Pressable>
       </View>
 
-      <Text style={styles.sectionTitle}>Cliente documental</Text>
-
-      <View style={styles.row}>
-        <Pressable
-          onPress={() =>
-            setDocumentaryClient(defaultDocumentaryClient())
-          }
-          style={[
-            styles.choice,
-            documentaryClient.mode === 'order' && styles.choiceActive,
-          ]}
-        >
-          <Text>Mismo cliente de la OT</Text>
-        </Pressable>
-
-        <Pressable
-          onPress={() =>
-            setDocumentaryClient((current) => (
-              current.mode === 'different'
-                ? current
-                : {
-                    ...defaultDocumentaryClient(),
-                    mode: 'different',
-                    finalClientCompany: '',
-                  }
-            ))
-          }
-          style={[
-            styles.choice,
-            documentaryClient.mode === 'different'
-              && styles.choiceActive,
-          ]}
-        >
-          <Text>Otro cliente</Text>
-        </Pressable>
-      </View>
-
-      {documentaryClient.mode === 'order' && (
-        <Text style={styles.notice}>
-          {workOrderClientName}
-        </Text>
-      )}
-
-      {documentaryClient.mode === 'different' && (
+      {profile.showsMetrologicalConfiguration && (
         <>
-          {documentaryClient.finalClientCompany ? (
-            <View style={styles.selectedClient}>
-              <Text style={styles.selectedClientText}>
-                {documentaryClient.finalClientCompany}
-              </Text>
+        <Text style={styles.sectionTitle}>Cliente documental</Text>
 
-              <Pressable
-                onPress={() =>
-                  setDocumentaryClient({
-                    ...defaultDocumentaryClient(),
-                    mode: 'different',
-                    finalClientCompany: '',
-                  })
-                }
-              >
-                <Text style={styles.change}>Cambiar</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <LabClientSelector
-              request={request}
-              onSelect={(client: LabClient) =>
-                setDocumentaryClient(selectFinalClient(client))
-              }
-            />
-          )}
-        </>
-      )}
-
-      <Text style={styles.sectionTitle}>Servicio</Text>
-
-      <View style={styles.row}>
-        {SERVICE_OPTIONS.map((option) => (
+        <View style={styles.row}>
           <Pressable
-            key={option.value}
-            onPress={() => {
-              setService(option.value);
-              setValidationError('');
-            }}
+            onPress={() =>
+              setDocumentaryClient(defaultDocumentaryClient())
+            }
             style={[
               styles.choice,
-              service === option.value && styles.choiceActive,
+              documentaryClient.mode === 'order' && styles.choiceActive,
             ]}
           >
-            <Text>{option.label}</Text>
+            <Text>Mismo cliente de la OT</Text>
           </Pressable>
-        ))}
-      </View>
 
-      {!!changeNotice && (
-        <Text style={styles.warning}>{changeNotice}</Text>
-      )}
+          <Pressable
+            onPress={() =>
+              setDocumentaryClient((current) => (
+                current.mode === 'different'
+                  ? current
+                  : {
+                      ...defaultDocumentaryClient(),
+                      mode: 'different',
+                      finalClientCompany: '',
+                    }
+              ))
+            }
+            style={[
+              styles.choice,
+              documentaryClient.mode === 'different'
+                && styles.choiceActive,
+            ]}
+          >
+            <Text>Otro cliente</Text>
+          </Pressable>
+        </View>
 
-      {!!validationError && (
-        <Text style={styles.error}>
-          {validationError}
-        </Text>
-      )}
-
-      {mode === 'edit' && service === 'linked' && (
-        <>
-          <Text style={styles.sectionTitle}>Folio</Text>
+        {documentaryClient.mode === 'order' && (
           <Text style={styles.notice}>
-            {folioDisplay ?? 'Pendiente'}
+            {workOrderClientName}
           </Text>
+        )}
+
+        {documentaryClient.mode === 'different' && (
+          <>
+            {documentaryClient.finalClientCompany ? (
+              <View style={styles.selectedClient}>
+                <Text style={styles.selectedClientText}>
+                  {documentaryClient.finalClientCompany}
+                </Text>
+
+                <Pressable
+                  onPress={() =>
+                    setDocumentaryClient({
+                      ...defaultDocumentaryClient(),
+                      mode: 'different',
+                      finalClientCompany: '',
+                    })
+                  }
+                >
+                  <Text style={styles.change}>Cambiar</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <LabClientSelector
+                request={request}
+                onSelect={(client: LabClient) =>
+                  setDocumentaryClient(selectFinalClient(client))
+                }
+              />
+            )}
+          </>
+        )}
+
+        <Text style={styles.sectionTitle}>Servicio</Text>
+
+        <View style={styles.row}>
+          {SERVICE_OPTIONS.map((option) => (
+            <Pressable
+              key={option.value}
+              onPress={() => {
+                setService(option.value);
+                setValidationError('');
+              }}
+              style={[
+                styles.choice,
+                service === option.value && styles.choiceActive,
+              ]}
+            >
+              <Text>{option.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {!!changeNotice && (
+          <Text style={styles.warning}>{changeNotice}</Text>
+        )}
+
+        {!!validationError && (
+          <Text style={styles.error}>
+            {validationError}
+          </Text>
+        )}
+
+        {mode === 'edit' && service === 'linked' && (
+          <>
+            <Text style={styles.sectionTitle}>Folio</Text>
+            <Text style={styles.notice}>
+              {folioDisplay ?? 'Pendiente'}
+            </Text>
+          </>
+        )}
         </>
       )}
 

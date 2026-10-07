@@ -54,14 +54,30 @@ import {
 import { colors } from '@/src/design/tokens';
 import { MycDatePickerField } from '@/src/design/MycDatePickerField';
 import {
-  buildConfiguredEquipmentPayload,
+  buildEquipmentCreateBody,
   buildEquipmentEditRequestBody,
   describeEquipmentSummary,
   diffEquipmentEdit,
   hasEquipmentEditChanges,
   hydrateEquipmentFormValues,
-  type EquipmentFormValues,
+  type AnyEquipmentFormValues,
 } from '@/src/services/lab-equipment-configured-payload';
+import {
+  canChooseOperationalCategory,
+  categoryAllowsErpLink,
+  categoryAllowsWorkflowChoice,
+  DEFAULT_OPERATIONAL_CATEGORY,
+  equipmentFormProfile,
+  isGeneralService,
+  OPERATIONAL_CATEGORY_OPTIONS,
+  withOperationalCategory,
+} from '@/src/services/lab-operational-category';
+import {
+  buildCreateTechnicalReportRequest,
+  TECHNICAL_REPORT_TYPE_OPTIONS,
+} from '@/src/services/technical-report';
+import { LabTechnicalReportBase } from '@/src/components/lab/LabTechnicalReportBase';
+import { LabTechnicalReportCard } from '@/src/components/lab/LabTechnicalReportCard';
 import { shouldResetFormAfterSubmit } from '@/src/services/lab-client-selector';
 import { generalWithLabClient } from '@/src/services/lab-work-order-client';
 import { describePendingSignatureReviewFields } from '@/src/services/lab-pending-signature-review';
@@ -143,7 +159,9 @@ import type {
   LabEquipment,
   LabClient,
   LabListItem,
+  LabOperationalCategory,
   LabWorkOrder,
+  TechnicalReportType,
   LabWorkOrderGroupRequest,
   LabWorkOrderWorkflowMode,
 } from '@/src/types/lab-work-order';
@@ -308,6 +326,11 @@ export default function WorkOrdersScreen() {
   const [general, setGeneral] = useState<GeneralData>(emptyGeneral);
   // Vínculo ERP opcional (ETS de calibración); sólo se envía al crear.
   const [erpLink, setErpLink] = useState<ErpCalibrationCandidate | null>(null);
+  // Categoría técnica de la OT que se está CREANDO (SG-3A). Una OT existente
+  // la trae del backend (workOrder.operational_category).
+  const [operationalCategory, setOperationalCategory] = useState<LabOperationalCategory>(DEFAULT_OPERATIONAL_CATEGORY);
+  // Servicio General: selector de tipo de reporte / vista base del reporte.
+  const [reportFlow, setReportFlow] = useState<{ mode: 'select' | 'view'; equipmentId: number } | null>(null);
   const [workOrder, setWorkOrder] = useState<LabWorkOrder | null>(null);
   const [receptionOrders, setReceptionOrders] = useState<LabWorkOrder[]>([]);
   const [equipmentEditor, setEquipmentEditor] = useState<LabEquipment | 'new' | null>(null);
@@ -583,6 +606,8 @@ export default function WorkOrdersScreen() {
     canManageEquipment,
     canCaptureSignatures,
     canCaptureFieldSheets,
+    canReadTechnicalReports,
+    canCaptureTechnicalReports,
     canDownloadLabPackages,
     canResolveLabFolios,
     canReopenFieldSheetDirectly,
@@ -629,6 +654,8 @@ export default function WorkOrdersScreen() {
     setEquipmentByEquipmentBlockers(null);
     setGeneral(emptyGeneral());
     setErpLink(null);
+    setOperationalCategory(DEFAULT_OPERATIONAL_CATEGORY);
+    setReportFlow(null);
     setWorkOrder(null);
     setStep('general');
     setSignatureFlowState(null);
@@ -1000,7 +1027,7 @@ export default function WorkOrdersScreen() {
         : '/mobile/v1/technician/lab-work-orders';
       const detail = await request<LabWorkOrder>(path, {
         method: workOrder ? 'PATCH' : 'POST',
-        body: JSON.stringify(withErpLink({
+        body: JSON.stringify(withOperationalCategory(withErpLink({
           ...general,
           contact_name: general.contact_name || null,
           contact_phone: general.contact_phone || null,
@@ -1013,7 +1040,7 @@ export default function WorkOrdersScreen() {
           ...(workOrder
             ? { expected_edit_version: workOrder.edit_version }
             : buildLabWorkflowCreationPayload(groupMode, workflowMode, groupQuantity, manualGroupWorkflow, memberWorkflowModes)),
-        }, erpLink, groupMode, !!workOrder)),
+        }, erpLink, groupMode, !!workOrder), operationalCategory, groupMode, !!workOrder)),
       });
       if (groupMode === 'request') {
         Alert.alert('Solicitud enviada', 'Los folios se asignarán únicamente cuando un administrador la apruebe.');
@@ -1209,9 +1236,9 @@ export default function WorkOrdersScreen() {
   // cambió, se manda la configuración completa (equipo + cliente documental +
   // servicio) y el backend aplica o revierte todo junto; ya no hay estado
   // parcial posible.
-  async function saveEquipmentEdit(values: EquipmentFormValues) {
+  async function saveEquipmentEdit(values: AnyEquipmentFormValues) {
     if (!workOrder || !equipmentEditor || equipmentEditor === 'new') return;
-    const initial = hydrateEquipmentFormValues(equipmentEditor);
+    const initial = hydrateEquipmentFormValues(equipmentEditor, workOrder.operational_category);
     const changes = diffEquipmentEdit(initial, values);
     if (!hasEquipmentEditChanges(changes)) {
       setEquipmentEditor(null);
@@ -1246,11 +1273,11 @@ export default function WorkOrdersScreen() {
   // Fase 2E/2F: alta integrada -- equipo + cliente documental + servicio/folio
   // como una sola operación atómica (POST .../equipment/configured). Reutiliza
   // el mismo endpoint que backend expone para no duplicar la orquestación acá.
-  async function saveConfiguredEquipment(values: EquipmentFormValues) {
+  async function saveConfiguredEquipment(values: AnyEquipmentFormValues) {
     if (!workOrder) return;
     setBusy(true);
     try {
-      const payload = buildConfiguredEquipmentPayload(values.equipment, values.documentaryClient, values.service, workOrder.edit_version);
+      const payload = buildEquipmentCreateBody(values, workOrder.edit_version);
       const detail = await request<LabWorkOrder>(
         `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/configured`,
         { method: 'POST', body: JSON.stringify(payload) },
@@ -1264,6 +1291,29 @@ export default function WorkOrdersScreen() {
         setEquipmentErrors(Object.fromEntries(error.fieldErrors.map((item) => [item.field.split('.').at(-1) ?? item.field, item.message])));
       }
       Alert.alert('No fue posible guardar el equipo', error instanceof Error ? error.message : 'Revisa los datos');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // SG-3D/3E: crea el TechnicalReport vigente del equipo (sólo Installation
+  // está habilitado; los demás tipos nunca llegan a la red -- ver
+  // buildCreateTechnicalReportRequest) y refresca la OT para que la tarjeta
+  // muestre folio y estado sin cerrar/reabrir.
+  async function createTechnicalReport(equipment: LabEquipment, type: TechnicalReportType) {
+    if (!workOrder || !canCaptureTechnicalReports) return;
+    const call = buildCreateTechnicalReportRequest(workOrder.id, equipment.id, type);
+    if (!call) return;
+    setBusy(true);
+    try {
+      await request(call.path, call.init);
+      const detail = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}`);
+      detailRefreshSequence.current += 1;
+      setWorkOrder(detail);
+      setReportFlow(null);
+      publishLocalChange({ event_type: 'work_order.updated', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
+    } catch (error) {
+      Alert.alert('No fue posible crear el reporte', error instanceof Error ? error.message : 'Intenta nuevamente');
     } finally {
       setBusy(false);
     }
@@ -1802,7 +1852,33 @@ export default function WorkOrdersScreen() {
                       <Field label="Cantidad de OT (1–50)" required keyboardType="phone-pad" value={groupQuantity} onChangeText={changeGroupQuantity} />
                     </FormSection>
                   )}
-                  {!workOrder && groupMode !== 'request' && (
+                  {canChooseOperationalCategory(groupMode, !!workOrder, user.actor_type === 'internal', canCaptureTechnicalReports) && (
+                    <FormSection title="Categoría de servicio">
+                      {OPERATIONAL_CATEGORY_OPTIONS.map((option) => (
+                        <Pressable
+                          key={option.value}
+                          accessibilityLabel={`Categoría de servicio: ${option.title}`}
+                          accessibilityRole="radio"
+                          accessibilityState={{ checked: operationalCategory === option.value }}
+                          onPress={() => {
+                            setOperationalCategory(option.value);
+                            // El puente ERP es de calibración: nunca queda seleccionado en Servicio General.
+                            if (!categoryAllowsErpLink(option.value)) setErpLink(null);
+                            // Servicio General sólo admite el flujo por grupo (sin hoja por equipo).
+                            if (!categoryAllowsWorkflowChoice(option.value)) {
+                              setWorkflowMode('group');
+                              selectGroupWorkflowApplication(false);
+                            }
+                          }}
+                          style={[styles.workflowModeCard, operationalCategory === option.value && styles.workflowModeCardSelected]}
+                        >
+                          <Text style={styles.workflowModeTitle}>{option.title}</Text>
+                          <Text style={styles.workflowModeDescription}>{option.description}</Text>
+                        </Pressable>
+                      ))}
+                    </FormSection>
+                  )}
+                  {!workOrder && groupMode !== 'request' && categoryAllowsWorkflowChoice(operationalCategory) && (
                     <FormSection title="Modalidad de trabajo">
                       {WORKFLOW_MODE_OPTIONS.map((option) => (
                         <Pressable
@@ -1816,7 +1892,7 @@ export default function WorkOrdersScreen() {
                       ))}
                     </FormSection>
                   )}
-                  {!workOrder && groupMode === 'direct' && (
+                  {!workOrder && groupMode === 'direct' && categoryAllowsWorkflowChoice(operationalCategory) && (
                     <FormSection title="Aplicación de modalidad">
                       {[{ manual: false, title: 'Aplicar a todas' }, { manual: true, title: 'Configurar manualmente' }].map((option) => (
                         <Pressable
@@ -1869,7 +1945,7 @@ export default function WorkOrdersScreen() {
                     <Field label="Orden de compra / cotización" value={general.purchase_order} onChangeText={(value) => setGeneral({ ...general, purchase_order: value })} />
                     <Field label="Observaciones" multiline value={general.notes} onChangeText={(value) => setGeneral({ ...general, notes: value })} />
                   </FormSection>
-                  {user.actor_type === 'internal' && canAttachErpLink(groupMode, !!workOrder) && (
+                  {user.actor_type === 'internal' && canAttachErpLink(groupMode, !!workOrder) && categoryAllowsErpLink(operationalCategory) && (
                     <FormSection title="Vincular con cotización ERP (opcional)">
                       <Text style={styles.fieldHint}>
                         Asocia esta OT a un ETS de calibración con cotización aceptada. Es independiente de
@@ -1966,6 +2042,26 @@ export default function WorkOrdersScreen() {
                   )}
                   <View style={styles.sectionRow}><Text style={styles.sectionTitle}>Equipos</Text><Text style={styles.counter}>{workOrder.equipment.length}/10</Text></View>
                   {workOrder.equipment.map((item) => {
+                    // Servicio General: el equipo no lleva modalidad ni folio de certificado, y su
+                    // reporte técnico pertenece a la captura técnica (después de firmar la recepción).
+                    if (isGeneralService(workOrder)) {
+                      const generalSummary = describeEquipmentSummary(item, workOrder.client_name, workOrder.operational_category);
+                      return (
+                        <View key={item.id} style={styles.equipmentRow}>
+                          <View style={styles.flex}>
+                            <Text style={styles.equipmentTitle}>{item.position}. {item.instrument}</Text>
+                            <Text style={styles.equipmentMeta}>{item.brand} · {item.identification} · {item.serial_number}</Text>
+                            <Text style={styles.equipmentMeta}>{generalSummary.client} · Servicio general</Text>
+                            {editable && canManageEquipment && (
+                              <Pressable onPress={() => showEquipmentEditor(item)} hitSlop={8} style={styles.equipmentEditAction}>
+                                <Text style={styles.equipmentEditActionLabel}>Editar datos</Text>
+                              </Pressable>
+                            )}
+                          </View>
+                          <Text style={item.is_good_condition ? styles.good : styles.bad}>{item.is_good_condition ? '✓' : 'X'}</Text>
+                        </View>
+                      );
+                    }
                     const summary = describeEquipmentSummary(item, workOrder.client_name);
                     const equipmentByEquipmentAction = workOrder.workflow_mode === 'equipment_by_equipment'
                       ? describeEquipmentByEquipmentAction(item)
@@ -2046,9 +2142,19 @@ export default function WorkOrdersScreen() {
                 <FadeIn transitionKey={step}>
                   <View style={styles.sectionIntro}>
                     <Text style={styles.sectionEyebrow}>CAPTURA TÉCNICA</Text>
-                    <Text style={styles.sectionTitle}>Servicio, folio y hoja por equipo</Text>
+                    <Text style={styles.sectionTitle}>{equipmentFormProfile(workOrder.operational_category).technicalSectionTitle}</Text>
                   </View>
-                  <LabTechnicalCapture
+                  {isGeneralService(workOrder) ? workOrder.equipment.map((item) => (
+                    <LabTechnicalReportCard
+                      key={item.id}
+                      canCaptureReports={canCaptureTechnicalReports}
+                      canReadReports={canReadTechnicalReports}
+                      clientName={workOrder.client_name}
+                      equipment={item}
+                      onOpenReport={(equipment) => setReportFlow({ mode: 'view', equipmentId: equipment.id })}
+                      onSelectReport={(equipment) => setReportFlow({ mode: 'select', equipmentId: equipment.id })}
+                    />
+                  )) : <LabTechnicalCapture
                     // Una OT distinta nunca hereda equipo/hoja activos de la
                     // anterior: el contexto de captura pertenece a UNA OT.
                     key={workOrder.id}
@@ -2061,7 +2167,7 @@ export default function WorkOrdersScreen() {
                     onUpdated={commitCaptureWorkOrder}
                     request={request}
                     workOrder={workOrder}
-                  />
+                  />}
                   <OperationalActionStack>
                     {editable && <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => setStep('capture')} />}
                     {/* equipment_by_equipment nunca pasa por 'review'/Technical
@@ -2118,14 +2224,14 @@ export default function WorkOrdersScreen() {
                       <View key={receptionOrder.id} style={styles.summary}>
                         <Text style={styles.summaryLine}>OT {receptionOrder.folio}</Text>
                         {receptionOrder.equipment.map((item) => {
-                          const summary = describeEquipmentSummary(item, receptionOrder.client_name);
+                          const summary = describeEquipmentSummary(item, receptionOrder.client_name, receptionOrder.operational_category);
                           return (
                             <View key={item.id} style={styles.equipmentRow}>
                               <View style={styles.flex}>
                                 <Text style={styles.equipmentTitle}>{item.position}. {item.instrument}</Text>
                                 <Text style={styles.equipmentMeta}>{item.brand} · {item.identification} · {item.serial_number}</Text>
                                 <Text style={styles.equipmentMeta}>{summary.client} · {summary.service}{summary.linkedCompany ? ` (${summary.linkedCompany})` : ''}</Text>
-                                <Text style={styles.equipmentMeta}>Folio: {summary.folio}</Text>
+                                {summary.folio != null && <Text style={styles.equipmentMeta}>Folio: {summary.folio}</Text>}
                               </View>
                             </View>
                           );
@@ -2509,13 +2615,14 @@ export default function WorkOrdersScreen() {
                   <FadeIn transitionKey={equipmentEditor === 'new' ? 'new' : equipmentEditor?.id}>
                   {equipmentEditor === 'new' ? (
                     <>
-                      <Text style={styles.sectionTitle}>Añadir equipo</Text>
-                      <Text style={styles.sectionDescription}>Datos del equipo, cliente documental y servicio en una sola operación.</Text>
+                      <Text style={styles.sectionTitle}>{equipmentFormProfile(workOrder?.operational_category ?? DEFAULT_OPERATIONAL_CATEGORY).addEquipmentTitle}</Text>
+                      <Text style={styles.sectionDescription}>{equipmentFormProfile(workOrder?.operational_category ?? DEFAULT_OPERATIONAL_CATEGORY).addEquipmentDescription}</Text>
                       <LabEquipmentForm
                         busy={busy}
                         canResolveLabFolios={canResolveLabFolios}
                         fieldErrors={equipmentErrors}
                         mode="create"
+                        operationalCategory={workOrder?.operational_category}
                         onCancel={() => setEquipmentEditor(null)}
                         onFieldChange={clearEquipmentError}
                         onSubmit={saveConfiguredEquipment}
@@ -2526,14 +2633,15 @@ export default function WorkOrdersScreen() {
                   ) : equipmentEditor ? (
                     <>
                       <Text style={styles.sectionTitle}>Editar equipo</Text>
-                      <Text style={styles.sectionDescription}>Datos del equipo, cliente documental y servicio. El folio se muestra de referencia y no se edita aquí.</Text>
+                      <Text style={styles.sectionDescription}>{equipmentFormProfile(workOrder?.operational_category ?? DEFAULT_OPERATIONAL_CATEGORY).editEquipmentDescription}</Text>
                       <LabEquipmentForm
                         busy={busy}
                         canResolveLabFolios={canResolveLabFolios}
                         fieldErrors={equipmentErrors}
-                        folioDisplay={describeEquipmentSummary(equipmentEditor, workOrder?.client_name ?? '').folio}
-                        initialValues={hydrateEquipmentFormValues(equipmentEditor)}
+                        folioDisplay={describeEquipmentSummary(equipmentEditor, workOrder?.client_name ?? '', workOrder?.operational_category).folio}
+                        initialValues={hydrateEquipmentFormValues(equipmentEditor, workOrder?.operational_category ?? DEFAULT_OPERATIONAL_CATEGORY)}
                         mode="edit"
+                        operationalCategory={workOrder?.operational_category}
                         onCancel={() => setEquipmentEditor(null)}
                         onFieldChange={clearEquipmentError}
                         onSubmit={saveEquipmentEdit}
@@ -2560,6 +2668,58 @@ export default function WorkOrdersScreen() {
               </KeyboardAvoidingView>
             </View>
           )}
+          {workOrder && reportFlow && (() => {
+            const reportEquipment = workOrder.equipment.find((item) => item.id === reportFlow.equipmentId);
+            if (!reportEquipment) return null;
+            return (
+              <View style={styles.overlay}>
+                <KeyboardAvoidingView
+                  enabled={Platform.OS === 'android'}
+                  behavior={Platform.OS === 'android' ? 'height' : undefined}
+                  style={styles.overlayCard}
+                >
+                  <ScrollView
+                    automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+                    contentContainerStyle={styles.overlayContent}
+                    keyboardShouldPersistTaps="handled"
+                  >
+                    <View style={styles.overlayHandle} />
+                    <FadeIn transitionKey={reportFlow.mode}>
+                      {reportFlow.mode === 'select' ? (
+                        <>
+                          <Text style={styles.sectionEyebrow}>OT {workOrder.folio} · EQUIPO {reportEquipment.position}</Text>
+                          <Text style={styles.sectionTitle}>Seleccionar reporte</Text>
+                          <Text style={styles.sectionDescription}>Elige el tipo de reporte técnico para {reportEquipment.instrument}.</Text>
+                          {TECHNICAL_REPORT_TYPE_OPTIONS.map((option) => (
+                            <Pressable
+                              key={option.value}
+                              accessibilityLabel={`Tipo de reporte: ${option.title}`}
+                              accessibilityRole="button"
+                              accessibilityState={{ disabled: !option.enabled || busy }}
+                              disabled={!option.enabled || busy}
+                              onPress={() => { void createTechnicalReport(reportEquipment, option.value); }}
+                              style={[styles.workflowModeCard, !option.enabled && styles.workflowModeCardDisabled]}
+                            >
+                              <Text style={styles.workflowModeTitle}>{option.title}</Text>
+                              <Text style={styles.workflowModeDescription}>{option.description}</Text>
+                            </Pressable>
+                          ))}
+                          <SecondaryButton disabled={busy} icon="close" label="Cancelar" onPress={() => setReportFlow(null)} />
+                        </>
+                      ) : (
+                        <LabTechnicalReportBase
+                          equipment={reportEquipment}
+                          onClose={() => setReportFlow(null)}
+                          request={request}
+                          workOrder={workOrder}
+                        />
+                      )}
+                    </FadeIn>
+                  </ScrollView>
+                </KeyboardAvoidingView>
+              </View>
+            );
+          })()}
           {ticketOpen && (
             canCreateTickets
             || (ticketDialogMode === 'cancel' && canCancel)
@@ -3300,6 +3460,10 @@ const styles = StyleSheet.create({
   workflowModeCardSelected: {
     backgroundColor: '#e4f4ef',
     borderColor: '#08756f',
+  },
+
+  workflowModeCardDisabled: {
+    opacity: 0.55,
   },
 
   workflowModeTitle: {
