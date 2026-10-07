@@ -54,7 +54,7 @@ export const installationReport = {
     client: { name: 'Cliente SG' },
     equipment: { instrument: 'Báscula', brand: 'MYC', model: 'B-1', serial_number: 'SER-1', identification: 'ID-1' },
   },
-  report_schema_version: 1, revision_number: 1, is_current: true, evidence: [] as Record<string, unknown>[],
+  report_schema_version: 1, revision_number: 1, is_current: true, performed_by_name_snapshot: null, performed_at: null, evidence: [] as Record<string, unknown>[],
 };
 
 export function freshInstallationReport(overrides: Record<string, unknown> = {}) {

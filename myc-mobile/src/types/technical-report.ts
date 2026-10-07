@@ -74,5 +74,8 @@ export type TechnicalReportRead = {
   report_schema_version: number;
   revision_number: number;
   is_current: boolean;
+  /** Se fijan al confirmar la captura: el usuario autenticado que confirma. */
+  performed_by_name_snapshot: string | null;
+  performed_at: string | null;
   evidence: TechnicalReportEvidence[];
 };

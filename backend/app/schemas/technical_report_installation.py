@@ -103,6 +103,24 @@ class InstallationCapturePatch(InstallationCaptureValues):
     Enviar `null` explícito limpia el campo; omitirlo lo conserva."""
 
 
+# Etiquetas legibles (mensajes de validación al confirmar la captura).
+INSTALLATION_FIELD_LABELS: dict[str, str] = {
+    "installation_date": "Fecha de instalación",
+    "installation_location": "Lugar de instalación",
+    "initial_condition": "Condición inicial",
+    "installation_description": "Descripción de la instalación",
+    "activities_performed": "Actividades realizadas",
+    "has_incidents": "Indicar si hubo incidencias",
+    "incident_description": "Descripción de la incidencia",
+    "corrective_action": "Acción correctiva",
+    "functional_test_performed": "Indicar si se realizó prueba funcional",
+    "effectiveness_result": "Resultado de efectividad",
+    "effectiveness_description": "Descripción de la verificación",
+    "effectiveness_notes": "Notas de efectividad",
+    "final_observations": "Observaciones finales",
+}
+
+
 def check_installation_consistency(values: InstallationCaptureValues) -> None:
     """Invariantes que valen también para un borrador.
 

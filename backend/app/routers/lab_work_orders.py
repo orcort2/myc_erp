@@ -108,6 +108,7 @@ from app.services.lab_field_sheets_external import apply_lab_external_structure
 from app.services.lab_packages import generate_lab_package
 from app.services.technical_reports import (
     add_technical_report_evidence,
+    confirm_technical_report_capture,
     create_technical_report,
     delete_technical_report_evidence,
     read_technical_report,
@@ -813,6 +814,25 @@ def patch_technical_report(
     _ensure_internal_report_writer(context)
     ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
     return update_technical_report_capture(db, work_order_id, equipment_id, payload, context.user)
+
+
+@router.post(
+    "/{work_order_id}/equipment/{equipment_id}/technical-report/confirm-capture",
+    response_model=TechnicalReportRead,
+)
+def post_confirm_technical_report_capture(
+    work_order_id: int,
+    equipment_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(*_TECHNICAL_REPORT_WRITE)
+    ),
+) -> TechnicalReportRead:
+    """Confirma la captura (validación completa, técnico responsable y paso a
+    `ready_for_signatures`). Transición explícita: el autosave nunca finaliza."""
+    _ensure_internal_report_writer(context)
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    return confirm_technical_report_capture(db, work_order_id, equipment_id, context.user)
 
 
 @router.post(

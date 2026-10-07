@@ -14,6 +14,8 @@ export type TechnicalReportApi = {
   saveCapture(update: TechnicalReportCaptureUpdate): Promise<TechnicalReportRead>;
   uploadEvidence(image: PreparedEvidenceImage, evidenceType: TechnicalReportEvidenceType): Promise<TechnicalReportEvidence>;
   deleteEvidence(evidenceId: number): Promise<TechnicalReportRead>;
+  /** Transición explícita in_progress -> ready_for_signatures (el autosave nunca finaliza). */
+  confirmCapture(): Promise<TechnicalReportRead>;
   /** Fuente autenticada para previsualizar una evidencia ya subida. */
   evidenceImageSource(evidenceId: number): { uri: string; headers: Record<string, string> };
 };
@@ -35,6 +37,7 @@ export function createTechnicalReportApi(deps: {
       `${base}/evidence`,
       { method: 'POST', body: buildEvidenceFormData(image, evidenceType) },
     ),
+    confirmCapture: () => deps.request<TechnicalReportRead>(`${base}/confirm-capture`, { method: 'POST' }),
     deleteEvidence: (evidenceId) => deps.request<TechnicalReportRead>(`${base}/evidence/${evidenceId}`, { method: 'DELETE' }),
     evidenceImageSource: (evidenceId) => ({
       uri: deps.apiUrl(`${base}/evidence/${evidenceId}/file`),

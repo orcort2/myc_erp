@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -20,9 +20,11 @@ from app.schemas.technical_report import (
     TechnicalReportRead,
 )
 from app.schemas.technical_report_installation import (
+    INSTALLATION_FIELD_LABELS,
     INSTALLATION_SCHEMA_VERSION,
     InstallationCaptureValues,
     check_installation_consistency,
+    installation_missing_fields,
 )
 from app.services.audit_logs import write_audit_log
 from app.services.file_security import validate_upload
@@ -653,3 +655,96 @@ def resolve_technical_report_evidence_file(
     if evidence is None:
         raise HTTPException(status_code=404, detail="Evidencia no encontrada")
     return require_deliverable_file(evidence.storage_path), evidence.mime_type
+
+
+# ---------------------------------------------------------------------------
+# SG-4D/E: confirmar captura
+# ---------------------------------------------------------------------------
+
+def _installation_confirmation_problems(report: TechnicalReport) -> tuple[list[str], list[str]]:
+    """Validación COMPLETA de Installation v1 (sólo al confirmar).
+
+    Devuelve (campos faltantes, otros problemas). El autosave jamás pasa por
+    aquí: acepta borradores incompletos."""
+    values = InstallationCaptureValues.model_validate(report.capture_values or {})
+    missing = installation_missing_fields(values)
+    problems: list[str] = []
+    try:
+        check_installation_consistency(values)
+    except ValueError as exc:
+        problems.append(str(exc))
+    has_incident_evidence = any(item.evidence_type == "incident" for item in report.evidence)
+    if values.has_incidents is False and has_incident_evidence:
+        problems.append(
+            "Indicaste que no hubo incidencias, pero el reporte tiene evidencias de incidencia: "
+            "elimínalas o indica que sí hubo incidencias"
+        )
+    return missing, problems
+
+
+def confirm_technical_report_capture(
+    db: Session,
+    work_order_id: int,
+    equipment_id: int,
+    user: User,
+) -> TechnicalReportRead:
+    """Confirma la captura: valida completo, fija al técnico responsable y
+    pasa `in_progress -> ready_for_signatures`.
+
+    Es una transición explícita y separada del autosave. Desde `draft` no es
+    coherente confirmar: un reporte pasa a `in_progress` con su primera
+    captura (valores o foto), y sin captura la validación completa no puede
+    cumplirse; se rechaza con un mensaje claro en lugar de abrir una
+    transición arbitraria. Una segunda confirmación no vuelve a mutar nada."""
+    try:
+        report = _lock_current_report(db, work_order_id, equipment_id)
+        if report.status == "draft":
+            raise HTTPException(
+                status_code=409,
+                detail="Aún no hay captura: llena el reporte antes de confirmarlo",
+            )
+        _ensure_editable(report)  # ready_for_signatures / completed / cancelled -> 409
+        if report.report_type != "installation" or report.report_schema_version != INSTALLATION_SCHEMA_VERSION:
+            raise HTTPException(
+                status_code=409,
+                detail="Este tipo de reporte todavía no admite confirmación",
+            )
+        missing, problems = _installation_confirmation_problems(report)
+        if missing or problems:
+            labels = [INSTALLATION_FIELD_LABELS.get(field, field) for field in missing]
+            parts = []
+            if labels:
+                parts.append("Faltan: " + ", ".join(labels))
+            parts.extend(problems)
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "TECHNICAL_REPORT_INCOMPLETE",
+                    "message": ". ".join(parts) + ".",
+                    "missing_fields": missing,
+                },
+            )
+        report.performed_by_user_id = user.id
+        report.performed_by_name_snapshot = (user.full_name or user.username or "").strip() or None
+        report.performed_at = datetime.now(timezone.utc)
+        report.status = "ready_for_signatures"
+        write_audit_log(
+            db,
+            action="technical_report.capture_confirmed",
+            entity="technical_reports",
+            entity_id=report.id,
+            user_id=user.id,
+            previous_values={"status": "in_progress"},
+            new_values={
+                "status": "ready_for_signatures",
+                "performed_by_user_id": user.id,
+                "folio": report.folio,
+                "revision_number": report.revision_number,
+            },
+        )
+        report_id = report.id
+        db.commit()
+        return _read_technical_report_by_id(db, report_id)
+    except Exception:
+        db.rollback()
+        raise

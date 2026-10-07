@@ -146,7 +146,7 @@ test('4B: error de autosave es visible, conserva lo escrito y bloquea la salida'
 
 test('4B: un reporte listo para firmas o de sólo lectura no es editable', async () => {
   const locked = await openReport({ report: freshInstallationReport({ status: 'ready_for_signatures' }) });
-  assert.ok(locked.text().includes('Este reporte ya no es editable'));
+  assert.ok(locked.text().includes('Captura confirmada: el reporte quedó bloqueado'));
   assert.equal(locked.registry.get('Lugar de instalación')?.onChange, undefined, 'sólo lectura: sin campo editable');
   const readOnly = await openReport({ permissions: ['mobile.access', 'work_orders.read_organization', 'technical_reports.read'] });
   assert.ok(readOnly.text().includes('no capturarlo'));
@@ -450,4 +450,98 @@ test('incidencias: la regla no afecta a calibración (no existe reporte ni este 
   assert.ok(!h.registry.has('¿Hubo incidencias?: No'));
   assert.ok(h.probe.requests.every((request) => !/technical-report/.test(request)));
   assert.ok(h.probe.log.some((line) => line.startsWith('LTC mount')), 'la captura de hojas sigue montándose');
+});
+
+// ------------------------------------------------------------------ SG-4D/E: confirmar captura
+
+const confirmPosts = (h: LifecycleHarness) => h.probe.calls.filter((call) => call.method === 'POST' && call.path === `${REPORT_PATH}/confirm-capture`);
+
+test('4E: el botón Confirmar captura está separado del autosave y sólo aparece con el reporte editable', async () => {
+  const editable = await openReport();
+  assert.ok(editable.registry.has('Confirmar captura'));
+  assert.ok(editable.text().includes('no finaliza el reporte'));
+  assert.equal(confirmPosts(editable).length, 0, 'el autosave no confirma');
+  await type(editable, 'Lugar de instalación', 'Bodega');
+  await blur(editable, 'Lugar de instalación');
+  assert.equal(patches(editable).length, 1);
+  assert.equal(confirmPosts(editable).length, 0);
+
+  const locked = await openReport({ report: freshInstallationReport({ status: 'ready_for_signatures' }) });
+  assert.ok(!locked.text().includes('Confirmar captura'));
+  const readOnly = await openReport({ permissions: ['mobile.access', 'work_orders.read_organization', 'technical_reports.read'] });
+  assert.ok(!readOnly.text().includes('Confirmar captura'));
+});
+
+test('4E: pide confirmación advirtiendo el bloqueo; cancelar no envía nada', async () => {
+  const h = await openReport();
+  await h.press('Confirmar captura');
+  const confirm = h.probe.alerts.find((alert) => alert.title === '¿Confirmar captura?')!;
+  assert.ok(confirm);
+  assert.deepEqual(confirm.buttons.map((button) => button.text), ['Cancelar', 'Confirmar captura']);
+  assert.equal(confirmPosts(h).length, 0);
+  await h.act(async () => { confirm.buttons[0].onPress?.(); });
+  assert.equal(confirmPosts(h).length, 0);
+  assert.ok(h.registry.has('Lugar de instalación') && h.registry.get('Lugar de instalación')!.onChange);
+});
+
+test('4E: el error de validación del backend se muestra completo y el reporte sigue editable', async () => {
+  const h = await openReport();
+  h.env.confirmCaptureError = 'Faltan: Fecha de instalación, Lugar de instalación.';
+  await h.press('Confirmar captura');
+  await h.act(async () => { alertButton(h, '¿Confirmar captura?', 'Confirmar captura')(); });
+  await h.flush();
+  assert.equal(confirmPosts(h).length, 1);
+  assert.ok(h.probe.log.includes('Alert:No se puede confirmar la captura'));
+  assert.ok(h.text().includes('Confirmar captura'), 'sigue editable');
+  assert.ok(!h.text().includes('LISTO PARA FIRMAS'));
+});
+
+test('4E: antes de confirmar se guarda lo último escrito; si no se puede guardar no se confirma', async () => {
+  const h = await openReport();
+  await type(h, 'Lugar de instalación', 'Bodega');
+  h.env.failCaptureSave = true;
+  await h.press('Confirmar captura');
+  await h.act(async () => { alertButton(h, '¿Confirmar captura?', 'Confirmar captura')(); });
+  await h.flush();
+  assert.equal(confirmPosts(h).length, 0);
+  assert.ok(h.text().includes('No se pudo guardar tu captura'));
+});
+
+test('4E: confirmación exitosa -> LISTO PARA FIRMAS, formulario de sólo lectura y galería no editable', async () => {
+  const h = await openReport({ report: evidenceReport({ before: 2 }) });
+  await type(h, 'Lugar de instalación', 'Bodega');
+  await h.press('Confirmar captura');
+  await h.act(async () => { alertButton(h, '¿Confirmar captura?', 'Confirmar captura')(); });
+  await h.flush();
+  assert.equal(confirmPosts(h).length, 1);
+  assert.equal(patches(h).length, 1, 'el flush previo guardó el último valor antes de confirmar');
+  const text = h.text();
+  assert.ok(text.includes('LISTO PARA FIRMAS'));
+  assert.ok(text.includes('Captura confirmada'));
+  assert.ok(text.includes('Técnico responsable'));
+  assert.ok(!text.includes('Al confirmar se valida'), 'la sección Confirmar captura desaparece');
+  assert.equal(h.registry.get('Lugar de instalación')?.onChange, undefined, 'campos de sólo lectura');
+  assert.ok(!text.includes('Agregar'), 'sin agregar foto');
+  await h.press('Abrir foto Antes 1');
+  assert.ok(!h.registry.has('Eliminar evidencia'), 'sin eliminar foto');
+  assert.ok(h.text().includes('1 de 2 · Antes'), 'la galería sigue visible');
+});
+
+test('4E: tras confirmar no hay autosave ni cambios (los controles dejan de actuar)', async () => {
+  const h = await openReport({ report: freshInstallationReport({ status: 'ready_for_signatures', performed_by_name_snapshot: 'Tec', performed_at: '2026-10-08T15:30:00+00:00' }) });
+  assert.ok(h.text().includes('Técnico responsable'));
+  await new Promise((resolve) => setTimeout(resolve, 900));
+  await h.flush();
+  assert.equal(patches(h).length, 0);
+  assert.ok(!h.registry.has('¿Hubo incidencias?: Sí'), 'los selectores pasan a texto de sólo lectura');
+});
+
+test('4E: calibración no tiene confirmación de captura de reporte', async () => {
+  const h = await createLifecycleHarness();
+  h.env.detail = workOrderFixture({ status: 'received_signed' });
+  h.env.params = { workOrderId: '72' };
+  await h.mount();
+  await h.flush();
+  assert.ok(!h.text().includes('Confirmar captura'));
+  assert.ok(h.probe.requests.every((request) => !/confirm-capture/.test(request)));
 });

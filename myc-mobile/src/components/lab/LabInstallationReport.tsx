@@ -115,6 +115,7 @@ export function LabInstallationReport({
   const [formError, setFormError] = useState('');
   const [autosaveStatus, setAutosaveStatus] = useState<TechnicalReportAutosaveStatus>('idle');
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   const apiRef = useRef(api);
   apiRef.current = api;
@@ -184,6 +185,41 @@ export function LabInstallationReport({
 
   function changeText(field: InstallationTextField, text: string) {
     change(field, textOrNull(text));
+  }
+
+  // ------------------------------------------------------- confirmar captura
+  // Transición explícita y separada del autosave. Backend revalida TODO (Mobile
+  // no es autoridad) y fija al técnico responsable; aquí sólo se pide la
+  // confirmación y se muestran sus errores completos.
+  function requestConfirmation() {
+    if (!editable || confirming) return;
+    Alert.alert(
+      '¿Confirmar captura?',
+      'Al confirmar, la captura y las fotografías quedarán bloqueadas y no podrás modificarlas. Quedarás registrado como técnico responsable.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Confirmar captura', onPress: () => { void confirmCapture(); } },
+      ],
+    );
+  }
+
+  async function confirmCapture() {
+    setConfirming(true);
+    setFormError('');
+    try {
+      // Lo último escrito debe estar en el servidor antes de validar.
+      if (!(await autosave.flush())) {
+        setFormError('No se pudo guardar tu captura; revisa la conexión y reintenta antes de confirmar.');
+        return;
+      }
+      const confirmed = await api.confirmCapture();
+      setReport(confirmed);
+      onChangedRef.current?.();
+    } catch (error) {
+      Alert.alert('No se puede confirmar la captura', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally {
+      setConfirming(false);
+    }
   }
 
   async function leave() {
@@ -346,8 +382,16 @@ export function LabInstallationReport({
 
       {!editable && (
         <AlertBanner tone="info">
-          {canCapture ? 'Este reporte ya no es editable.' : 'Tu perfil permite consultar este reporte, pero no capturarlo.'}
+          {report.status === 'ready_for_signatures'
+            ? 'Captura confirmada: el reporte quedó bloqueado y está listo para firmas.'
+            : canCapture ? 'Este reporte ya no es editable.' : 'Tu perfil permite consultar este reporte, pero no capturarlo.'}
         </AlertBanner>
+      )}
+      {!!report.performed_by_name_snapshot && (
+        <Card>
+          <ReadOnlyField label="Técnico responsable" value={report.performed_by_name_snapshot} />
+          {!!report.performed_at && <ReadOnlyField label="Captura confirmada" value={report.performed_at.replace('T', ' ').slice(0, 16)} />}
+        </Card>
       )}
       {editable && autosaveStatus !== 'idle' && (
         <Text style={autosaveStatus === 'error' ? styles.autosaveError : styles.autosaveHint}>
@@ -449,7 +493,23 @@ export function LabInstallationReport({
         )}
       </Section>
 
-      <PrimaryButton icon="arrow-left" label="Volver a equipos" onPress={() => { void leave(); }} />
+      {editable && (
+        <Section title="Confirmar captura">
+          <Text style={styles.meta}>
+            El autosave guarda tu borrador, pero no finaliza el reporte. Al confirmar se valida que esté completo, se
+            bloquea la captura y quedas como técnico responsable.
+          </Text>
+          <PrimaryButton
+            disabled={confirming || photoBusy}
+            icon="check-circle"
+            label="Confirmar captura"
+            loading={confirming}
+            onPress={requestConfirmation}
+          />
+        </Section>
+      )}
+
+      <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => { void leave(); }} />
     </View>
   );
 }
