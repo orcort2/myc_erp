@@ -30,19 +30,6 @@ export type TechnicalReportType = 'installation' | 'verification' | 'repair' | '
 
 export type TechnicalReportStatus = 'draft' | 'in_progress' | 'ready_for_signatures' | 'completed' | 'cancelled';
 
-// Lectura mínima del TechnicalReport (GET/POST .../technical-report). SG-3 sólo
-// consume identidad, estado y revisión; capture_values/evidencia llegan en SG-4.
-export type TechnicalReportRead = {
-  id: number;
-  lab_equipment_id: number;
-  report_type: TechnicalReportType;
-  folio: string;
-  status: TechnicalReportStatus;
-  revision_number: number;
-  is_current: boolean;
-  document_snapshot: Record<string, unknown> | null;
-};
-
 export type LabEquipment = {
   id: number;
   position: number;

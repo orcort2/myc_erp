@@ -29,7 +29,8 @@ def test_every_http_operation_has_an_explicit_access_classification():
     # EMAIL-2 adds public forgot-password / reset-password.
     # EMAIL-3 adds five ClientContact operations and three contextual quotation email operations.
     # SG-2 adds GET/POST .../equipment/{equipment_id}/technical-report (mobile lab).
-    assert len(operations) == 570
+    # SG-4 adds PATCH technical-report, POST/GET/DELETE technical-report evidence.
+    assert len(operations) == 574
     assert all(classify_operation(item.method, item.path, item.tags) for item in operations)
 
 

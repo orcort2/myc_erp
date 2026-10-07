@@ -6,7 +6,7 @@ import {
   equipmentFixture,
   generalServiceEquipmentFixture,
   installationProjection,
-  installationReport,
+  freshInstallationReport,
   workOrderFixture,
 } from './support/lab-fixtures';
 
@@ -22,7 +22,7 @@ type OrderDetail = { id: number } & Record<string, unknown>;
 async function openOrder(detail: OrderDetail, options: { permissions?: string[]; report?: unknown } = {}): Promise<LifecycleHarness> {
   const harness = await createLifecycleHarness();
   harness.env.detail = detail;
-  harness.env.report = options.report ?? installationReport;
+  harness.env.report = options.report ?? freshInstallationReport();
   harness.env.params = { workOrderId: String(detail.id) };
   if (options.permissions) harness.env.user = { ...harness.env.user, permissions: options.permissions };
   await harness.mount();
@@ -251,20 +251,18 @@ test('SG-3D: un error del backend al crear el reporte se informa y deja el selec
   assert.equal(h.probe.published.length, 0, 'sin cambio local no se publica nada');
 });
 
-// ---------------------------------------------------------------- SG-3E
+// ---------------------------------------------------------------- SG-3E / SG-4A
 
-test('SG-3E: Abrir reporte muestra la vista base con folio, estado, revisión, cliente y el aviso de la siguiente fase', async () => {
+test('SG-3E/4A: Abrir reporte muestra el encabezado de sólo lectura desde el snapshot, sin duplicarlo en la captura', async () => {
   const h = await openOrder(generalInTechnical({ equipment: [generalServiceEquipmentFixture(installationProjection())] }));
   await h.press('Abrir reporte');
   const text = h.text();
   assert.ok(text.includes('OT 6072 · EQUIPO 1'));
-  assert.ok(text.includes('Instalación'));
+  assert.ok(text.includes('Reporte de instalación'));
   assert.ok(text.includes('MYC-IN10-26-0001'));
   assert.ok(text.includes('BORRADOR'));
-  assert.ok(text.includes('Revisión'));
   assert.ok(text.includes('Cliente SG'));
   assert.ok(text.includes('Báscula'));
-  assert.ok(text.includes('La captura del reporte de instalación estará disponible en la siguiente fase.'));
   assert.ok(h.probe.requests.includes('GET /mobile/v1/technician/lab-work-orders/72/equipment/289/technical-report'));
 });
 

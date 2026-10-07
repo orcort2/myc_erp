@@ -49,5 +49,21 @@ export function workOrderFixture(overrides: Record<string, unknown> = {}) {
 
 export const installationReport = {
   id: 5, lab_equipment_id: 289, report_type: 'installation', folio: 'MYC-IN10-26-0001', status: 'draft',
-  revision_number: 1, is_current: true, document_snapshot: null,
+  capture_values: {}, document_snapshot: {
+    work_order: { id: 72, folio: 6072 },
+    client: { name: 'Cliente SG' },
+    equipment: { instrument: 'Báscula', brand: 'MYC', model: 'B-1', serial_number: 'SER-1', identification: 'ID-1' },
+  },
+  report_schema_version: 1, revision_number: 1, is_current: true, evidence: [] as Record<string, unknown>[],
 };
+
+export function freshInstallationReport(overrides: Record<string, unknown> = {}) {
+  return structuredClone({ ...installationReport, ...overrides });
+}
+
+export function evidenceFixture(id: number, evidenceType: string, position: number) {
+  return {
+    id, technical_report_id: 5, evidence_type: evidenceType, mime_type: 'image/jpeg', sha256: 'b'.repeat(64),
+    size_bytes: 120_000, position, caption: null, created_at: '2026-10-08T00:00:00Z',
+  };
+}

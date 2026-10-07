@@ -17,6 +17,9 @@ export type TechnicalReportTypeOption = {
   enabled: boolean;
 };
 
+/** Un reporte sólo se captura/edita antes de quedar listo para firmas. */
+export const EDITABLE_REPORT_STATUSES: ReadonlySet<TechnicalReportStatus> = new Set<TechnicalReportStatus>(['draft', 'in_progress']);
+
 const COMING_SOON = 'Próximamente';
 
 export const TECHNICAL_REPORT_TYPE_OPTIONS: TechnicalReportTypeOption[] = [

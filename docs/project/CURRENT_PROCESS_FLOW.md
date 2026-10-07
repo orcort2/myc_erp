@@ -539,6 +539,17 @@ primera creación promueve `received_signed → in_progress`. Formulario,
 evidencias, firma final de conformidad, PDF y cierre de Servicio General
 pertenecen a SG-4.
 
+SG-4A–C (captura): el reporte de Instalación guarda `capture_values` con el
+contrato cerrado `installation` v1 (13 campos; sin duplicar cliente/OT/equipo/
+folio, que viven en el snapshot) mediante `PATCH .../technical-report`
+(autosave; sólo en `draft`/`in_progress`; la primera captura promueve
+`draft → in_progress`). La evidencia fotográfica (`before`/`during`/`incident`/
+`after`; JPEG/PNG; máx. 5 MiB y 20 por reporte) se guarda en el storage
+administrado `technical-reports/<id>/evidence/` con SHA-256 calculado por el
+backend y posiciones compactas 1..N; sólo staff MYC con
+`technical_reports.capture` puede escribir. Confirmar captura, firma de
+conformidad y PDF no están implementados.
+
 ## Flujo temporal OT LAB móvil
 
 ```text

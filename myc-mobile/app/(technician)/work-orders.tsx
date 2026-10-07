@@ -76,7 +76,8 @@ import {
   buildCreateTechnicalReportRequest,
   TECHNICAL_REPORT_TYPE_OPTIONS,
 } from '@/src/services/technical-report';
-import { LabTechnicalReportBase } from '@/src/components/lab/LabTechnicalReportBase';
+import { LabInstallationReport } from '@/src/components/lab/LabInstallationReport';
+import { createTechnicalReportApi } from '@/src/services/technical-report-api';
 import { LabTechnicalReportCard } from '@/src/components/lab/LabTechnicalReportCard';
 import { shouldResetFormAfterSubmit } from '@/src/services/lab-client-selector';
 import { generalWithLabClient } from '@/src/services/lab-work-order-client';
@@ -385,7 +386,8 @@ export default function WorkOrdersScreen() {
 
   const requestResponse = useCallback(async (path: string, init?: RequestInit): Promise<Response> => {
     const headers = new Headers(init?.headers);
-    if (init?.body) headers.set('Content-Type', 'application/json');
+    // FormData (evidencia): fetch fija multipart/form-data con su boundary.
+    if (init?.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json');
     const response = await authorizedFetch(apiUrl(path), { ...init, headers });
     if (!response.ok) {
       const detail = await readApiErrorDetail(response);
@@ -1319,6 +1321,27 @@ export default function WorkOrdersScreen() {
     }
   }
 
+  // Cambio relevante en un reporte (primera captura, foto subida/eliminada):
+  // refresca la OT una vez y publica. Nunca se invoca por tecla/autosave.
+  async function refreshAfterReportChange() {
+    if (!workOrder) return;
+    const orderId = workOrder.id;
+    try {
+      const detail = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${orderId}`);
+      if (openWorkOrderIdRef.current !== orderId) return;
+      detailRefreshSequence.current += 1;
+      setWorkOrder(detail);
+      publishLocalChange({ event_type: 'work_order.updated', entity_type: 'work_order', entity_id: orderId, work_order_id: orderId });
+    } catch {
+      // Best-effort: el siguiente foreground/realtime reconcilia la tarjeta.
+    }
+  }
+
+  function closeReportFlow() {
+    setReportFlow(null);
+    void refreshAfterReportChange();
+  }
+
   function openVoidEquipmentDialog(equipment: LabEquipment) {
     if (!canVoidLabEquipmentEntry) return;
 
@@ -1683,6 +1706,7 @@ export default function WorkOrdersScreen() {
     }
     setOpen(false);
     setEquipmentEditor(null);
+    setReportFlow(null);
     refresh();
   }
 
@@ -2707,11 +2731,20 @@ export default function WorkOrdersScreen() {
                           <SecondaryButton disabled={busy} icon="close" label="Cancelar" onPress={() => setReportFlow(null)} />
                         </>
                       ) : (
-                        <LabTechnicalReportBase
+                        <LabInstallationReport
+                          api={createTechnicalReportApi({
+                            accessToken: session?.access_token ?? '',
+                            apiUrl,
+                            equipmentId: reportEquipment.id,
+                            request,
+                            workOrderId: workOrder.id,
+                          })}
+                          canCapture={canCaptureTechnicalReports}
+                          clientName={workOrder.client_name}
                           equipment={reportEquipment}
-                          onClose={() => setReportFlow(null)}
-                          request={request}
-                          workOrder={workOrder}
+                          onChanged={() => { void refreshAfterReportChange(); }}
+                          onClose={closeReportFlow}
+                          workOrderFolio={workOrder.folio}
                         />
                       )}
                     </FadeIn>

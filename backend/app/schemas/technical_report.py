@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.technical_report_installation import InstallationCapturePatch
+
 
 TechnicalReportType = Literal[
     "installation",
@@ -34,6 +36,15 @@ class TechnicalReportCreate(BaseModel):
     # El modelo ya permite otros tipos, pero en esta primera fase el servicio
     # sólo habilitará installation.
     report_type: TechnicalReportType
+
+
+class TechnicalReportCaptureUpdate(BaseModel):
+    """PATCH del reporte: sólo `capture_values`. Cualquier otro campo
+    (folio, report_type, revisión, firma, PDF, responsable...) se rechaza."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    capture_values: InstallationCapturePatch
 
 
 class TechnicalReportEvidenceRead(BaseModel):
