@@ -1,6 +1,7 @@
-import { Image } from 'expo-image';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { LabEvidenceGallery } from '@/src/components/lab/LabEvidenceGallery';
 
 import {
   AlertBanner,
@@ -68,6 +69,8 @@ type Props = {
   /** Inyectable para pruebas; por defecto el proveedor registrado en la app. */
   mediaProvider?: EvidenceMediaProvider | null;
 };
+
+const INCIDENT_EVIDENCE_BLOCKS_NO_MESSAGE = 'Elimina primero las evidencias de incidencia para indicar que no hubo incidencias.';
 
 const LEAVE_FAILED_MESSAGE = 'No se pudo guardar tu captura; revisa la conexión y reintenta antes de salir del reporte.';
 
@@ -166,6 +169,13 @@ export function LabInstallationReport({
 
   function change<K extends InstallationCaptureField>(field: K, value: InstallationCaptureValues[K]) {
     if (!editable || !valuesRef.current) return;
+    // Consistencia documental: el reporte no puede declarar "sin incidencias"
+    // mientras conserve evidencia clasificada como incidencia. No se borra ni
+    // se reclasifica nada automáticamente.
+    if (field === 'has_incidents' && value === false && report?.evidence.some((item) => item.evidence_type === 'incident')) {
+      Alert.alert('No se puede cambiar', INCIDENT_EVIDENCE_BLOCKS_NO_MESSAGE);
+      return;
+    }
     const next = applyInstallationChange(valuesRef.current, field, value);
     valuesRef.current = next;
     setValues(next);
@@ -221,24 +231,20 @@ export function LabInstallationReport({
     ]);
   }
 
-  function confirmDelete(item: TechnicalReportEvidence) {
-    Alert.alert('Eliminar foto', 'Se quitará esta fotografía del reporte.', [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Eliminar',
-        style: 'destructive',
-        onPress: () => {
-          setPhotoBusy(true);
-          api.deleteEvidence(item.id)
-            .then((updated) => {
-              setReport((current) => current && ({ ...current, status: updated.status, evidence: updated.evidence }));
-              onChangedRef.current?.();
-            })
-            .catch((error) => Alert.alert('No fue posible eliminar la foto', error instanceof Error ? error.message : 'Intenta nuevamente'))
-            .finally(() => setPhotoBusy(false));
-        },
-      },
-    ]);
+  /** Baja de una evidencia desde el visor. Sólo actualiza estado/evidencia del
+   * reporte: nunca recarga ni pisa los valores locales del formulario. */
+  async function deleteEvidence(item: TechnicalReportEvidence): Promise<void> {
+    setPhotoBusy(true);
+    try {
+      const updated = await api.deleteEvidence(item.id);
+      setReport((current) => current && ({ ...current, status: updated.status, evidence: updated.evidence }));
+      onChangedRef.current?.();
+    } catch (error) {
+      Alert.alert('No fue posible eliminar la foto', error instanceof Error ? error.message : 'Intenta nuevamente');
+      throw error;
+    } finally {
+      setPhotoBusy(false);
+    }
   }
 
   const provider = mediaProvider === undefined ? getEvidenceMediaProvider() : mediaProvider;
@@ -248,41 +254,23 @@ export function LabInstallationReport({
   function renderPhotos(section: InstallationSectionKey) {
     const evidenceType = SECTION_EVIDENCE_TYPE[section];
     if (!evidenceType || !report) return null;
-    const items = report.evidence.filter((item) => item.evidence_type === evidenceType);
+    const items = report.evidence
+      .filter((item) => item.evidence_type === evidenceType)
+      .sort((left, right) => left.position - right.position);
+    if (!items.length && !canAddPhotos) {
+      return editable ? null : <Text style={styles.meta}>Sin fotografías.</Text>;
+    }
     return (
-      <View style={styles.photos}>
-        {items.map((item) => (
-          <View key={item.id} style={styles.photo}>
-            <Image
-              accessibilityLabel={`Foto ${EVIDENCE_TYPE_LABELS[item.evidence_type]} ${item.position}`}
-              contentFit="cover"
-              source={api.evidenceImageSource(item.id)}
-              style={styles.photoImage}
-            />
-            {editable && (
-              <Pressable
-                accessibilityLabel={`Eliminar foto ${item.position}`}
-                accessibilityRole="button"
-                disabled={photoBusy}
-                hitSlop={8}
-                onPress={() => confirmDelete(item)}
-                style={styles.photoDelete}
-              >
-                <Text style={styles.photoDeleteText}>Eliminar</Text>
-              </Pressable>
-            )}
-          </View>
-        ))}
-        {canAddPhotos && (
-          <SecondaryButton
-            disabled={photoBusy}
-            icon="camera-outline"
-            label={`Agregar foto · ${EVIDENCE_TYPE_LABELS[evidenceType]}`}
-            onPress={() => requestPhoto(evidenceType)}
-          />
-        )}
-        {!items.length && !canAddPhotos && !editable && <Text style={styles.meta}>Sin fotografías.</Text>}
-      </View>
+      <LabEvidenceGallery
+        addLabel={`Agregar foto · ${EVIDENCE_TYPE_LABELS[evidenceType]}`}
+        busy={photoBusy}
+        canAdd={canAddPhotos}
+        canDelete={editable}
+        imageSource={api.evidenceImageSource}
+        items={items}
+        onAdd={() => requestPhoto(evidenceType)}
+        onDelete={deleteEvidence}
+      />
     );
   }
 
@@ -442,11 +430,19 @@ export function LabInstallationReport({
           <EmptyState
             title="Sin fotografías"
             description={canAddPhotos
-              ? 'Agrega fotos desde cada sección: Condición inicial, Incidencias o Verificación.'
+              ? 'Agrega fotos desde cada sección: Condición inicial, Trabajo realizado, Incidencias o Verificación.'
               : 'Aún no hay fotografías en este reporte.'}
           />
         ) : (
-          <Text style={styles.meta}>{report.evidence.length} de {MAX_EVIDENCE_PER_REPORT} fotografías</Text>
+          <Text style={styles.meta}>
+            {report.evidence.length} de {MAX_EVIDENCE_PER_REPORT} fotografías
+            {' · '}
+            {(['before', 'during', 'incident', 'after'] as const)
+              .map((type) => [type, report.evidence.filter((item) => item.evidence_type === type).length] as const)
+              .filter(([, count]) => count > 0)
+              .map(([type, count]) => `${EVIDENCE_TYPE_LABELS[type]} ${count}`)
+              .join(' · ')}
+          </Text>
         )}
         {editable && !provider && (
           <Text style={styles.meta}>La captura de fotos requiere actualizar la app.</Text>
@@ -474,10 +470,5 @@ const styles = StyleSheet.create({
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   meta: { color: colors.textSubtle },
   panel: { gap: spacing.md, paddingBottom: spacing.xl },
-  photo: { gap: spacing.xs },
-  photoDelete: { alignSelf: 'flex-start', paddingVertical: spacing.xs },
-  photoDeleteText: { color: colors.danger, fontWeight: '700' },
-  photoImage: { aspectRatio: 4 / 3, borderRadius: 9, width: '100%' },
-  photos: { gap: spacing.sm },
   title: { color: colors.text, fontSize: 22, fontWeight: '800' },
 });

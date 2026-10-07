@@ -117,11 +117,43 @@ test('SG-3B: Servicio General no muestra modalidad, cliente documental ni folio 
   await openEquipmentForm(h);
   const text = h.text();
   assert.ok(text.includes('Equipo / producto'));
-  assert.ok(text.includes('Número de reporte'));
+  assert.ok(text.includes('Folio del reporte'));
+  assert.ok(text.includes('Se asignará automáticamente'));
+  assert.ok(text.includes('Colocado por el sistema'));
+  assert.ok(!text.includes('Número de reporte'));
   assert.ok(text.includes('Condición general'));
   for (const forbidden of ['Acreditado', 'Trazable', 'Vinculado', 'Cliente documental', 'Folio de informe', 'Generado por el sistema', 'Empresa vinculada', 'MYCA', 'MYCT']) {
     assert.ok(!text.includes(forbidden), forbidden);
   }
+});
+
+test('SG-4C.1: el folio del reporte es un texto de sólo lectura colocado por el sistema (sin input)', async () => {
+  const h = await openOrder(generalOrder());
+  await openEquipmentForm(h);
+  const folio = h.registry.get('Folio del reporte: Se asignará automáticamente');
+  assert.ok(folio, 'campo visible con aviso de asignación automática');
+  assert.equal(folio.onChange, undefined);
+  assert.equal(folio.onChangeText, undefined);
+  assert.equal(h.registry.get('Folio del reporte')?.onChange, undefined, 'no es un Field editable');
+});
+
+test('SG-4C.1: con reporte creado el folio mostrado es technical_report_folio, y el alta/edición no lo envía', async () => {
+  const withReport = generalServiceEquipmentFixture({ ...installationProjection(), report_number: 'LEGADO-77' });
+  const h = await openOrder(generalOrder({ equipment: [withReport] }));
+  await h.act(async () => { await h.registry.get('pressable:Editar datos')!.onPress(); });
+  const text = h.text();
+  assert.ok(text.includes('MYC-IN10-26-0001'));
+  assert.ok(text.includes('Colocado por el sistema'));
+  assert.ok(!text.includes('Se asignará automáticamente'));
+  assert.ok(!text.includes('LEGADO-77'), 'report_number no es la autoridad del folio');
+  await h.act(async () => { h.registry.get('Marca')!.onChange('Otra marca'); });
+  await h.press('Guardar cambios');
+  const [patch] = h.probe.calls.filter((call) => call.method === 'PATCH' && /equipment\/289\/configured$/.test(call.path));
+  assert.ok(patch);
+  assert.deepEqual(Object.keys(patch.body as object), ['equipment']);
+  const equipment = (patch.body as { equipment: Record<string, unknown> }).equipment;
+  assert.ok(!('report_number' in equipment));
+  assert.doesNotMatch(JSON.stringify(patch.body), /MYC-IN|LEGADO|technical_report/);
 });
 
 test('SG-3B: alta calibración envía service con modalidad; Servicio General sólo envía el equipo (service_type null)', async () => {

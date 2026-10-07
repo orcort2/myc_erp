@@ -2666,6 +2666,7 @@ export default function WorkOrdersScreen() {
                         initialValues={hydrateEquipmentFormValues(equipmentEditor, workOrder?.operational_category ?? DEFAULT_OPERATIONAL_CATEGORY)}
                         mode="edit"
                         operationalCategory={workOrder?.operational_category}
+                        reportFolio={equipmentEditor.technical_report_folio}
                         onCancel={() => setEquipmentEditor(null)}
                         onFieldChange={clearEquipmentError}
                         onSubmit={saveEquipmentEdit}

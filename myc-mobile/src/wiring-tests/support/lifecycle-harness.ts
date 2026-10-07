@@ -78,6 +78,8 @@ export type Env = {
   /** Si es true, POST technical-report responde 409. */
   failTechnicalReportCreate: boolean;
   failCaptureSave: boolean;
+  /** Ancho de ventana simulado (iPhone 390 por defecto; 320 = SE/mini). */
+  windowWidth: number;
   failEvidenceUpload: boolean;
   /** Respuesta por OT para GET detalle; si no existe se usa `detail`. */
   details: Record<number, any>;
@@ -117,7 +119,7 @@ export async function createLifecycleHarness() {
   const allStubs = new Proxy({}, { get: (_t, key) => stub(String(key)) });
   const env: Env = {
     user: { id: 1, full_name: 'Tec', actor_type: 'internal', permissions: ['*', 'mobile.access', 'lab_work_orders.use'] },
-    detail: null, sheet: null, report: null, created: null, signed: null, failTechnicalReportCreate: false, failCaptureSave: false, failEvidenceUpload: false, details: {}, detailGates: [], sheetWriteGates: [], params: {}, listeners: new Set(), session: { access_token: 't' },
+    detail: null, sheet: null, report: null, created: null, signed: null, failTechnicalReportCreate: false, failCaptureSave: false, windowWidth: 390, failEvidenceUpload: false, details: {}, detailGates: [], sheetWriteGates: [], params: {}, listeners: new Set(), session: { access_token: 't' },
   };
   const response = (body: unknown) => ({ ok: true, status: 200, headers: { get: () => null }, json: async () => body });
   let detailCalls = 0;
@@ -185,7 +187,7 @@ export async function createLifecycleHarness() {
     AccessibilityInfo: { isReduceMotionEnabled: () => Promise.resolve(false), addEventListener: () => ({ remove() {} }) },
     Dimensions: { get: () => ({ width: 390, height: 844 }) },
     Keyboard: { addListener: () => ({ remove() {} }), dismiss() {} },
-    useWindowDimensions: () => ({ width: 390, height: 844 }),
+    useWindowDimensions: () => ({ width: env.windowWidth, height: 844 }),
   }, { get: (t: any, k) => (k in t ? t[k] : stub(String(k))) });
   const FadeIn = (props: any) => h('div', null, props.children);
   const ports: Record<string, unknown> = {

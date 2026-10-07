@@ -9,7 +9,12 @@ import {
   PrimaryButton,
   SecondaryButton,
 } from '@/src/design/primitives';
-import { equipmentFormProfile } from '@/src/services/lab-operational-category';
+import {
+  equipmentFormProfile,
+  REPORT_FOLIO_LABEL,
+  reportFolioDisplay,
+  SYSTEM_PLACED_HINT,
+} from '@/src/services/lab-operational-category';
 import {
   defaultDocumentaryClient,
   selectFinalClient,
@@ -30,6 +35,8 @@ type Props = {
    * lectura -- nunca se edita desde este formulario (Fase 2 hardening). */
   folioDisplay?: string | null;
   initialValues?: AnyEquipmentFormValues;
+  /** Servicio General: technical_report_folio del equipo (null = aún sin reporte). */
+  reportFolio?: string | null;
   mode: 'create' | 'edit';
   /** Ausente = 'calibration': el flujo metrológico histórico no cambia. */
   operationalCategory?: LabOperationalCategory;
@@ -77,6 +84,7 @@ export function LabEquipmentForm({
   onFieldChange,
   onSubmit,
   operationalCategory = 'calibration',
+  reportFolio,
   request,
   workOrderClientName,
 }: Props) {
@@ -198,13 +206,15 @@ export function LabEquipmentForm({
         onChange={(value) => updateEquipment('serial_number', value)}
       />
 
-      {profile.showsReportNumberField && (
-        <Field
-          error={fieldErrors.report_number}
-          label="Número de reporte"
-          value={equipment.report_number ?? ''}
-          onChange={(value) => updateEquipment('report_number', value || null)}
-        />
+      {profile.showsReportFolio && (
+        <View style={styles.fieldGroup}>
+          <Text style={styles.fieldLabel}>{REPORT_FOLIO_LABEL}</Text>
+          {/* Texto, no input: sin teclado ni edición; la autoridad es technical_report_folio. */}
+          <Text accessibilityLabel={`${REPORT_FOLIO_LABEL}: ${reportFolioDisplay(reportFolio)}`} style={styles.readOnlyValue}>
+            {reportFolioDisplay(reportFolio)}
+          </Text>
+          <Text style={styles.notice}>{SYSTEM_PLACED_HINT}</Text>
+        </View>
       )}
 
       {profile.showsMetrologicalConfiguration && (service === 'linked' ? (

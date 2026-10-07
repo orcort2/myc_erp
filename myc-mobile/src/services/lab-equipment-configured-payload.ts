@@ -165,18 +165,21 @@ export function isGeneralServiceValues(values: AnyEquipmentFormValues): values i
   return values.operationalCategory === 'general_service';
 }
 
+/** Sin `report_number`: el folio del reporte lo asigna el sistema
+ * (technical_report_folio) y nunca viaja como dato editable del equipo. */
 export type GeneralServiceEquipmentPayload = {
-  equipment: EquipmentBasicData & { expected_edit_version?: number };
+  equipment: Omit<EquipmentBasicData, 'report_number'> & { expected_edit_version?: number };
 };
 
 /** Builds the POST/PATCH .../equipment/configured body for Servicio General:
- * sin `service` ni `certificate_client`, jamás un service_type ficticio. */
+ * sin `service`, `certificate_client`, service_type ni número/folio de reporte. */
 export function buildGeneralServiceEquipmentPayload(
   equipment: EquipmentBasicData,
   expectedEditVersion?: number,
 ): GeneralServiceEquipmentPayload {
+  const { report_number: _systemAssigned, ...editable } = equipment;
   return {
-    equipment: expectedEditVersion == null ? equipment : { ...equipment, expected_edit_version: expectedEditVersion },
+    equipment: expectedEditVersion == null ? editable : { ...editable, expected_edit_version: expectedEditVersion },
   };
 }
 
@@ -299,7 +302,7 @@ export function hasEquipmentEditChanges(changes: EquipmentEditChanges): boolean 
 export function buildEquipmentEditRequestBody(
   values: GeneralServiceEquipmentFormValues,
   expectedEditVersion: number,
-): GeneralServiceEquipmentPayload & { equipment: EquipmentBasicData & { expected_edit_version: number } };
+): GeneralServiceEquipmentPayload & { equipment: { expected_edit_version: number } };
 export function buildEquipmentEditRequestBody(
   values: EquipmentFormValues,
   expectedEditVersion: number,
@@ -307,11 +310,11 @@ export function buildEquipmentEditRequestBody(
 export function buildEquipmentEditRequestBody(
   values: AnyEquipmentFormValues,
   expectedEditVersion: number,
-): (ConfiguredEquipmentPayload | GeneralServiceEquipmentPayload) & { equipment: EquipmentBasicData & { expected_edit_version: number } };
+): (ConfiguredEquipmentPayload | GeneralServiceEquipmentPayload) & { equipment: { expected_edit_version: number } };
 export function buildEquipmentEditRequestBody(
   values: AnyEquipmentFormValues,
   expectedEditVersion: number,
-): (ConfiguredEquipmentPayload | GeneralServiceEquipmentPayload) & { equipment: EquipmentBasicData & { expected_edit_version: number } } {
+): (ConfiguredEquipmentPayload | GeneralServiceEquipmentPayload) & { equipment: { expected_edit_version: number } } {
   const payload = buildEquipmentCreateBody(values);
   return { ...payload, equipment: { ...payload.equipment, expected_edit_version: expectedEditVersion } };
 }

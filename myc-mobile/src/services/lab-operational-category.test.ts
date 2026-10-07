@@ -62,10 +62,10 @@ test('perfil del formulario: calibración conserva la configuración metrológic
   assert.equal(calibration.showsMetrologicalConfiguration, true);
   assert.equal(calibration.instrumentLabel, 'Instrumento');
   assert.equal(calibration.conditionLabel, 'Estado físico');
-  assert.equal(calibration.showsReportNumberField, false);
+  assert.equal(calibration.showsReportFolio, false);
 
   const general = equipmentFormProfile('general_service');
   assert.equal(general.showsMetrologicalConfiguration, false);
   assert.equal(general.instrumentLabel, 'Equipo / producto');
-  assert.equal(general.showsReportNumberField, true);
+  assert.equal(general.showsReportFolio, true);
 });

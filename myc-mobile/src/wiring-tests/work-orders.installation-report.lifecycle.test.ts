@@ -181,21 +181,17 @@ test('4C: con cámara y galería se ofrece elegir la fuente', async () => {
   assert.equal(evidencePosts(h).length, 1);
 });
 
-test('4C: preview autenticado tras subir, eliminar con confirmación y reporte editable', async () => {
+test('4C: la foto subida aparece como miniatura autenticada del grid', async () => {
   const media = mediaProvider(['camera']);
   const h = await openReport({ media });
   await h.press('Agregar foto · Antes');
   const preview = h.registry.get('Foto Antes 1');
-  assert.ok(preview, 'preview de la foto subida');
+  assert.ok(preview, 'miniatura de la foto subida');
   assert.match(preview.source.uri, /technical-report\/evidence\/\d+\/file$/);
   assert.equal(preview.source.headers.Authorization, 'Bearer t');
+  assert.equal(preview.cachePolicy, 'memory-disk', 'no se descarga de nuevo');
   assert.ok(h.text().includes('EN CAPTURA'));
-
-  await h.press('Eliminar foto 1');
-  await h.act(async () => { alertButton(h, 'Eliminar foto', 'Eliminar')(); });
-  await h.flush();
-  assert.ok(h.probe.calls.some((call) => call.method === 'DELETE' && /evidence\/\d+$/.test(call.path)));
-  assert.ok(h.text().includes('Sin fotografías'));
+  assert.ok(h.text().includes('1 evidencia'));
 });
 
 test('4C: cancelar la captura no sube nada; un fallo de subida se informa', async () => {
@@ -245,4 +241,213 @@ test('calibración nunca monta el reporte de instalación', async () => {
   assert.ok(!h.text().includes('Reporte de instalación'));
   assert.ok(!h.text().includes('Seleccionar reporte'));
   assert.ok(h.probe.requests.every((request) => !/technical-report/.test(request)));
+});
+
+// ------------------------------------------------------------------ SG-4C.2-4: grid y visor
+
+function evidenceReport(counts: { before?: number; during?: number; incident?: number; after?: number }, status = 'in_progress') {
+  const evidence: Record<string, unknown>[] = [];
+  let id = 100;
+  let position = 0;
+  for (const [type, count] of Object.entries(counts)) {
+    for (let n = 0; n < (count ?? 0); n += 1) evidence.push(evidenceFixture((id += 1), type, (position += 1)));
+  }
+  return freshInstallationReport({ evidence, status, capture_values: { has_incidents: true, functional_test_performed: true } });
+}
+
+const deletes = (h: LifecycleHarness) => h.probe.calls.filter((call) => call.method === 'DELETE');
+
+test('4C.2: sin fotos sólo hay la celda Agregar y no hay contador', async () => {
+  const h = await openReport({ report: evidenceReport({}) });
+  assert.ok(h.registry.has('Agregar foto · Antes'));
+  assert.ok(h.text().includes('Agregar'));
+  assert.ok(!h.registry.has('Foto Antes 1'));
+  assert.ok(!/\d+ evidencias?/.test(h.text().replace('0 de 20', '')), 'sin contador de evidencias en la categoría');
+});
+
+test('4C.2: una y varias fotos: miniaturas por categoría y contador correcto', async () => {
+  const h = await openReport({ report: evidenceReport({ before: 1, incident: 3 }) });
+  assert.ok(h.registry.has('Foto Antes 1'));
+  assert.ok(h.text().includes('1 evidencia'));
+  assert.ok(h.registry.has('Foto Incidencia 2') && h.registry.has('Foto Incidencia 4'));
+  assert.ok(h.text().includes('3 evidencias'));
+  assert.ok(h.text().includes('4 de 20 fotografías'), 'el total sigue visible');
+  assert.ok(!h.registry.has('Eliminar foto 1'), 'no hay botón de borrado sobre la miniatura');
+});
+
+test('4C.4: con muchas fotos se limitan las miniaturas (3 columnas = 5 + "+N") y el total sigue visible', async () => {
+  const h = await openReport({ report: evidenceReport({ before: 9 }) });
+  for (const position of [1, 2, 3, 4, 5]) assert.ok(h.registry.has(`Foto Antes ${position}`), `miniatura ${position}`);
+  assert.ok(!h.registry.has('Foto Antes 6'), 'la sexta ya no es miniatura');
+  assert.ok(h.text().includes('+4'));
+  assert.ok(h.text().includes('9 evidencias'));
+  assert.ok(h.registry.has('Ver 9 fotos'));
+  assert.ok(h.registry.has('Agregar foto · Antes'), 'agregar sigue disponible fuera del grid');
+});
+
+test('4C.4: en pantallas estrechas el grid usa 2 columnas (3 miniaturas + "+N")', async () => {
+  const h = await createLifecycleHarness();
+  h.env.windowWidth = 320;
+  h.env.detail = workOrderFixture({ operational_category: 'general_service', status: 'in_progress', equipment: [generalServiceEquipmentFixture(installationProjection())] });
+  h.env.report = evidenceReport({ before: 9 });
+  h.env.params = { workOrderId: '72' };
+  h.setMediaProvider(mediaProvider().provider);
+  await h.mount(); await h.flush();
+  await h.press('Abrir reporte');
+  for (const position of [1, 2, 3]) assert.ok(h.registry.has(`Foto Antes ${position}`));
+  assert.ok(!h.registry.has('Foto Antes 4'));
+  assert.ok(h.text().includes('+6'));
+});
+
+test('4C.3: tocar una miniatura abre el visor en esa foto con indicador N de M', async () => {
+  const h = await openReport({ report: evidenceReport({ before: 3, incident: 2 }) });
+  assert.ok(!h.registry.has('Foto ampliada Antes 2'));
+  await h.press('Abrir foto Antes 2');
+  assert.ok(h.registry.has('Foto ampliada Antes 2'));
+  assert.ok(h.text().includes('2 de 3 · Antes'));
+});
+
+test('4C.3: la navegación recorre sólo la categoría de la foto abierta', async () => {
+  const h = await openReport({ report: evidenceReport({ before: 3, during: 1, incident: 2, after: 1 }) });
+  await h.press('Abrir foto Antes 1');
+  for (const position of [1, 2, 3]) assert.ok(h.registry.has(`Foto ampliada Antes ${position}`));
+  for (const other of ['Durante', 'Incidencia', 'Resultado final']) {
+    assert.ok([...h.registry.keys()].every((key) => !key.startsWith(`Foto ampliada ${other}`)), `no mezcla ${other}`);
+  }
+  await h.press('Foto siguiente');
+  assert.ok(h.text().includes('2 de 3 · Antes'));
+  await h.press('Foto siguiente');
+  await h.press('Foto siguiente');
+  assert.ok(h.text().includes('3 de 3 · Antes'), 'no da la vuelta');
+  await h.press('Foto anterior');
+  assert.ok(h.text().includes('2 de 3 · Antes'));
+});
+
+test('4C.3: la celda "+N" abre el visor con la colección completa de la categoría', async () => {
+  const h = await openReport({ report: evidenceReport({ before: 9 }) });
+  await h.press('Ver 9 fotos');
+  for (let position = 1; position <= 9; position += 1) assert.ok(h.registry.has(`Foto ampliada Antes ${position}`), `foto ${position}`);
+  assert.ok(h.text().includes('de 9 · Antes'));
+});
+
+test('4C.3: eliminar pide confirmación; cancelar no borra', async () => {
+  const h = await openReport({ report: evidenceReport({ before: 2 }) });
+  await h.press('Abrir foto Antes 1');
+  await h.press('Eliminar evidencia');
+  const confirm = h.probe.alerts.find((alert) => alert.title === '¿Eliminar esta evidencia?')!;
+  assert.deepEqual(confirm.buttons.map((button) => button.text), ['Cancelar', 'Eliminar']);
+  assert.equal(deletes(h).length, 0, 'sin confirmar no hay DELETE');
+  await h.act(async () => { confirm.buttons[0].onPress?.(); });
+  assert.equal(deletes(h).length, 0);
+  assert.ok(h.text().includes('1 de 2 · Antes'));
+});
+
+test('4C.3: eliminación confirmada llama al backend, actualiza visor y grid sin tocar el formulario', async () => {
+  const h = await openReport({ report: evidenceReport({ before: 3 }) });
+  await type(h, 'Lugar de instalación', 'Sin guardar aún');
+  await h.press('Abrir foto Antes 2');
+  await h.press('Eliminar evidencia');
+  await h.act(async () => { alertButton(h, '¿Eliminar esta evidencia?', 'Eliminar')(); });
+  await h.flush();
+  assert.equal(deletes(h).length, 1);
+  assert.ok(h.text().includes('2 evidencias'), 'grid actualizado');
+  assert.ok(h.text().includes('2 de 2 · Antes'), 'visor con selección válida');
+  assert.equal(h.registry.get('Lugar de instalación')!.value, 'Sin guardar aún', 'el borrador local no se pierde');
+});
+
+test('4C.3: eliminar la última fotografía cierra el visor', async () => {
+  const h = await openReport({ report: evidenceReport({ before: 1 }) });
+  await h.press('Abrir foto Antes 1');
+  assert.ok(h.text().includes('1 de 1 · Antes'));
+  await h.press('Eliminar evidencia');
+  await h.act(async () => { alertButton(h, '¿Eliminar esta evidencia?', 'Eliminar')(); });
+  await h.flush();
+  assert.ok(!h.text().includes('1 de 1 · Antes'), 'visor cerrado');
+  assert.ok(!h.text().includes('1 evidencia'));
+  assert.ok(h.registry.has('Agregar foto · Antes'));
+});
+
+test('4C.3: un reporte no editable abre el visor pero no ofrece eliminar ni agregar', async () => {
+  const h = await openReport({ report: evidenceReport({ before: 2 }, 'ready_for_signatures') });
+  await h.press('Abrir foto Antes 1');
+  assert.ok(h.text().includes('1 de 2 · Antes'));
+  assert.ok(!h.registry.has('Eliminar evidencia'));
+  assert.ok(!h.text().includes('Eliminar'));
+  assert.ok(!h.text().includes('Agregar'));
+});
+
+test('4C.3: el visor usa una superficie translúcida (glass) sin dependencias de blur', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { dirname, resolve } = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../components/lab/LabEvidenceGallery.tsx'), 'utf8');
+  assert.match(source, /rgba\(20, 43, 58, 0\.62\)/);
+  assert.doesNotMatch(source, /expo-blur|BlurView/);
+});
+
+// ------------------------------------------------------------------ consistencia incidencias / evidencia
+
+const BLOCK_MESSAGE = 'Elimina primero las evidencias de incidencia para indicar que no hubo incidencias.';
+
+test('incidencias: con evidencia incident no se permite pasar de Sí a No', async () => {
+  const h = await openReport({ report: evidenceReport({ incident: 2 }) });
+  assert.equal(h.registry.get('¿Hubo incidencias?: Sí')!.accessibilityState.checked, true);
+  await h.press('¿Hubo incidencias?: No');
+  const alert = h.probe.alerts.find((item) => item.title === 'No se puede cambiar');
+  assert.ok(alert, 'se informa el bloqueo');
+  assert.equal(h.probe.log.filter((line) => line === 'Alert:No se puede cambiar').length, 1);
+  // El valor permanece true, las evidencias siguen visibles y no hay borrados ni PATCH.
+  assert.equal(h.registry.get('¿Hubo incidencias?: Sí')!.accessibilityState.checked, true);
+  assert.equal(h.registry.get('¿Hubo incidencias?: No')!.accessibilityState.checked, false);
+  assert.ok(h.registry.has('Foto Incidencia 1') && h.registry.has('Foto Incidencia 2'));
+  assert.ok(h.text().includes('2 evidencias'));
+  assert.equal(deletes(h).length, 0);
+  assert.equal(patches(h).length, 0);
+  assert.ok(h.text().includes('Descripción de la incidencia'), 'la sección sigue visible');
+});
+
+test('incidencias: el mensaje de bloqueo es el acordado', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { dirname, resolve } = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../components/lab/LabInstallationReport.tsx'), 'utf8');
+  assert.ok(source.includes(BLOCK_MESSAGE));
+});
+
+test('incidencias: tras borrar todas las evidencias incident ya se puede indicar No', async () => {
+  const h = await openReport({ report: evidenceReport({ incident: 1 }) });
+  await h.press('¿Hubo incidencias?: No');
+  assert.equal(h.registry.get('¿Hubo incidencias?: Sí')!.accessibilityState.checked, true);
+
+  await h.press('Abrir foto Incidencia 1');
+  await h.press('Eliminar evidencia');
+  await h.act(async () => { alertButton(h, '¿Eliminar esta evidencia?', 'Eliminar')(); });
+  await h.flush();
+  assert.equal(deletes(h).length, 1);
+
+  await h.press('¿Hubo incidencias?: No');
+  assert.equal(h.registry.get('¿Hubo incidencias?: No')!.accessibilityState.checked, true);
+  assert.ok(!h.text().includes('Descripción de la incidencia'));
+});
+
+test('incidencias: evidencia de otras categorías no bloquea; sin incident se cambia libremente Sí/No', async () => {
+  const h = await openReport({ report: evidenceReport({ before: 2, after: 1 }) });
+  await h.press('¿Hubo incidencias?: No');
+  assert.equal(h.registry.get('¿Hubo incidencias?: No')!.accessibilityState.checked, true);
+  await h.press('¿Hubo incidencias?: Sí');
+  await h.press('¿Hubo incidencias?: No');
+  assert.equal(h.registry.get('¿Hubo incidencias?: No')!.accessibilityState.checked, true);
+  assert.ok(!h.probe.log.includes('Alert:No se puede cambiar'));
+  assert.ok(h.registry.has('Foto Antes 2') && h.registry.has('Foto Resultado final 3'), 'las demás evidencias intactas');
+});
+
+test('incidencias: la regla no afecta a calibración (no existe reporte ni este bloqueo)', async () => {
+  const h = await createLifecycleHarness();
+  h.env.detail = workOrderFixture({ status: 'received_signed' });
+  h.env.params = { workOrderId: '72' };
+  await h.mount();
+  await h.flush();
+  assert.ok(!h.registry.has('¿Hubo incidencias?: No'));
+  assert.ok(h.probe.requests.every((request) => !/technical-report/.test(request)));
+  assert.ok(h.probe.log.some((line) => line.startsWith('LTC mount')), 'la captura de hojas sigue montándose');
 });

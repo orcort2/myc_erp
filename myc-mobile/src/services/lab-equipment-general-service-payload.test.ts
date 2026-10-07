@@ -35,8 +35,10 @@ function saved(overrides: Partial<LabEquipment> = {}): LabEquipment {
 test('Servicio General: el alta sólo envía el equipo -- sin service, service_type ni certificate_client', () => {
   const body = buildEquipmentCreateBody({ equipment: basic, operationalCategory: 'general_service' }, 3);
   assert.deepEqual(Object.keys(body), ['equipment']);
-  assert.deepEqual(body.equipment, { ...basic, expected_edit_version: 3 });
+  const { report_number: _systemAssigned, ...expected } = basic;
+  assert.deepEqual(body.equipment, { ...expected, expected_edit_version: 3 });
   assert.doesNotMatch(JSON.stringify(body), /service|certificate|linked|accredited|traceable|installation/);
+  assert.ok(!('report_number' in body.equipment), 'el folio del reporte lo asigna el sistema');
 });
 
 test('Servicio General: la edición conserva la misma forma (sólo equipment + versión)', () => {

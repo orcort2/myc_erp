@@ -94,8 +94,9 @@ export type EquipmentFormProfile = {
   conditionLabel: string;
   /** Cliente documental, modalidad (acreditado/trazable/vinculado) y folio de certificado. */
   showsMetrologicalConfiguration: boolean;
-  /** Número de reporte editable (Servicio General); calibración usa el folio de informe del sistema. */
-  showsReportNumberField: boolean;
+  /** Servicio General: "Folio del reporte" de sólo lectura, colocado por el
+   * sistema (technical_report_folio es la única autoridad). */
+  showsReportFolio: boolean;
 };
 
 /** Una sola fuente de verdad por categoría para el formulario de equipo:
@@ -111,7 +112,7 @@ export function equipmentFormProfile(category: LabOperationalCategory): Equipmen
       instrumentLabel: 'Equipo / producto',
       conditionLabel: 'Condición general',
       showsMetrologicalConfiguration: false,
-      showsReportNumberField: true,
+      showsReportFolio: true,
     };
   }
   return {
@@ -123,7 +124,7 @@ export function equipmentFormProfile(category: LabOperationalCategory): Equipmen
     instrumentLabel: 'Instrumento',
     conditionLabel: 'Estado físico',
     showsMetrologicalConfiguration: true,
-    showsReportNumberField: false,
+    showsReportFolio: false,
   };
 }
 
@@ -132,4 +133,14 @@ export function equipmentFormProfile(category: LabOperationalCategory): Equipmen
  * es group -- recepción firmada, captura técnica y reporte. Backend lo exige. */
 export function categoryAllowsWorkflowChoice(category: LabOperationalCategory): boolean {
   return category === 'calibration';
+}
+
+export const REPORT_FOLIO_LABEL = 'Folio del reporte';
+export const REPORT_FOLIO_PENDING_TEXT = 'Se asignará automáticamente';
+export const SYSTEM_PLACED_HINT = 'Colocado por el sistema';
+
+/** Valor mostrado en el campo: el folio institucional ya reservado o el aviso
+ * de asignación automática. Mobile nunca fabrica ni edita este valor. */
+export function reportFolioDisplay(technicalReportFolio: string | null | undefined): string {
+  return technicalReportFolio || REPORT_FOLIO_PENDING_TEXT;
 }
