@@ -246,3 +246,92 @@ def test_concurrent_creation_yields_a_single_intervention_and_a_clean_conflict(d
     assert db.rows("SELECT count(*) FROM technical_reports") == [(1,)]
     assert db.rows("SELECT count(*) FROM technical_interventions") == [(1,)], "ninguna intervención huérfana"
     assert db.rows("SELECT count(*) FROM technical_reports r JOIN technical_interventions i ON i.id = r.intervention_id AND i.folio = r.folio") == [(1,)]
+
+
+# --------------------------------------------------------------- SG-4J-A2 sobre PostgreSQL real
+
+def _close(client, headers, order):
+    return client.post(f"/api/mobile/v1/technician/lab-work-orders/{order['id']}/complete", headers=headers)
+
+
+def test_cancelled_historical_intervention_with_its_own_report_never_blocks_close_or_package(db, api):
+    client, headers = api
+    order, [equipment], [report] = build_delivered(client, headers, count=1)
+    with db.engine.begin() as connection:
+        # Segunda intervención cancelada del mismo equipo con una revisión histórica no vigente
+        # (el índice parcial heredado sólo permite una revisión VIGENTE por equipo).
+        connection.execute(text(
+            "INSERT INTO technical_interventions (lab_equipment_id, intervention_type, folio, status) "
+            "SELECT lab_equipment_id, intervention_type, 'MYC-IN10-26-9301', 'cancelled' FROM technical_interventions"
+        ))
+        connection.execute(text(
+            "INSERT INTO technical_reports (lab_equipment_id, intervention_id, report_type, folio, status, capture_values, "
+            "report_schema_version, revision_number, is_current) "
+            "SELECT lab_equipment_id, (SELECT id FROM technical_interventions WHERE folio = 'MYC-IN10-26-9301'), report_type, "
+            "'MYC-IN10-26-9302', 'cancelled', capture_values, report_schema_version, 1, false FROM technical_reports WHERE id = :id"
+        ), {"id": report["id"]})
+    assert _close(client, headers, order).status_code == 200
+    package = client.get(f"/api/mobile/v1/technician/lab-work-orders/{order['id']}/package", headers=headers)
+    assert package.status_code == 200
+    import io
+
+    from pypdf import PdfReader
+
+    text_pages = "\n".join(page.extract_text() for page in PdfReader(io.BytesIO(package.content)).pages)
+    assert "MYC-IN10-26-9302" not in text_pages and report["folio"] in text_pages
+
+
+def test_voided_delivery_keeps_its_links_and_blocks_close_in_postgres(db, api):
+    client, headers = api
+    order, equipments, reports = build_delivered(client, headers, count=2)
+    with db.engine.begin() as connection:  # anulación oficial requiere permiso administrativo; se aplica el estado persistido
+        connection.execute(text("UPDATE lab_work_order_deliveries SET status = 'voided'"))
+    assert db.rows("SELECT count(*) FROM technical_intervention_deliveries") == [(2,)], "los vínculos se conservan"
+    response = _close(client, headers, order)
+    assert response.status_code == 409 and response.json()["detail"]["code"] == "TECHNICAL_REPORT_REVISION_REQUIRED"
+
+
+def test_documentary_consistency_after_the_full_flow(db, api):
+    client, headers = api
+    build_delivered(client, headers, count=3)
+    assert db.rows(
+        "SELECT count(*) FROM technical_intervention_deliveries l JOIN technical_reports r ON r.id = l.technical_report_id "
+        "WHERE r.intervention_id <> l.intervention_id OR (r.document_snapshot::json->'delivery'->>'delivery_id')::int <> l.delivery_id"
+    ) == [(0,)]
+    assert db.rows("SELECT count(*) FROM technical_interventions i WHERE NOT EXISTS (SELECT 1 FROM technical_reports r WHERE r.intervention_id = i.id)") == [(0,)]
+    assert db.rows("SELECT count(*) FROM technical_interventions WHERE status <> 'completed'") == [(0,)]
+
+
+def test_concurrent_finalize_is_serialized_and_links_the_report_once(db, api):
+    client, headers = api
+    order, [equipment], [report] = order_with_reports(client, headers, count=1)
+    finalize(client, headers, order, equipment)
+    assert deliver(client, headers, order).status_code == 201
+    barrier = Barrier(2)
+
+    def run():
+        barrier.wait()
+        return client.post(report_url(order["id"], equipment["id"], "/finalize"), headers=headers).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        codes = [future.result() for future in [pool.submit(run), pool.submit(run)]]
+    assert codes == [200, 200], codes  # el segundo devuelve el documento ya generado
+    assert db.rows("SELECT count(*) FROM technical_intervention_deliveries WHERE technical_report_id IS NOT NULL") == [(1,)]
+    assert len(db.rows("SELECT DISTINCT final_pdf_sha256 FROM technical_reports")) == 1
+
+
+def test_concurrent_deliveries_of_the_same_equipment_yield_one_delivery_and_one_link(db, api):
+    client, headers = api
+    order, [equipment], _ = order_with_reports(client, headers, count=1)
+    finalize(client, headers, order, equipment)
+    barrier = Barrier(2)
+
+    def run():
+        barrier.wait()
+        return deliver(client, headers, order).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        codes = sorted(future.result() for future in [pool.submit(run), pool.submit(run)])
+    assert codes == [201, 409], codes
+    assert db.rows("SELECT count(*) FROM lab_work_order_deliveries") == [(1,)]
+    assert db.rows("SELECT count(*) FROM technical_intervention_deliveries") == [(1,)]

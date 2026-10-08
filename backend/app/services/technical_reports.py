@@ -31,8 +31,12 @@ from app.schemas.technical_report_installation import (
     installation_missing_fields,
 )
 from app.services.audit_logs import write_audit_log
-from app.services.lab_work_order_deliveries import resolve_current_delivery_for_equipment
-from app.services.lab_work_orders import current_deliveries_for_equipment, sync_general_service_readiness
+from app.services.lab_work_order_deliveries import resolve_current_delivery_for_intervention
+from app.services.lab_work_orders import sync_general_service_readiness
+from app.services.technical_interventions import (
+    InterventionRef,
+    current_deliveries_for_equipment,
+)
 from app.services.technical_report_pdfs import (
     INSTALLATION_REPORT_RENDERER_VERSION,
     build_installation_final_snapshot,
@@ -806,7 +810,8 @@ def _link_report_to_delivery(db: Session, report: TechnicalReport, delivery, ite
     )
     if link is None:
         link = TechnicalInterventionDelivery(
-            intervention_id=intervention.id, delivery_id=delivery.id, delivery_item_id=item.id,
+            intervention_id=intervention.id, delivery_id=delivery.id,
+            delivery_item_id=item.id if item is not None else None,
         )
         db.add(link)
     link.technical_report_id = report.id
@@ -850,7 +855,9 @@ def finalize_technical_report(
         if missing or problems:
             raise HTTPException(status_code=409, detail="La captura del reporte no es válida para el documento final")
 
-        delivery, item = resolve_current_delivery_for_equipment(db, report.lab_equipment_id)
+        delivery, item = resolve_current_delivery_for_intervention(
+            db, report.lab_equipment, InterventionRef(report.intervention, report),
+        )
         if not delivery.recipient_name.strip() or delivery.delivered_at is None:
             raise HTTPException(status_code=409, detail="La entrega no tiene receptor o fecha")
         signatures = {

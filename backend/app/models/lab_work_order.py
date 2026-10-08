@@ -381,6 +381,16 @@ class LabWorkOrderEquipment(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Bas
         order_by="TechnicalReport.revision_number.desc()",
     )
 
+    # SG-4J-A2: intervenciones técnicas del equipo (autoridad en
+    # app/services/technical_interventions.py). Sólo lectura.
+    technical_interventions: Mapped[list["TechnicalIntervention"]] = relationship(
+        "TechnicalIntervention",
+        primaryjoin="LabWorkOrderEquipment.id == foreign(TechnicalIntervention.lab_equipment_id)",
+        viewonly=True,
+        lazy="selectin",
+        order_by="TechnicalIntervention.id",
+    )
+
     current_technical_report: Mapped["TechnicalReport | None"] = relationship(
         "TechnicalReport",
         primaryjoin=(

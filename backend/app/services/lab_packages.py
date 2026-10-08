@@ -17,8 +17,8 @@ from app.services.lab_work_orders import (
     _get,
     _group,
     _technical_report_pdf_problem,
-    current_deliveries_for_equipment,
 )
+from app.services.technical_interventions import equipment_interventions, load_delivery_index
 from app.services.storage_service import resolve_storage_path
 from app.services.technical_report_pdfs import installation_report_filename
 
@@ -56,21 +56,30 @@ def _general_service_documents(db: Session, order: LabWorkOrder) -> list[tuple[b
     documents: list[tuple[bytes, dict]] = [
         (order.final_pdf, _document_meta("work_order", order.final_pdf, work_order_id=order.id, folio=order.folio, revision=order.revision_number))
     ]
+    # Una carga de entregas vigentes por OT; orden estable (posición del equipo,
+    # id de intervención); cada reporte y cada acuse entra una sola vez.
+    equipment_list = sorted(order.active_equipment, key=lambda item: item.position)
+    index = load_delivery_index(db, equipment_list)
     deliveries: dict[int, object] = {}
-    for equipment in sorted(order.active_equipment, key=lambda item: item.position):
-        report = equipment.current_technical_report
-        assert report is not None  # garantizado por la validación anterior
-        problem = _technical_report_pdf_problem(report, verify_file=True)
-        if problem is not None:
-            raise _package_document_error(problem)
-        content = resolve_storage_path(report.final_pdf_path).read_bytes()
-        documents.append((content, _document_meta(
-            "technical_report", content, report_type=report.report_type, folio=report.folio,
-            revision=report.revision_number, equipment_id=equipment.id,
-            filename=installation_report_filename({"document": {"folio": report.folio, "revision_number": report.revision_number}}),
-        )))
-        for delivery, _item in current_deliveries_for_equipment(db, equipment.id):
-            deliveries[delivery.id] = delivery
+    seen_reports: set[int] = set()
+    for equipment in equipment_list:
+        for ref in equipment_interventions(equipment):
+            report = ref.report
+            assert report is not None  # garantizado por la validación anterior
+            if report.id in seen_reports:
+                continue
+            seen_reports.add(report.id)
+            problem = _technical_report_pdf_problem(report, verify_file=True)
+            if problem is not None:
+                raise _package_document_error(problem)
+            content = resolve_storage_path(report.final_pdf_path).read_bytes()
+            documents.append((content, _document_meta(
+                "technical_report", content, report_type=report.report_type, folio=report.folio,
+                revision=report.revision_number, equipment_id=equipment.id, intervention_id=ref.intervention_id,
+                filename=installation_report_filename({"document": {"folio": report.folio, "revision_number": report.revision_number}}),
+            )))
+            for delivery, _item in index.for_ref(ref, equipment):
+                deliveries[delivery.id] = delivery
     for delivery in sorted(deliveries.values(), key=lambda item: item.exhibition_number):
         voucher = delivery.voucher_pdf
         if not voucher or hashlib.sha256(voucher).hexdigest() != delivery.voucher_pdf_sha256:

@@ -34,8 +34,14 @@ from app.services.lab_work_orders import (
     _group,
     _lock_historical_group,
     _root_id,
-    current_deliveries_for_equipment,
     sync_general_service_readiness,
+)
+from app.services.technical_interventions import (
+    InterventionRef,
+    current_deliveries_for_equipment,
+    current_deliveries_for_intervention,
+    delivery_backed_interventions,
+    equipment_interventions,
 )
 
 
@@ -75,26 +81,43 @@ def equipment_delivery_block_reason(equipment: LabWorkOrderEquipment) -> str | N
       exige primero una revisión del reporte (SG-4J)."""
     if equipment.work_order.operational_category != "general_service":
         return None
-    report = equipment.current_technical_report
-    if report is None:
+    refs = equipment_interventions(equipment)
+    if not refs:
         return "Sin reporte técnico"
-    if report.status == "completed":
-        return REVISION_REQUIRED_REASON
-    if report.status != "ready_for_signatures":
-        return "El reporte técnico aún no está finalizado"
+    # TODAS las intervenciones obligatorias deben estar listas para entrega.
+    for ref in refs:
+        report = ref.report
+        if report is None:
+            return "Sin reporte técnico"
+        if report.status == "completed":
+            return REVISION_REQUIRED_REASON
+        if report.status != "ready_for_signatures":
+            return "El reporte técnico aún no está finalizado"
     return None
+
+
+def resolve_current_delivery_for_intervention(
+    db: Session, equipment: LabWorkOrderEquipment, ref: InterventionRef
+) -> tuple[LabWorkOrderDelivery, LabDeliveryItem | None]:
+    """Entrega documental vigente de una intervención: la única exhibición
+    `completed` (no `voided`) que la respalda. Misma autoridad que usa el cierre
+    (`technical_interventions.DeliveryIndex`).
+
+    No se elige "la última por fecha": si por datos inconsistentes hubiera más
+    de una entrega vigente, el documento sería ambiguo y se rechaza en lugar de
+    adivinar."""
+    rows = current_deliveries_for_intervention(db, equipment, ref)
+    if not rows:
+        raise HTTPException(status_code=409, detail="El equipo no tiene una entrega vigente registrada")
+    if len(rows) > 1:
+        raise HTTPException(status_code=409, detail="El equipo tiene más de una entrega vigente; revisa las entregas")
+    return rows[0]
 
 
 def resolve_current_delivery_for_equipment(
     db: Session, equipment_id: int
 ) -> tuple[LabWorkOrderDelivery, LabDeliveryItem]:
-    """Entrega documental vigente de un equipo: la única exhibición `completed`
-    (no `voided`) que lo incluye. Es la misma autoridad que usa
-    `_delivered_equipment_ids` para decidir qué está entregado.
-
-    No se elige "la última por fecha": si por datos inconsistentes hubiera más
-    de una entrega vigente para el mismo equipo, el documento sería ambiguo y
-    se rechaza en lugar de adivinar."""
+    """Compatibilidad: entrega vigente por equipo (una intervención por equipo)."""
     rows = current_deliveries_for_equipment(db, equipment_id)
     if not rows:
         raise HTTPException(status_code=409, detail="El equipo no tiene una entrega vigente registrada")
@@ -340,14 +363,14 @@ def _link_interventions_to_delivery(
         select(LabDeliveryItem).where(LabDeliveryItem.delivery_id == delivery.id)
     )}
     for equipment in equipment_items:
-        report = equipment.current_technical_report
-        if report is None or report.intervention_id is None:
-            continue
-        item = items_by_equipment.get(equipment.id)
-        db.add(TechnicalInterventionDelivery(
-            intervention_id=report.intervention_id, delivery_id=delivery.id,
-            delivery_item_id=item.id if item is not None else None,
-        ))
+        for ref in equipment_interventions(equipment):
+            if ref.intervention_id is None:
+                continue
+            item = items_by_equipment.get(equipment.id)
+            db.add(TechnicalInterventionDelivery(
+                intervention_id=ref.intervention_id, delivery_id=delivery.id,
+                delivery_item_id=item.id if item is not None else None,
+            ))
     db.flush()
 
 
@@ -511,6 +534,7 @@ def _finalize_delivery(
             "recipient_name": delivery.recipient_name,
             "equipment_ids": [item.equipment_id for item in delivery.items],
             "technical_report_ids": technical_report_ids,
+            "technical_intervention_ids": [item.id for item in delivery_backed_interventions(db, delivery.id)],
             "voucher_sha256": delivery.voucher_pdf_sha256,
         },
     )

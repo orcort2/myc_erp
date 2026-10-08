@@ -62,6 +62,13 @@ from app.schemas.lab_work_order import (
     LabWorkOrderUpdate,
 )
 from app.services.audit_logs import write_audit_log
+from app.services.technical_interventions import (  # noqa: F401  (current_deliveries_for_equipment: re-export histórico)
+    DeliveryIndex,
+    InterventionRef,
+    current_deliveries_for_equipment,
+    equipment_interventions,
+    load_delivery_index,
+)
 from app.services.field_sheets import EDITABLE_STATUSES, _validate_ready_to_complete
 from app.services.lab_work_order_pdfs import generate_lab_work_order_pdf
 from app.services.lab_folio_requests import cancel_linked_folio_request, ensure_linked_folio_request
@@ -2896,22 +2903,6 @@ _GENERAL_SERVICE_BLOCKER_MESSAGES = {
 }
 
 
-def current_deliveries_for_equipment(db: Session, equipment_id: int) -> list[tuple[LabWorkOrderDelivery, LabDeliveryItem]]:
-    """Entregas VIGENTES (`completed`, nunca `voided`) que incluyen el equipo.
-    Única consulta de esta relación: la reutilizan el cierre y
-    `lab_work_order_deliveries.resolve_current_delivery_for_equipment`."""
-    rows = db.execute(
-        select(LabWorkOrderDelivery, LabDeliveryItem)
-        .join(LabDeliveryItem, LabDeliveryItem.delivery_id == LabWorkOrderDelivery.id)
-        .where(
-            LabDeliveryItem.equipment_id == equipment_id,
-            LabWorkOrderDelivery.status == "completed",
-        )
-        .order_by(LabWorkOrderDelivery.id)
-    ).all()
-    return [(row[0], row[1]) for row in rows]
-
-
 def _technical_report_pdf_problem(report, *, verify_file: bool) -> str | None:
     """None si el PDF final del reporte es utilizable. Con `verify_file` el
     archivo debe resolverse en el storage administrado y coincidir con su
@@ -2931,8 +2922,17 @@ def _technical_report_pdf_problem(report, *, verify_file: bool) -> str | None:
 
 
 def _general_service_blockers(
-    db: Session, item: LabWorkOrder, equipment: LabWorkOrderEquipment, *, verify_files: bool
+    db: Session,
+    item: LabWorkOrder,
+    equipment: LabWorkOrderEquipment,
+    *,
+    verify_files: bool,
+    index: DeliveryIndex | None = None,
 ) -> list[dict]:
+    """Bloqueos de un equipo de Servicio General, resueltos POR INTERVENCIÓN
+    obligatoria (ver app/services/technical_interventions.py). Un equipo sin
+    intervenciones obligatorias bloquea ("Sin reporte técnico"); si tiene varias,
+    TODAS deben estar completas."""
     base = {
         "work_order_id": item.id,
         "work_order_folio": item.folio,
@@ -2940,7 +2940,21 @@ def _general_service_blockers(
         "equipment_position": equipment.position,
         "equipment": equipment.instrument,
     }
-    report = equipment.current_technical_report
+    refs = equipment_interventions(equipment)
+    if not refs:
+        return [{**base, "code": TECHNICAL_REPORT_INCOMPLETE, "reason": "Sin reporte técnico"}]
+    index = index if index is not None else load_delivery_index(db, [equipment])
+    blockers: list[dict] = []
+    for ref in refs:
+        blockers.extend(_intervention_blockers(base, ref, equipment, index, verify_files=verify_files))
+    return blockers
+
+
+def _intervention_blockers(
+    base: dict, ref: InterventionRef, equipment: LabWorkOrderEquipment, index: DeliveryIndex, *, verify_files: bool
+) -> list[dict]:
+    base = {**base, "intervention_id": ref.intervention_id, "intervention_folio": ref.folio}
+    report = ref.report
     if report is None:
         return [{**base, "code": TECHNICAL_REPORT_INCOMPLETE, "reason": "Sin reporte técnico"}]
     if report.status != "completed":
@@ -2948,7 +2962,7 @@ def _general_service_blockers(
     problem = _technical_report_pdf_problem(report, verify_file=verify_files)
     if problem is not None:
         return [{**base, "code": TECHNICAL_REPORT_DOCUMENT_INVALID, "reason": problem}]
-    deliveries = current_deliveries_for_equipment(db, equipment.id)
+    deliveries = index.for_ref(ref, equipment)
     # El PDF final se generó con una entrega concreta (snapshot). Si esa entrega
     # ya no es la vigente (anulada, o reemplazada por otra), el documento sería
     # contradictorio con el acuse vigente: se exige una revisión (SG-4J), nunca
@@ -2976,8 +2990,9 @@ def work_order_technical_blockers(
         for item_blocker in _missing_completed_sheets(legacy)
     ]
     for item in general:
+        index = load_delivery_index(db, list(item.active_equipment))
         for equipment in item.active_equipment:
-            blockers.extend(_general_service_blockers(db, item, equipment, verify_files=verify_files))
+            blockers.extend(_general_service_blockers(db, item, equipment, verify_files=verify_files, index=index))
     return blockers
 
 
@@ -2995,10 +3010,11 @@ def work_order_technically_complete(db: Session, item: LabWorkOrder) -> bool:
 
 
 def _general_service_blockers_for_order(db: Session, item: LabWorkOrder) -> list[dict]:
+    index = load_delivery_index(db, list(item.active_equipment))  # una carga por OT, sin N+1
     return [
         blocker
         for equipment in item.active_equipment
-        for blocker in _general_service_blockers(db, item, equipment, verify_files=True)
+        for blocker in _general_service_blockers(db, item, equipment, verify_files=True, index=index)
     ]
 
 

@@ -83,6 +83,7 @@ class TechnicalIntervention(IntegerPkMixin, TimestampMixin, Base):
     reports: Mapped[list["TechnicalReport"]] = relationship(
         back_populates="intervention",
         order_by="TechnicalReport.revision_number",
+        lazy="selectin",
     )
     delivery_links: Mapped[list["TechnicalInterventionDelivery"]] = relationship(
         back_populates="intervention",
