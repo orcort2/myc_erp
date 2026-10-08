@@ -13,6 +13,17 @@ class _PendingDeliveryDate:
         return "PENDIENTE"
 
 
+def _report_number_column(work_order: LabWorkOrder, item) -> str | None:
+    """Columna "N° de informe" de la OT. Calibración: folio de certificado (como
+    siempre). Servicio General no tiene certificado: imprime el folio
+    institucional del Reporte técnico vigente del equipo (MYC-IN...); nunca el
+    `report_number` del equipo."""
+    if getattr(work_order, "operational_category", None) == "general_service":
+        report = getattr(item, "current_technical_report", None)
+        return report.folio if report is not None else None
+    return item.certificate_folio
+
+
 def generate_lab_work_order_pdf(work_order: LabWorkOrder) -> tuple[bytes, str]:
     """Renderiza el formato institucional sin conectar el LAB al agregado productivo."""
 
@@ -67,7 +78,7 @@ def generate_lab_work_order_pdf(work_order: LabWorkOrder) -> tuple[bytes, str]:
                     key: upper(getattr(item, key))
                     for key in ("instrument", "brand", "identification", "serial_number", "report_number")
                 },
-                certificate_folio=upper(item.certificate_folio),
+                certificate_folio=upper(_report_number_column(work_order, item)),
                 is_good_condition=item.is_good_condition,
                 name=upper(item.name),
                 internal_id=upper(item.internal_id),

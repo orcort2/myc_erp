@@ -57,18 +57,28 @@ def _orders_ready_for_delivery(members: list[LabWorkOrder]) -> bool:
     return bool(members) and all(item.status in _delivery_order_statuses(item) for item in members)
 
 
+REVISION_REQUIRED_REASON = (
+    "El reporte técnico final fue generado con una entrega que posteriormente fue anulada. "
+    "Se requiere una revisión del reporte antes de registrar una nueva entrega."
+)
+
+
 def equipment_delivery_block_reason(equipment: LabWorkOrderEquipment) -> str | None:
     """Autoridad de elegibilidad de entrega por equipo (category-aware).
 
     - calibration: sin requisito adicional (comportamiento histórico).
     - general_service: TechnicalReport vigente con la captura finalizada
       (`ready_for_signatures`, que ahora significa "listo para entrega").
-      El PDF final y `completed` llegan en SG-4G; no se exigen aquí."""
+      Un reporte ya `completed` NO es entregable por el flujo normal: su PDF
+      final contiene las firmas de la entrega que lo generó; una entrega nueva
+      exige primero una revisión del reporte (SG-4J)."""
     if equipment.work_order.operational_category != "general_service":
         return None
     report = equipment.current_technical_report
     if report is None:
         return "Sin reporte técnico"
+    if report.status == "completed":
+        return REVISION_REQUIRED_REASON
     if report.status != "ready_for_signatures":
         return "El reporte técnico aún no está finalizado"
     return None
@@ -107,6 +117,15 @@ def _ensure_equipment_deliverable(equipment_items: list[LabWorkOrderEquipment]) 
         if reason is not None
     ]
     if blocked:
+        if any(item["reason"] == REVISION_REQUIRED_REASON for item in blocked):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "TECHNICAL_REPORT_REVISION_REQUIRED",
+                    "message": REVISION_REQUIRED_REASON,
+                    "items": blocked,
+                },
+            )
         raise HTTPException(
             status_code=409,
             detail={"code": "LAB_DELIVERY_REPORT_NOT_READY", "items": blocked},

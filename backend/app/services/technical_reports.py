@@ -17,8 +17,10 @@ from app.models.user import User
 from app.schemas.technical_report import (
     TechnicalReportCaptureUpdate,
     TechnicalReportCreate,
+    TechnicalReportDraftDeleted,
     TechnicalReportEvidenceType,
     TechnicalReportRead,
+    TechnicalReportRetype,
 )
 from app.schemas.technical_report_installation import (
     INSTALLATION_FIELD_LABELS,
@@ -29,7 +31,7 @@ from app.schemas.technical_report_installation import (
 )
 from app.services.audit_logs import write_audit_log
 from app.services.lab_work_order_deliveries import resolve_current_delivery_for_equipment
-from app.services.lab_work_orders import sync_general_service_readiness
+from app.services.lab_work_orders import current_deliveries_for_equipment, sync_general_service_readiness
 from app.services.technical_report_pdfs import (
     INSTALLATION_REPORT_RENDERER_VERSION,
     build_installation_final_snapshot,
@@ -895,3 +897,135 @@ def read_technical_report_pdf(
     if not report.final_pdf_sha256 or hashlib.sha256(content).hexdigest() != report.final_pdf_sha256:
         raise HTTPException(status_code=409, detail="El PDF final no coincide con su SHA-256")
     return content, installation_report_filename(report.document_snapshot or {"document": {"folio": report.folio, "revision_number": report.revision_number}})
+
+
+# ---------------------------------------------------------------------------
+# SG-4I-A: administración del borrador (eliminar / cambiar tipo)
+# ---------------------------------------------------------------------------
+
+def _ensure_draft_administrable(db: Session, report: TechnicalReport) -> None:
+    """Sólo un borrador realmente editable y sin consecuencias documentales:
+    draft/in_progress, sin PDF final, sin completar y sin entrega vigente."""
+    _ensure_editable(report)
+    if report.final_pdf_path or report.completed_at or report.final_pdf_sha256:
+        raise HTTPException(status_code=409, detail="El reporte ya tiene documento final")
+    if current_deliveries_for_equipment(db, report.lab_equipment_id):
+        raise HTTPException(status_code=409, detail="El equipo ya tiene una entrega registrada")
+
+
+def _discard_evidence_files(db: Session, paths: list[str], user: User, reason: str) -> None:
+    for path in paths:
+        delete_if_unreferenced(
+            db, path, user_id=user.id, module="technical_reports",
+            entity="technical_report_evidence", entity_id=None, reason=reason,
+        )
+    db.commit()
+
+
+def delete_technical_report_draft(
+    db: Session,
+    work_order_id: int,
+    equipment_id: int,
+    user: User,
+) -> TechnicalReportDraftDeleted:
+    """Elimina un borrador (captura + evidencias + archivos). El folio
+    institucional YA emitido queda consumido: la secuencia anual
+    (`InstitutionalFolioSequence`) sólo avanza, así que nunca se reasigna; la
+    trazabilidad queda en la auditoría con el folio, tipo y revisión."""
+    removed_paths: list[str] = []
+    try:
+        report = _lock_current_report(db, work_order_id, equipment_id)
+        _ensure_draft_administrable(db, report)
+        removed_paths = [item.storage_path for item in report.evidence]
+        result = TechnicalReportDraftDeleted(
+            technical_report_id=report.id, folio=report.folio, report_type=report.report_type,
+        )
+        write_audit_log(
+            db,
+            action="technical_report.draft_deleted",
+            entity="technical_reports",
+            entity_id=report.id,
+            user_id=user.id,
+            previous_values={
+                "folio": report.folio,
+                "report_type": report.report_type,
+                "revision_number": report.revision_number,
+                "status": report.status,
+                "lab_equipment_id": report.lab_equipment_id,
+                "evidence_count": len(report.evidence),
+            },
+        )
+        db.delete(report)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    # Los archivos se retiran sólo después de confirmar la baja en base de datos.
+    _discard_evidence_files(db, removed_paths, user, "Borrador de reporte eliminado.")
+    return result
+
+
+def change_technical_report_type(
+    db: Session,
+    work_order_id: int,
+    equipment_id: int,
+    payload: TechnicalReportRetype,
+    user: User,
+) -> TechnicalReportRead:
+    """Cambia el tipo de un reporte editable. Sólo hacia tipos con perfil
+    completo (`ENABLED_TECHNICAL_REPORT_TYPES`; hoy ninguno distinto de
+    Installation). Un cambio real NO reinterpreta `capture_values`: resetea la
+    captura y la versión de esquema al perfil destino, emite el folio de la
+    serie del nuevo tipo (el anterior queda consumido) y, si había evidencias,
+    exige confirmación explícita antes de descartarlas."""
+    removed_paths: list[str] = []
+    try:
+        report = _lock_current_report(db, work_order_id, equipment_id)
+        _ensure_draft_administrable(db, report)
+        if payload.report_type == report.report_type:
+            raise HTTPException(status_code=409, detail="El reporte ya es de ese tipo")
+        if payload.report_type not in ENABLED_TECHNICAL_REPORT_TYPES:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "TECHNICAL_REPORT_TYPE_NOT_AVAILABLE",
+                    "message": "Ese tipo de reporte aún no está disponible.",
+                },
+            )
+        if report.evidence and not payload.confirm_discard_evidence:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "TECHNICAL_REPORT_RETYPE_REQUIRES_CONFIRMATION",
+                    "message": "El reporte tiene evidencias que se descartarán al cambiar de tipo.",
+                    "evidence_count": len(report.evidence),
+                },
+            )
+        previous = {
+            "folio": report.folio, "report_type": report.report_type,
+            "schema_version": report.report_schema_version, "evidence_count": len(report.evidence),
+        }
+        removed_paths = [item.storage_path for item in report.evidence]
+        for item in list(report.evidence):
+            report.evidence.remove(item)
+        report.report_type = payload.report_type
+        report.report_schema_version = 1
+        report.capture_values = {}
+        report.folio = _allocate_technical_report_folio(db, payload.report_type)
+        report.status = "draft"
+        write_audit_log(
+            db,
+            action="technical_report.type_changed",
+            entity="technical_reports",
+            entity_id=report.id,
+            user_id=user.id,
+            previous_values=previous,
+            new_values={"folio": report.folio, "report_type": report.report_type},
+        )
+        report_id = report.id
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    _discard_evidence_files(db, removed_paths, user, "Evidencias descartadas por cambio de tipo de reporte.")
+    return _read_technical_report_by_id(db, report_id)

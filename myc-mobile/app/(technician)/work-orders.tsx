@@ -4,7 +4,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { useFocusEffect } from '@react-navigation/native';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   ActivityIndicator,
@@ -1181,7 +1181,10 @@ export default function WorkOrdersScreen() {
         {deliveryPanel === 'closed' && deliveryStatus && (
           <View>
             <Text style={styles.sectionEyebrow}>ENTREGA DE EQUIPOS</Text>
-              {generalService && blockedPending.length > 0 && (
+              {generalService && blockedPending.some((item) => item.delivery_blocked_reason?.includes('revisión')) && (
+                <AlertBanner tone="danger">{blockedPending.find((item) => item.delivery_blocked_reason?.includes('revisión'))?.delivery_blocked_reason}</AlertBanner>
+              )}
+              {generalService && blockedPending.some((item) => !item.delivery_blocked_reason?.includes('revisión')) && (
                 <AlertBanner tone="info">
                   {`La entrega completa requiere el reporte finalizado de cada equipo. Pendientes de finalizar: ${blockedPending.map((item) => item.instrument).join(', ')}.`}
                 </AlertBanner>
@@ -2587,6 +2590,17 @@ export default function WorkOrdersScreen() {
                   <OperationalActionStack>
                     {workOrder.status !== 'cancelled' && deliveryPanel === 'closed' && <SecondaryButton icon="printer" label={`Ver / imprimir OT ${workOrder.folio}`} onPress={() => downloadPdf('print')} />}
                     {workOrder.status !== 'cancelled' && <SecondaryButton icon="share-variant" label={`Compartir OT ${workOrder.folio}`} onPress={() => downloadPdf('share')} />}
+                    {isGeneralService(workOrder) && canReadTechnicalReports && workOrder.equipment
+                      .filter((item) => item.technical_report_status === 'completed')
+                      .map((item, _index, completedItems) => {
+                        const suffix = completedItems.length > 1 ? ` ${item.position}` : '';
+                        return (
+                          <Fragment key={`report-${item.id}`}>
+                            <SecondaryButton icon="file-pdf-box" label={`Ver reporte${suffix}`} onPress={() => openTechnicalReportPdf(item.id, 'print')} />
+                            <SecondaryButton icon="download" label={`Descargar reporte${suffix}`} onPress={() => openTechnicalReportPdf(item.id, 'share')} />
+                          </Fragment>
+                        );
+                      })}
                     {canDownloadLabPackages && <SecondaryButton icon="download" label="Descargar paquete de esta OT" onPress={() => downloadPackage('share', false)} />}
                     {canDownloadLabPackages && workOrder.related_work_orders.length > 1 && <SecondaryButton icon="download" label="Descargar paquete del grupo" onPress={() => downloadPackage('share', true)} />}
                     {/* "Reabrir orden" (canReopenDirectly) vive en Acciones
@@ -2833,6 +2847,7 @@ export default function WorkOrdersScreen() {
                           equipment={reportEquipment}
                           onChanged={() => { void refreshAfterReportChange(); }}
                           onClose={closeReportFlow}
+                          onDraftDeleted={closeReportFlow}
                           workOrderFolio={workOrder.folio}
                         />
                       )}

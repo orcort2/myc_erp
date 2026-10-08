@@ -33,7 +33,7 @@ from test_general_service_delivery import (  # noqa: F401  (fixtures y helpers r
     sg3,
 )
 
-FAILURE_CODES = {"TECHNICAL_REPORT_INCOMPLETE", "TECHNICAL_REPORT_DOCUMENT_INVALID", "TECHNICAL_REPORT_DELIVERY_INCOMPLETE"}
+FAILURE_CODES = {"TECHNICAL_REPORT_INCOMPLETE", "TECHNICAL_REPORT_DOCUMENT_INVALID", "TECHNICAL_REPORT_DELIVERY_INCOMPLETE", "TECHNICAL_REPORT_REVISION_REQUIRED"}
 
 
 def complete(client, headers, order):
@@ -227,7 +227,9 @@ def test_voiding_the_backing_delivery_revokes_readiness_and_blocks_close(sg3):
     assert voided.status_code == 200, voided.text
     assert order_status(client, headers, order) == "in_progress"
     assert list_item(client, headers, order)["completed_equipment_count"] == 0
-    assert_general_service_error(complete(client, headers, order), "TECHNICAL_REPORT_DELIVERY_INCOMPLETE")
+    # El PDF final se generó con esa entrega: ahora exige revisión (SG-4J), no una entrega nueva.
+    detail = assert_general_service_error(complete(client, headers, order), "TECHNICAL_REPORT_REVISION_REQUIRED")
+    assert "revisión" in detail["message"]
     with factory() as db:
         assert db.scalar(select(AuditLog).where(AuditLog.action == "lab_work_order.ready_to_close_revoked")) is not None
 
@@ -293,7 +295,7 @@ def test_complete_re_validates_even_if_the_status_is_stale_ready_to_close(sg3):
     with factory() as db:
         db.scalar(select(LabWorkOrderDelivery)).status = "voided"  # sin pasar por la anulación oficial
         db.commit()
-    assert_general_service_error(complete(client, headers, order), "TECHNICAL_REPORT_DELIVERY_INCOMPLETE")
+    assert_general_service_error(complete(client, headers, order), "TECHNICAL_REPORT_REVISION_REQUIRED")
     with factory() as db:
         assert db.get(LabWorkOrder, order["id"]).status == "ready_to_close"  # nada se cerró
 
@@ -316,3 +318,23 @@ def test_close_permissions_are_preserved(sg3):
     finally:
         reset_override()
     assert order_status(client, headers, order) == "ready_to_close"
+
+
+def test_the_work_order_pdf_prints_the_installation_report_folio(sg3):
+    client, factory, headers = sg3
+    order, equipments, reports = closed_order_for_pdf(client, headers)
+    pdf = client.get(f"{BASE}/{order['id']}/pdf", headers=headers)
+    assert pdf.status_code == 200, pdf.text
+    import io
+    from pypdf import PdfReader
+
+    text = "\n".join(page.extract_text() for page in PdfReader(io.BytesIO(pdf.content)).pages)
+    for report in reports:
+        assert report["folio"] in text, "el N° de informe de cada equipo es el folio MYC-IN del reporte"
+    assert "None" not in text
+
+
+def closed_order_for_pdf(client, headers):
+    order, equipments, reports = ready_chain(client, headers, count=2)
+    assert complete(client, headers, order).status_code == 200
+    return order, equipments, reports

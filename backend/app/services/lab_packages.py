@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 
 from fastapi import HTTPException
@@ -11,13 +12,74 @@ from app.models.user import User
 from app.services.audit_logs import write_audit_log
 from app.services.field_sheet_pdfs import generate_field_sheet_pdf
 from app.services.lab_work_order_pdfs import generate_lab_work_order_pdf
-from app.services.lab_work_orders import _get, _group
+from app.services.lab_work_orders import (
+    _ensure_general_service_technical_completion,
+    _get,
+    _group,
+    _technical_report_pdf_problem,
+    current_deliveries_for_equipment,
+)
+from app.services.storage_service import resolve_storage_path
+from app.services.technical_report_pdfs import installation_report_filename
 
 
 def _append_pdf(writer: PdfWriter, content: bytes) -> None:
     reader = PdfReader(io.BytesIO(content))
     for page in reader.pages:
         writer.add_page(page)
+
+
+def _package_document_error(detail: str, items: list[dict] | None = None) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={"code": "LAB_PACKAGE_DOCUMENT_MISSING", "message": detail, "items": items or []},
+    )
+
+
+def _document_meta(kind: str, content: bytes, **extra) -> dict:
+    return {"type": kind, **extra, "sha256": hashlib.sha256(content).hexdigest(), "size_bytes": len(content)}
+
+
+def _general_service_documents(db: Session, order: LabWorkOrder) -> list[tuple[bytes, dict]]:
+    """Documentos FINALES de una OT de Servicio General, en orden de lectura:
+    PDF de la OT, Reporte(s) de instalación vigentes y acuse(s) de entrega
+    vigentes (los anulados y los reportes no vigentes nunca entran). Nunca
+    compone un paquete parcial: si falta o está corrupto algo obligatorio, 409
+    estructurado. Las fotografías ya viven dentro del PDF del reporte."""
+    if order.status not in {"completed", "partially_closed"} or not order.final_pdf:
+        raise _package_document_error(
+            f"La OT {order.folio} aún no está cerrada: no existe su PDF final.",
+            [{"work_order_id": order.id, "work_order_folio": order.folio, "document": "work_order"}],
+        )
+    # Mismo criterio que el cierre: reporte completed + PDF válido + entrega vigente.
+    _ensure_general_service_technical_completion(db, [order])
+    documents: list[tuple[bytes, dict]] = [
+        (order.final_pdf, _document_meta("work_order", order.final_pdf, work_order_id=order.id, folio=order.folio, revision=order.revision_number))
+    ]
+    deliveries: dict[int, object] = {}
+    for equipment in sorted(order.active_equipment, key=lambda item: item.position):
+        report = equipment.current_technical_report
+        assert report is not None  # garantizado por la validación anterior
+        problem = _technical_report_pdf_problem(report, verify_file=True)
+        if problem is not None:
+            raise _package_document_error(problem)
+        content = resolve_storage_path(report.final_pdf_path).read_bytes()
+        documents.append((content, _document_meta(
+            "technical_report", content, report_type=report.report_type, folio=report.folio,
+            revision=report.revision_number, equipment_id=equipment.id,
+            filename=installation_report_filename({"document": {"folio": report.folio, "revision_number": report.revision_number}}),
+        )))
+        for delivery, _item in current_deliveries_for_equipment(db, equipment.id):
+            deliveries[delivery.id] = delivery
+    for delivery in sorted(deliveries.values(), key=lambda item: item.exhibition_number):
+        voucher = delivery.voucher_pdf
+        if not voucher or hashlib.sha256(voucher).hexdigest() != delivery.voucher_pdf_sha256:
+            raise _package_document_error(f"El acuse de entrega de la exhibición {delivery.exhibition_number} no está disponible.")
+        documents.append((voucher, _document_meta(
+            "delivery_voucher", voucher, delivery_id=delivery.id, exhibition_number=delivery.exhibition_number,
+            folio=order.folio,
+        )))
+    return documents
 
 
 def generate_lab_package(
@@ -31,7 +93,14 @@ def generate_lab_package(
     orders = _group(db, selected) if group else [selected]
     orders = sorted(orders, key=lambda item: item.sequence_number)
     writer = PdfWriter()
+    manifest: list[dict] = []
     for order in orders:
+        if order.operational_category == "general_service":
+            # SG-4I: OT + TechnicalReport(s) + acuse(s); nunca FieldSheets.
+            for content, meta in _general_service_documents(db, order):
+                _append_pdf(writer, content)
+                manifest.append(meta)
+            continue
         order_pdf = order.final_pdf or generate_lab_work_order_pdf(order)[0]
         _append_pdf(writer, order_pdf)
         for equipment in sorted(order.equipment, key=lambda item: item.position):
@@ -54,6 +123,7 @@ def generate_lab_package(
             "scope": "group" if group else "individual",
             "work_order_ids": [item.id for item in orders],
             "folios": [item.folio for item in orders],
+            **({"documents": manifest} if manifest else {}),
         },
     )
     db.commit()

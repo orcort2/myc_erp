@@ -2876,16 +2876,23 @@ def _missing_completed_sheets(members: list[LabWorkOrder]) -> list[dict]:
 TECHNICAL_REPORT_INCOMPLETE = "TECHNICAL_REPORT_INCOMPLETE"
 TECHNICAL_REPORT_DOCUMENT_INVALID = "TECHNICAL_REPORT_DOCUMENT_INVALID"
 TECHNICAL_REPORT_DELIVERY_INCOMPLETE = "TECHNICAL_REPORT_DELIVERY_INCOMPLETE"
+TECHNICAL_REPORT_REVISION_REQUIRED = "TECHNICAL_REPORT_REVISION_REQUIRED"
+TECHNICAL_REPORT_REVISION_REQUIRED_MESSAGE = (
+    "El reporte técnico final fue generado con una entrega que posteriormente fue anulada. "
+    "Se requiere una revisión del reporte antes de registrar una nueva entrega."
+)
 # Prioridad al elegir el `code` del error agregado (qué atender primero).
 _GENERAL_SERVICE_BLOCKER_PRIORITY = (
     TECHNICAL_REPORT_INCOMPLETE,
     TECHNICAL_REPORT_DOCUMENT_INVALID,
+    TECHNICAL_REPORT_REVISION_REQUIRED,
     TECHNICAL_REPORT_DELIVERY_INCOMPLETE,
 )
 _GENERAL_SERVICE_BLOCKER_MESSAGES = {
     TECHNICAL_REPORT_INCOMPLETE: "Falta completar el reporte técnico de: {names}.",
     TECHNICAL_REPORT_DOCUMENT_INVALID: "El documento final del reporte técnico no es válido para: {names}.",
     TECHNICAL_REPORT_DELIVERY_INCOMPLETE: "Falta registrar la entrega de: {names}.",
+    TECHNICAL_REPORT_REVISION_REQUIRED: TECHNICAL_REPORT_REVISION_REQUIRED_MESSAGE,
 }
 
 
@@ -2942,6 +2949,13 @@ def _general_service_blockers(
     if problem is not None:
         return [{**base, "code": TECHNICAL_REPORT_DOCUMENT_INVALID, "reason": problem}]
     deliveries = current_deliveries_for_equipment(db, equipment.id)
+    # El PDF final se generó con una entrega concreta (snapshot). Si esa entrega
+    # ya no es la vigente (anulada, o reemplazada por otra), el documento sería
+    # contradictorio con el acuse vigente: se exige una revisión (SG-4J), nunca
+    # se mezclan documentos de entregas distintas.
+    frozen_delivery_id = ((report.document_snapshot or {}).get("delivery") or {}).get("delivery_id")
+    if frozen_delivery_id is not None and (len(deliveries) != 1 or deliveries[0][0].id != frozen_delivery_id):
+        return [{**base, "code": TECHNICAL_REPORT_REVISION_REQUIRED, "reason": TECHNICAL_REPORT_REVISION_REQUIRED_MESSAGE}]
     if len(deliveries) != 1:
         reason = "Sin entrega vigente registrada" if not deliveries else "Más de una entrega vigente"
         return [{**base, "code": TECHNICAL_REPORT_DELIVERY_INCOMPLETE, "reason": reason}]
@@ -4249,6 +4263,77 @@ def get_pdf(db: Session, work_order_id: int) -> tuple[bytes, str]:
     )
 
 
+def _export_technical_reports(
+    db: Session, work_orders: list[LabWorkOrder], archive: zipfile.ZipFile, manifest: dict
+) -> list[dict]:
+    """Metadata de TODOS los TechnicalReport (incluye revisiones no vigentes, con
+    `is_current`) y, cuando el PDF final es válido, el archivo. Un PDF ausente o
+    corrupto no aborta el volcado histórico: queda marcado en `pdf_status`.
+    Calibración no tiene reportes: este bloque no cambia su export."""
+    from app.services.storage_service import resolve_storage_path
+
+    equipment_ids = [equipment.id for item in work_orders for equipment in item.equipment if equipment.technical_reports]
+    deliveries_by_equipment: dict[int, list[dict]] = {}
+    if equipment_ids:
+        for delivery, delivery_item in db.execute(
+            select(LabWorkOrderDelivery, LabDeliveryItem)
+            .join(LabDeliveryItem, LabDeliveryItem.delivery_id == LabWorkOrderDelivery.id)
+            .where(LabDeliveryItem.equipment_id.in_(equipment_ids))
+            .order_by(LabWorkOrderDelivery.id)
+        ).all():
+            deliveries_by_equipment.setdefault(delivery_item.equipment_id, []).append({
+                "delivery_id": delivery.id,
+                "exhibition_number": delivery.exhibition_number,
+                "status": delivery.status,
+                "delivered_at": delivery.delivered_at.isoformat(),
+                "recipient_name": delivery.recipient_name,
+                "voucher_sha256": delivery.voucher_pdf_sha256,
+            })
+    rows: list[dict] = []
+    for item in work_orders:
+        for equipment in item.equipment:
+            for report in equipment.technical_reports:
+                pdf_status = "none"
+                path = None
+                if report.final_pdf_path:
+                    pdf_status = _technical_report_pdf_problem(report, verify_file=True) or "ok"
+                    if pdf_status == "ok":
+                        content = resolve_storage_path(report.final_pdf_path).read_bytes()
+                        path = f"technical_reports/{report.folio}-r{report.revision_number}.pdf"
+                        archive.writestr(path, content)
+                        manifest["files"].append({
+                            "type": "technical_report", "report_type": report.report_type, "folio": report.folio,
+                            "revision": report.revision_number, "path": path,
+                            "sha256": hashlib.sha256(content).hexdigest(), "size_bytes": len(content),
+                        })
+                    else:
+                        pdf_status = "invalid"
+                rows.append({
+                    "id": report.id,
+                    "work_order_id": item.id,
+                    "work_order_folio": item.folio,
+                    "equipment_id": equipment.id,
+                    "report_type": report.report_type,
+                    "folio": report.folio,
+                    "revision_number": report.revision_number,
+                    "is_current": report.is_current,
+                    "status": report.status,
+                    "performed_by_name": report.performed_by_name_snapshot,
+                    "performed_at": report.performed_at.isoformat() if report.performed_at else None,
+                    "completed_at": report.completed_at.isoformat() if report.completed_at else None,
+                    "pdf_status": pdf_status,
+                    "pdf_path": path,
+                    "pdf_sha256": report.final_pdf_sha256,
+                    "pdf_renderer_version": report.pdf_renderer_version,
+                    "deliveries": deliveries_by_equipment.get(equipment.id, []),
+                    "evidence": [
+                        {"id": e.id, "evidence_type": e.evidence_type, "position": e.position, "sha256": e.sha256}
+                        for e in report.evidence
+                    ],
+                })
+    return rows
+
+
 def export_all(db: Session) -> tuple[bytes, str]:
     work_orders = list(db.scalars(_query_with_relations().order_by(LabWorkOrder.folio)).all())
     equipment_count = sum(len(item.equipment) for item in work_orders)
@@ -4328,8 +4413,12 @@ def export_all(db: Session) -> tuple[bytes, str]:
                 f"signatures/session-{session.id}.json",
                 json.dumps(metadata, ensure_ascii=False, indent=2),
             )
+        # SG-4I: TechnicalReports de Servicio General (metadata + PDF final + referencia a entrega).
+        report_rows = _export_technical_reports(db, work_orders, archive, manifest)
         archive.writestr("work_orders.json", json.dumps(work_order_rows, ensure_ascii=False, indent=2))
         archive.writestr("equipment.json", json.dumps(equipment_rows, ensure_ascii=False, indent=2))
+        if report_rows:
+            archive.writestr("technical_reports.json", json.dumps(report_rows, ensure_ascii=False, indent=2))
         if len(work_order_rows) != manifest["work_order_count"] or len(equipment_rows) != equipment_count:
             raise RuntimeError("La exportación LAB no coincide con los registros persistidos")
         archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))

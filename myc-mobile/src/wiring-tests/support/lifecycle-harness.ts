@@ -87,6 +87,10 @@ export type Env = {
   /** Ancho de ventana simulado (iPhone 390 por defecto; 320 = SE/mini). */
   windowWidth: number;
   failEvidenceUpload: boolean;
+  /** Código HTTP que devuelve FileSystem.downloadAsync (paquete/PDF). */
+  downloadStatus: number;
+  /** Mensaje de 409 para POST .../technical-report/delete-draft. */
+  deleteDraftError: string | null;
   /** Listado de OT (GET .../lab-work-orders?...); vacío por defecto. */
   list: any[];
   /** Si se define, POST .../complete responde 409 con este detalle estructurado. */
@@ -136,7 +140,7 @@ export async function createLifecycleHarness() {
   const allStubs = new Proxy({}, { get: (_t, key) => stub(String(key)) });
   const env: Env = {
     user: { id: 1, full_name: 'Tec', actor_type: 'internal', permissions: ['*', 'mobile.access', 'lab_work_orders.use'] },
-    detail: null, sheet: null, report: null, created: null, signed: null, failTechnicalReportCreate: false, failCaptureSave: false, confirmCaptureError: null, windowWidth: 390, failEvidenceUpload: false, list: [], completeError: null, finalizeError: null, finalizeGate: null, deliveryStatus: null, deliveryError: null, details: {}, detailGates: [], sheetWriteGates: [], params: {}, listeners: new Set(), session: { access_token: 't' },
+    detail: null, sheet: null, report: null, created: null, signed: null, failTechnicalReportCreate: false, failCaptureSave: false, confirmCaptureError: null, windowWidth: 390, failEvidenceUpload: false, downloadStatus: 200, deleteDraftError: null, list: [], completeError: null, finalizeError: null, finalizeGate: null, deliveryStatus: null, deliveryError: null, details: {}, detailGates: [], sheetWriteGates: [], params: {}, listeners: new Set(), session: { access_token: 't' },
   };
   const response = (body: unknown) => ({ ok: true, status: 200, headers: { get: () => null }, json: async () => body });
   let detailCalls = 0;
@@ -146,6 +150,12 @@ export async function createLifecycleHarness() {
     probe.requests.push(`${init.method ?? 'GET'} ${path}`);
     probe.calls.push({ method: init.method ?? 'GET', path, body: init.body ? (typeof init.body === 'string' ? JSON.parse(init.body) : Object.fromEntries((init.body as unknown as { entries(): Iterable<[string, unknown]> }).entries())) : undefined });
     if (/\/signatures(\/individual)?$/.test(path) && init.method === 'POST') return response(env.signed ?? env.detail);
+    if (/\/technical-report\/delete-draft$/.test(path) && init.method === 'POST') {
+      if (env.deleteDraftError) return { ok: false, status: 409, headers: { get: () => null }, json: async () => ({ detail: env.deleteDraftError }) };
+      const removed = { technical_report_id: env.report.id, folio: env.report.folio, report_type: env.report.report_type };
+      for (const equipment of env.detail?.equipment ?? []) if (equipment.technical_report_id === env.report.id) Object.assign(equipment, { technical_report_id: null, technical_report_type: null, technical_report_folio: null, technical_report_status: null, technical_report_revision_count: 0 });
+      return response(removed);
+    }
     if (/\/technical-report\/finalize$/.test(path) && init.method === 'POST') {
       if (env.finalizeGate) await env.finalizeGate;
       if (env.finalizeError) return { ok: false, status: 409, headers: { get: () => null }, json: async () => ({ detail: env.finalizeError }) };
@@ -246,7 +256,7 @@ export async function createLifecycleHarness() {
     react: React,
     'react/jsx-runtime': nodeRequire('react/jsx-runtime'),
     'react-native': rn,
-    'expo-file-system/legacy': { cacheDirectory: '/cache/', downloadAsync: async (url: string, dest: string, options: { headers?: unknown }) => { probe.downloads.push({ url, dest, headers: options?.headers }); return { uri: dest }; } },
+    'expo-file-system/legacy': { cacheDirectory: '/cache/', downloadAsync: async (url: string, dest: string, options: { headers?: unknown }) => { probe.downloads.push({ url, dest, headers: options?.headers }); return { uri: dest, status: env.downloadStatus }; } },
     'expo-print': { printAsync: async (options: unknown) => { probe.prints.push(options); } },
     'expo-sharing': { isAvailableAsync: async () => true, shareAsync: async (uri: unknown) => { probe.shares.push(uri); } },
     'react-native-safe-area-context': allStubs,

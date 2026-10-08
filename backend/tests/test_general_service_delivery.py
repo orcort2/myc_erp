@@ -5,8 +5,10 @@ equipo de Servicio General sólo se entrega con su TechnicalReport vigente en
 
 from __future__ import annotations
 
+import hashlib
+
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.models.lab_delivery_item import LabDeliveryItem
 from app.models.lab_work_order_delivery import LabWorkOrderDelivery
@@ -289,3 +291,55 @@ def test_calibration_delivery_rules_are_unchanged(sg3):
     assert "cerradas" in response.json()["detail"]
     status = delivery_status(client, headers, order)
     assert all(item["delivery_eligible"] is True and item["technical_report_folio"] is None for item in status["pending_equipment"])
+
+
+# --------------------------------------------------------------- SG-4I: reporte completado no se reentrega
+
+def _admin_headers(factory):
+    from app.core.security import create_access_token
+    from app.models.user import Role, User
+
+    with factory() as db:
+        role = Role(name="Administrador", description="Administrador")
+        db.add(role)
+        db.flush()
+        user = User(username="lab-admin", email="lab-admin@example.test", full_name="LAB admin", hashed_password="unused",
+                    account_type="internal", status="active", is_active=True, role_id=role.id, roles=[role])
+        db.add(user)
+        db.commit()
+        token = create_access_token(str(user.id), extra_claims={"roles": ["Administrador"], "auth_context": "internal"})
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_a_completed_report_is_not_redeliverable_after_its_delivery_is_voided(sg3, isolated_storage):
+    client, factory, headers = sg3
+    order, [equipment], [report] = order_with_reports(client, headers)
+    finalize(client, headers, order, equipment)
+    assert deliver(client, headers, order).status_code == 201
+    assert client.post(report_url(order["id"], equipment["id"], "/finalize"), headers=headers).status_code == 200
+    with factory() as db:
+        stored = db.get(TechnicalReport, report["id"])
+        before = (stored.status, stored.revision_number, stored.final_pdf_sha256, stored.final_pdf_path, stored.document_snapshot["delivery"]["delivery_id"])
+        pdf_bytes = (isolated_storage / stored.final_pdf_path).read_bytes()
+        delivery_id = db.scalar(select(LabWorkOrderDelivery.id))
+    voided = client.post(f"{BASE}/{order['id']}/delivery/{delivery_id}/void", json={"reason": "Error de captura"}, headers=_admin_headers(factory))
+    assert voided.status_code == 200, voided.text
+    # El equipo vuelve a pendiente pero NO es elegible.
+    item = pending_by_equipment(client, headers, order)[equipment["id"]]
+    assert item["delivery_eligible"] is False and "revisión" in item["delivery_blocked_reason"]
+    response = deliver(client, headers, order)
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "TECHNICAL_REPORT_REVISION_REQUIRED" and "revisión del reporte" in detail["message"]
+    ticket = client.post(
+        "/api/mobile/v1/technician/tickets/partial-delivery",
+        json={"work_order_id": order["id"], "requested_equipment_ids": [equipment["id"]], "reason": "Urgente", "description": "Cliente la requiere"},
+        headers=headers,
+    )
+    assert ticket.status_code == 409 and ticket.json()["detail"]["code"] == "TECHNICAL_REPORT_REVISION_REQUIRED"
+    with factory() as db:
+        assert db.scalar(select(func.count()).select_from(LabWorkOrderDelivery)) == 1, "no se creó una entrega nueva"
+        stored = db.get(TechnicalReport, report["id"])
+        assert (stored.status, stored.revision_number, stored.final_pdf_sha256, stored.final_pdf_path, stored.document_snapshot["delivery"]["delivery_id"]) == before
+        assert (isolated_storage / stored.final_pdf_path).read_bytes() == pdf_bytes, "el PDF original sigue intacto"
+        assert hashlib.sha256(pdf_bytes).hexdigest() == stored.final_pdf_sha256

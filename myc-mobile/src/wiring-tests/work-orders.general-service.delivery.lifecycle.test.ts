@@ -232,3 +232,14 @@ test('4F: salir con una firma capturada pide confirmación; sin firma cancela di
   assert.equal((flowSource.match(/onPress=\{requestCancel\}/g) ?? []).length, 3, 'revisión, firma de entrega y firma de receptor cancelan con la misma guarda');
   assert.doesNotMatch(flowSource, /onPress=\{onCancel\}/);
 });
+
+test('4F: un reporte completado cuya entrega fue anulada muestra que requiere revisión y no habilita entregar', async () => {
+  const reason = 'El reporte técnico final fue generado con una entrega que posteriormente fue anulada. Se requiere una revisión del reporte antes de registrar una nueva entrega.';
+  const h = await openGeneralService({
+    reportStatus: 'completed',
+    delivery: statusOf([pending(289, 'Báscula', { delivery_eligible: false, delivery_blocked_reason: reason })]),
+  });
+  assert.equal(h.registry.get('Proceder a entrega')!.disabled, true);
+  assert.ok(h.text().includes('Se requiere una revisión del reporte antes de registrar una nueva entrega.'));
+  assert.ok(!h.registry.has('LabDeliveryFlow'));
+});

@@ -148,3 +148,21 @@ export function describeGeneralServiceClosure(input: {
   }
   return { canClose: false, message: null };
 }
+
+export type ChangeTypeOption = {
+  value: TechnicalReportType;
+  title: string;
+  /** Texto bajo el título: "Actual" o "Próximamente" (o la descripción del tipo disponible). */
+  caption: string;
+  selectable: boolean;
+};
+
+/** Opciones del selector "Cambiar tipo de reporte" para un reporte editable. El
+ * tipo actual y los tipos sin perfil completo nunca son seleccionables. */
+export function changeTypeOptions(current: TechnicalReportType): ChangeTypeOption[] {
+  return TECHNICAL_REPORT_TYPE_OPTIONS.map((option) => {
+    if (option.value === current) return { value: option.value, title: option.title, caption: 'Actual', selectable: false };
+    if (!option.enabled) return { value: option.value, title: option.title, caption: COMING_SOON, selectable: false };
+    return { value: option.value, title: option.title, caption: option.description, selectable: true };
+  });
+}

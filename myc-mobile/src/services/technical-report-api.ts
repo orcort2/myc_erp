@@ -1,3 +1,4 @@
+import type { TechnicalReportType } from '@/src/types/lab-work-order';
 import type {
   TechnicalReportCaptureUpdate,
   TechnicalReportEvidence,
@@ -16,6 +17,10 @@ export type TechnicalReportApi = {
   deleteEvidence(evidenceId: number): Promise<TechnicalReportRead>;
   /** Transición explícita in_progress -> ready_for_signatures (el autosave nunca finaliza). */
   confirmCapture(): Promise<TechnicalReportRead>;
+  /** Elimina el borrador (captura + evidencias). Sólo mientras sea editable. */
+  deleteDraft(): Promise<{ technical_report_id: number; folio: string; report_type: TechnicalReportType }>;
+  /** Cambia el tipo de un reporte editable (hoy ningún destino está disponible). */
+  changeType(reportType: TechnicalReportType, confirmDiscardEvidence: boolean): Promise<TechnicalReportRead>;
   /** Genera el PDF institucional y completa el reporte (requiere entrega registrada). */
   finalize(): Promise<TechnicalReportRead>;
   /** Fuente autenticada para previsualizar una evidencia ya subida. */
@@ -40,6 +45,11 @@ export function createTechnicalReportApi(deps: {
       { method: 'POST', body: buildEvidenceFormData(image, evidenceType) },
     ),
     confirmCapture: () => deps.request<TechnicalReportRead>(`${base}/confirm-capture`, { method: 'POST' }),
+    deleteDraft: () => deps.request<{ technical_report_id: number; folio: string; report_type: TechnicalReportType }>(`${base}/delete-draft`, { method: 'POST' }),
+    changeType: (reportType, confirmDiscardEvidence) => deps.request<TechnicalReportRead>(
+      `${base}/change-type`,
+      { method: 'POST', body: JSON.stringify({ report_type: reportType, confirm_discard_evidence: confirmDiscardEvidence }) },
+    ),
     finalize: () => deps.request<TechnicalReportRead>(`${base}/finalize`, { method: 'POST' }),
     deleteEvidence: (evidenceId) => deps.request<TechnicalReportRead>(`${base}/evidence/${evidenceId}`, { method: 'DELETE' }),
     evidenceImageSource: (evidenceId) => ({

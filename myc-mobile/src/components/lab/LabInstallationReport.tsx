@@ -4,11 +4,13 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { LabEvidenceGallery } from '@/src/components/lab/LabEvidenceGallery';
 
 import {
+  AdministrativeButton,
   AlertBanner,
   Card,
   EmptyState,
   Field,
   LoadingState,
+  DangerButton,
   PrimaryButton,
   ReadOnlyField,
   SecondaryButton,
@@ -43,6 +45,7 @@ import {
   type EvidenceSource,
 } from '@/src/services/technical-report-media';
 import {
+  changeTypeOptions,
   describeTechnicalReportCard,
   EDITABLE_REPORT_STATUSES,
 } from '@/src/services/technical-report';
@@ -61,6 +64,8 @@ type Props = {
   canCapture: boolean;
   clientName: string;
   equipment: LabEquipment;
+  /** El borrador se eliminó: la pantalla cierra el reporte y refresca la OT. */
+  onDraftDeleted?(): void;
   /** Se invoca al salir con todo guardado, para refrescar la OT una sola vez. */
   onClose(): void;
   /** Cambio relevante (primera captura, foto subida/eliminada). Nunca por tecla. */
@@ -107,6 +112,7 @@ export function LabInstallationReport({
   mediaProvider,
   onChanged,
   onClose,
+  onDraftDeleted,
   workOrderFolio,
 }: Props) {
   const [report, setReport] = useState<TechnicalReportRead | null>(null);
@@ -116,6 +122,8 @@ export function LabInstallationReport({
   const [autosaveStatus, setAutosaveStatus] = useState<TechnicalReportAutosaveStatus>('idle');
   const [photoBusy, setPhotoBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [deletingDraft, setDeletingDraft] = useState(false);
+  const [typePickerOpen, setTypePickerOpen] = useState(false);
 
   const apiRef = useRef(api);
   apiRef.current = api;
@@ -220,6 +228,66 @@ export function LabInstallationReport({
     } finally {
       setConfirming(false);
     }
+  }
+
+  // ------------------------------------------------- administración del borrador
+  // Acciones secundarias/administrativas, separadas de "Confirmar captura".
+  function requestDeleteDraft() {
+    if (!editable || deletingDraft) return;
+    Alert.alert(
+      '¿Eliminar este borrador de reporte?',
+      'Se eliminarán la captura y las evidencias asociadas. Esta acción no se puede deshacer.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Eliminar borrador', style: 'destructive', onPress: () => { void deleteDraft(); } },
+      ],
+    );
+  }
+
+  async function deleteDraft() {
+    setDeletingDraft(true);
+    setFormError('');
+    // Lo pendiente de autosave se descarta: el reporte va a dejar de existir
+    // y ningún PATCH tardío debe dispararse contra él.
+    autosave.invalidateContext();
+    try {
+      await apiRef.current.deleteDraft();
+      onDraftDeleted?.();
+    } catch (error) {
+      // Si no se pudo eliminar, el borrador sigue vivo: se rearma el autosave
+      // con lo que el técnico tenía escrito.
+      if (valuesRef.current) autosave.change(valuesRef.current);
+      Alert.alert('No fue posible eliminar el borrador', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally {
+      setDeletingDraft(false);
+    }
+  }
+
+  async function changeType(target: TechnicalReportRead['report_type']) {
+    if (!editable || !report) return;
+    const run = async (confirmDiscardEvidence: boolean) => {
+      try {
+        if (!(await autosave.flush())) { setFormError(LEAVE_FAILED_MESSAGE); return; }
+        const updated = await apiRef.current.changeType(target, confirmDiscardEvidence);
+        // El nuevo tipo trae su propia captura: se recarga completa desde el servidor.
+        autosave.invalidateContext();
+        setReport(updated);
+        setValues(installationCaptureFromServer(updated.capture_values));
+        setTypePickerOpen(false);
+        onChangedRef.current?.();
+      } catch (error) {
+        Alert.alert('No fue posible cambiar el tipo', error instanceof Error ? error.message : 'Intenta nuevamente');
+      }
+    };
+    if (report.evidence.length > 0) {
+      Alert.alert(
+        'Cambiar tipo de reporte',
+        'Las evidencias del reporte actual se descartarán. ¿Continuar?',
+        [{ text: 'Cancelar', style: 'cancel' }, { text: 'Descartar y cambiar', style: 'destructive', onPress: () => { void run(true); } }],
+      );
+      return;
+    }
+    await run(false);
   }
 
   async function leave() {
@@ -511,6 +579,42 @@ export function LabInstallationReport({
         </Section>
       )}
 
+      {editable && (
+        <Section title="Acciones del borrador">
+          <AdministrativeButton
+            disabled={deletingDraft}
+            icon="swap-horizontal"
+            label="Cambiar tipo de reporte"
+            onPress={() => setTypePickerOpen((open) => !open)}
+          />
+          {typePickerOpen && (
+            <View style={styles.typePicker}>
+              {changeTypeOptions(report.report_type).map((option) => (
+                <Pressable
+                  accessibilityLabel={`Tipo de reporte: ${option.title}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: !option.selectable }}
+                  disabled={!option.selectable}
+                  key={option.value}
+                  onPress={() => { void changeType(option.value); }}
+                  style={[styles.typeOption, !option.selectable && styles.typeOptionDisabled]}
+                >
+                  <Text style={styles.typeOptionTitle}>{option.title}</Text>
+                  <Text style={styles.meta}>{option.caption}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+          <DangerButton
+            disabled={deletingDraft}
+            icon="delete-outline"
+            label="Eliminar borrador"
+            loading={deletingDraft}
+            onPress={requestDeleteDraft}
+          />
+        </Section>
+      )}
+
       <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => { void leave(); }} />
     </View>
   );
@@ -533,4 +637,8 @@ const styles = StyleSheet.create({
   meta: { color: colors.textSubtle },
   panel: { gap: spacing.md, paddingBottom: spacing.xl },
   title: { color: colors.text, fontSize: 22, fontWeight: '800' },
+  typeOption: { borderColor: colors.border, borderRadius: 9, borderWidth: 1, gap: 2, padding: spacing.sm },
+  typeOptionDisabled: { opacity: 0.55 },
+  typeOptionTitle: { color: colors.text, fontWeight: '700' },
+  typePicker: { gap: spacing.xs },
 });

@@ -32,7 +32,8 @@ def test_every_http_operation_has_an_explicit_access_classification():
     # SG-4 adds PATCH technical-report, POST/GET/DELETE technical-report evidence.
     # SG-4E adds POST .../technical-report/confirm-capture.
     # SG-4G adds POST ./technical-report/finalize and GET ./technical-report/pdf.
-    assert len(operations) == 577
+    # SG-4I adds POST ./technical-report/delete-draft and POST ./technical-report/change-type.
+    assert len(operations) == 579
     assert all(classify_operation(item.method, item.path, item.tags) for item in operations)
 
 

@@ -47,8 +47,10 @@ from app.schemas.technical_report import (
     TechnicalReportCaptureUpdate,
     TechnicalReportCreate,
     TechnicalReportEvidenceRead,
+    TechnicalReportDraftDeleted,
     TechnicalReportEvidenceType,
     TechnicalReportRead,
+    TechnicalReportRetype,
 )
 from app.services.lab_work_orders import (
     add_equipment,
@@ -109,7 +111,9 @@ from app.services.lab_packages import generate_lab_package
 from app.services.technical_reports import (
     add_technical_report_evidence,
     confirm_technical_report_capture,
+    change_technical_report_type,
     create_technical_report,
+    delete_technical_report_draft,
     delete_technical_report_evidence,
     finalize_technical_report,
     read_technical_report,
@@ -835,6 +839,42 @@ def post_confirm_technical_report_capture(
     _ensure_internal_report_writer(context)
     ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
     return confirm_technical_report_capture(db, work_order_id, equipment_id, context.user)
+
+
+@router.post(
+    "/{work_order_id}/equipment/{equipment_id}/technical-report/delete-draft",
+    response_model=TechnicalReportDraftDeleted,
+)
+def post_delete_technical_report_draft(
+    work_order_id: int,
+    equipment_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(*_TECHNICAL_REPORT_WRITE)
+    ),
+) -> TechnicalReportDraftDeleted:
+    """Elimina un borrador editable (operación de dominio, no un DELETE genérico)."""
+    _ensure_internal_report_writer(context)
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    return delete_technical_report_draft(db, work_order_id, equipment_id, context.user)
+
+
+@router.post(
+    "/{work_order_id}/equipment/{equipment_id}/technical-report/change-type",
+    response_model=TechnicalReportRead,
+)
+def post_change_technical_report_type(
+    work_order_id: int,
+    equipment_id: int,
+    payload: TechnicalReportRetype,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(*_TECHNICAL_REPORT_WRITE)
+    ),
+) -> TechnicalReportRead:
+    _ensure_internal_report_writer(context)
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    return change_technical_report_type(db, work_order_id, equipment_id, payload, context.user)
 
 
 @router.post(

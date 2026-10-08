@@ -47,6 +47,24 @@ class TechnicalReportCaptureUpdate(BaseModel):
     capture_values: InstallationCapturePatch
 
 
+class TechnicalReportRetype(BaseModel):
+    """Cambio de tipo de un reporte aún editable. Hoy sólo existe Installation,
+    así que ningún destino es válido todavía; el contrato queda listo para
+    cuando existan más perfiles."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    report_type: TechnicalReportType
+    # Obligatorio si el reporte ya tiene evidencias: nunca se borran en silencio.
+    confirm_discard_evidence: bool = False
+
+
+class TechnicalReportDraftDeleted(BaseModel):
+    technical_report_id: int
+    folio: str
+    report_type: TechnicalReportType
+
+
 class TechnicalReportEvidenceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
