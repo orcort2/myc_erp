@@ -20,9 +20,11 @@ un equipo sin ninguna sigue bloqueando ("Sin reporte técnico"), igual que antes
 Haber sido creada NO basta por sí mismo si fue cancelada, y estar completada
 tampoco exime: el documento vigente debe estar completo (PDF + entrega).
 
-Compatibilidad: una fila histórica sin `intervention_id` (la columna es nullable
-durante la transición) se trata como una intervención implícita única respaldada
-por `current_technical_report`.
+Compatibilidad: `LabWorkOrderEquipment.current_technical_report` es el reporte
+vigente de la intervención PRINCIPAL (no cancelada, de menor id, con revisión
+vigente); este módulo es la vía para consultar TODAS las intervenciones.
+Desde SG-4J-A3 `technical_reports.intervention_id` es NOT NULL: ya no existen
+reportes sin intervención.
 
 Este módulo sólo importa modelos: no hay ciclos con los servicios que lo usan.
 """
@@ -84,18 +86,17 @@ def current_revision(intervention: TechnicalIntervention) -> TechnicalReport | N
 def equipment_interventions(equipment: LabWorkOrderEquipment) -> list[InterventionRef]:
     """Intervenciones OBLIGATORIAS del equipo, ordenadas por id (estable), cada
     una con su revisión vigente. Vacío si el equipo no tiene ninguna."""
-    refs = [
+    return [
         InterventionRef(intervention, current_revision(intervention))
         for intervention in sorted(equipment.technical_interventions, key=lambda item: item.id)
         if is_mandatory(intervention)
     ]
-    if refs:
-        return refs
-    # Compatibilidad: reporte histórico aún sin intervención.
-    legacy = equipment.current_technical_report
-    if legacy is not None and legacy.intervention_id is None:
-        return [InterventionRef(None, legacy)]
-    return []
+
+
+def equipment_report_folios(equipment: LabWorkOrderEquipment) -> list[str]:
+    """Folios institucionales de TODAS las intervenciones obligatorias del
+    equipo (orden estable por id); es lo que se imprime en la OT y el acuse."""
+    return [ref.folio for ref in equipment_interventions(equipment) if ref.folio]
 
 
 def has_single_intervention(equipment: LabWorkOrderEquipment) -> bool:

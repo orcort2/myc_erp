@@ -44,6 +44,9 @@ class TechnicalIntervention(IntegerPkMixin, TimestampMixin, Base):
             name="ck_technical_intervention_status",
         ),
         UniqueConstraint("folio", name="uq_technical_interventions_folio"),
+        # Destino de la FK compuesta (intervention_id, lab_equipment_id) de
+        # technical_reports: garantiza que reporte e intervención comparten equipo.
+        UniqueConstraint("id", "lab_equipment_id", name="uq_technical_interventions_id_equipment"),
         Index("ix_technical_interventions_lab_equipment_id", "lab_equipment_id"),
         Index("ix_technical_interventions_intervention_type", "intervention_type"),
         Index("ix_technical_interventions_status", "status"),
@@ -82,6 +85,8 @@ class TechnicalIntervention(IntegerPkMixin, TimestampMixin, Base):
     created_by: Mapped["User | None"] = relationship(foreign_keys=[created_by_user_id])
     reports: Mapped[list["TechnicalReport"]] = relationship(
         back_populates="intervention",
+        primaryjoin="TechnicalIntervention.id == TechnicalReport.intervention_id",
+        foreign_keys="TechnicalReport.intervention_id",
         order_by="TechnicalReport.revision_number",
         lazy="selectin",
     )
@@ -92,7 +97,10 @@ class TechnicalIntervention(IntegerPkMixin, TimestampMixin, Base):
 
     @property
     def current_report(self) -> "TechnicalReport | None":
-        return next((report for report in self.reports if report.is_current), None)
+        """Revisión vigente (a lo más una por la restricción única); el desempate
+        por mayor revisión/id cubre datos anómalos de forma determinista."""
+        current = [report for report in self.reports if report.is_current]
+        return max(current, key=lambda report: (report.revision_number, report.id)) if current else None
 
 
 class TechnicalInterventionDelivery(IntegerPkMixin, TimestampMixin, Base):

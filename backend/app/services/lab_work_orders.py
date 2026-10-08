@@ -122,7 +122,7 @@ def _query_with_relations():
             LabWorkOrderEquipment.technical_reports
         ),
         selectinload(LabWorkOrder.equipment).selectinload(
-            LabWorkOrderEquipment.current_technical_report
+            LabWorkOrderEquipment.technical_interventions
         ),
         selectinload(LabWorkOrder.signature_session).selectinload(
             LabWorkOrderSignatureSession.signatures
@@ -374,7 +374,10 @@ def _read(db: Session, work_order: LabWorkOrder) -> LabWorkOrderRead:
         projected.technical_report_status = (
             current_report.status if current_report else None
         )
-        projected.technical_report_revision_count = len(source.technical_reports)
+        # Revisiones de la intervención principal (la que expone current_technical_report).
+        projected.technical_report_revision_count = (
+            len(current_report.intervention.reports) if current_report else len(source.technical_reports)
+        )
     result.signature_scope = _recorded_signature_scope(
         db, work_order.signature_session_id
     )

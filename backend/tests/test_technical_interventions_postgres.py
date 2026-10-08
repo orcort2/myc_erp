@@ -31,7 +31,8 @@ from test_technical_report_installation import isolated_storage  # noqa: F401
 
 ROOT = Path(__file__).resolve().parents[2]
 PREVIOUS_HEAD = "ef09a7ea9e97"
-NEW_HEAD = "a4b7c1d9e3f2"
+INTERVENTIONS_HEAD = "a4b7c1d9e3f2"
+NEW_HEAD = "c6d9e2f5a8b1"
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("LAB_POSTGRES_TEST_URL"),
@@ -335,3 +336,160 @@ def test_concurrent_deliveries_of_the_same_equipment_yield_one_delivery_and_one_
     assert codes == [201, 409], codes
     assert db.rows("SELECT count(*) FROM lab_work_order_deliveries") == [(1,)]
     assert db.rows("SELECT count(*) FROM technical_intervention_deliveries") == [(1,)]
+
+
+# --------------------------------------------------------------- SG-4J-A3: varias intervenciones por equipo
+
+CLONE_INTERVENTION = (
+    "INSERT INTO technical_interventions (lab_equipment_id, intervention_type, folio, status) "
+    "SELECT lab_equipment_id, intervention_type, :folio, 'open' FROM technical_interventions WHERE id = :source"
+)
+CLONE_REPORT = (
+    "INSERT INTO technical_reports (lab_equipment_id, intervention_id, report_type, folio, status, capture_values, document_snapshot, "
+    "report_schema_version, performed_by_user_id, performed_by_name_snapshot, performed_at, client_conformity_text_snapshot, "
+    "revision_number, is_current, supersedes_report_id, pdf_renderer_version, final_pdf_path, final_pdf_sha256, final_pdf_generated_at, completed_at) "
+    "SELECT lab_equipment_id, :intervention, report_type, :folio, status, capture_values, document_snapshot, report_schema_version, "
+    "performed_by_user_id, performed_by_name_snapshot, performed_at, client_conformity_text_snapshot, :revision, :current, :supersedes, "
+    "pdf_renderer_version, final_pdf_path, final_pdf_sha256, final_pdf_generated_at, completed_at FROM technical_reports WHERE id = :source "
+    "RETURNING id"
+)
+
+
+def second_intervention(db, source_report_id: int, folio: str, *, link_delivery: bool = True) -> tuple[int, int]:
+    """Segunda intervención del MISMO equipo y tipo con su propio reporte vigente
+    (idéntico en PDF/snapshot al original) y el mismo vínculo de entrega."""
+    with db.engine.begin() as connection:
+        source_intervention = connection.execute(
+            text("SELECT intervention_id FROM technical_reports WHERE id = :id"), {"id": source_report_id}
+        ).scalar()
+        new_intervention = connection.execute(
+            text(CLONE_INTERVENTION + " RETURNING id"), {"folio": folio, "source": source_intervention}
+        ).scalar()
+        new_report = connection.execute(text(CLONE_REPORT), {
+            "intervention": new_intervention, "folio": folio, "revision": 1, "current": True, "supersedes": None, "source": source_report_id,
+        }).scalar()
+        connection.execute(text("UPDATE technical_interventions SET status = 'completed' WHERE id = :id"), {"id": new_intervention})
+        if link_delivery:
+            connection.execute(text(
+                "INSERT INTO technical_intervention_deliveries (intervention_id, delivery_id, delivery_item_id, technical_report_id) "
+                "SELECT :intervention, delivery_id, delivery_item_id, :report FROM technical_intervention_deliveries "
+                "WHERE intervention_id = :source"
+            ), {"intervention": new_intervention, "report": new_report, "source": source_intervention})
+    return new_intervention, new_report
+
+
+def test_two_interventions_of_the_same_equipment_and_type_hold_distinct_current_reports(db, api):
+    client, headers = api
+    order, [equipment], [report] = build_delivered(client, headers, count=1)
+    new_intervention, new_report = second_intervention(db, report["id"], "MYC-IN10-26-9401")
+    assert db.rows(
+        "SELECT i.intervention_type, count(*), count(DISTINCT i.folio), sum(CASE WHEN r.is_current THEN 1 ELSE 0 END) "
+        "FROM technical_interventions i JOIN technical_reports r ON r.intervention_id = i.id GROUP BY i.intervention_type"
+    ) == [("installation", 2, 2, 2)], "mismo tipo, folios distintos, dos vigentes en el mismo equipo"
+    with pytest.raises(IntegrityError):  # el folio institucional sigue siendo único por intervención
+        with db.engine.begin() as connection:
+            connection.execute(text(CLONE_INTERVENTION), {"folio": "MYC-IN10-26-9401", "source": new_intervention})
+
+
+def test_r1_and_r2_of_one_intervention_share_the_institutional_folio_but_not_current_state_or_revision(db, api):
+    client, headers = api
+    order, [equipment], [report] = build_delivered(client, headers, count=1)
+    intervention = db.rows("SELECT intervention_id FROM technical_reports")[0][0]
+    with db.engine.begin() as connection:
+        connection.execute(text("UPDATE technical_reports SET is_current = false WHERE id = :id"), {"id": report["id"]})
+        connection.execute(text(CLONE_REPORT), {
+            "intervention": intervention, "folio": report["folio"], "revision": 2, "current": True, "supersedes": report["id"], "source": report["id"],
+        })
+    assert db.rows("SELECT count(*), count(DISTINCT folio) FROM technical_reports") == [(2, 1)], "R1 y R2 comparten folio"
+    with pytest.raises(IntegrityError):  # una sola vigente por intervención
+        with db.engine.begin() as connection:
+            connection.execute(text(CLONE_REPORT), {
+                "intervention": intervention, "folio": report["folio"], "revision": 3, "current": True, "supersedes": None, "source": report["id"],
+            })
+    with pytest.raises(IntegrityError):  # revisión duplicada
+        with db.engine.begin() as connection:
+            connection.execute(text(CLONE_REPORT), {
+                "intervention": intervention, "folio": report["folio"], "revision": 2, "current": False, "supersedes": None, "source": report["id"],
+            })
+    with pytest.raises(IntegrityError):  # sin bifurcaciones: R1 ya tiene sucesora
+        with db.engine.begin() as connection:
+            connection.execute(text(CLONE_REPORT), {
+                "intervention": intervention, "folio": report["folio"], "revision": 3, "current": False, "supersedes": report["id"], "source": report["id"],
+            })
+
+
+def test_structural_integrity_rejects_orphans_cross_equipment_and_cross_intervention_links(db, api):
+    client, headers = api
+    order, [first, second], [r1, r2] = build_delivered(client, headers, count=2)
+    i1, i2 = [row[0] for row in db.rows("SELECT id FROM technical_interventions ORDER BY id")]
+    with pytest.raises(IntegrityError):  # intervention_id NOT NULL
+        with db.engine.begin() as connection:
+            connection.execute(text("UPDATE technical_reports SET intervention_id = NULL WHERE id = :id"), {"id": r1["id"]})
+    with pytest.raises(IntegrityError):  # el reporte debe tener el mismo equipo que su intervención
+        with db.engine.begin() as connection:
+            connection.execute(text("UPDATE technical_reports SET intervention_id = :other WHERE id = :id"), {"other": i2, "id": r1["id"]})
+    with pytest.raises(IntegrityError):  # una revisión no puede superseder a un reporte de otra intervención
+        with db.engine.begin() as connection:
+            connection.execute(text("UPDATE technical_reports SET supersedes_report_id = :other WHERE id = :id"), {"other": r1["id"], "id": r2["id"]})
+
+
+def test_legacy_endpoints_resolve_the_principal_intervention_deterministically(db, api):
+    client, headers = api
+    order, [equipment], [report] = build_delivered(client, headers, count=1)
+    second_intervention(db, report["id"], "MYC-IN10-26-9402")
+    for _ in range(3):  # siempre la de menor id, nunca al azar
+        body = client.get(report_url(order["id"], equipment["id"]), headers=headers).json()
+        assert body["id"] == report["id"] and body["folio"] == report["folio"]
+
+
+def test_close_and_package_cover_every_mandatory_intervention_with_one_voucher(db, api):
+    client, headers = api
+    order, [equipment], [report] = build_delivered(client, headers, count=1)
+    second_intervention(db, report["id"], "MYC-IN10-26-9403")
+    close = _close(client, headers, order)
+    assert close.status_code == 200, close.text
+    package = client.get(f"/api/mobile/v1/technician/lab-work-orders/{order['id']}/package", headers=headers)
+    assert package.status_code == 200, package.text
+    import io
+
+    from pypdf import PdfReader
+
+    texts = [page.extract_text() for page in PdfReader(io.BytesIO(package.content)).pages]
+    assert sum("REPORTE DE INSTALACIÓN" in text for text in texts) == 2, "un reporte por intervención obligatoria"
+    assert sum("ACUSE DE ENTREGA DE EQUIPOS" in text for text in texts) == 1, "un solo acuse"
+    # La entrega anulada bloquea el cierre de TODAS las intervenciones que respaldaba.
+    with db.engine.begin() as connection:
+        connection.execute(text("UPDATE lab_work_order_deliveries SET status = 'voided'"))
+    blocked = client.get(f"/api/mobile/v1/technician/lab-work-orders/{order['id']}/package", headers=headers)
+    assert blocked.status_code == 409 and blocked.json()["detail"]["code"] == "TECHNICAL_REPORT_REVISION_REQUIRED"
+    assert len(blocked.json()["detail"]["items"]) == 2
+
+
+def test_downgrade_is_refused_while_data_depends_on_the_new_structure_and_then_succeeds_without_losing_documents(db, api):
+    client, headers = api
+    order, [equipment], [report] = build_delivered(client, headers, count=1)
+    documents = db.rows(DOCUMENT_SQL)
+    second_intervention(db, report["id"], "MYC-IN10-26-9404")  # dos vigentes en el equipo
+    with pytest.raises(Exception, match="varias intervenciones vigentes"):
+        db.alembic("downgrade", INTERVENTIONS_HEAD)
+    assert db.revision() == NEW_HEAD, "el downgrade abortado no cambió nada"
+    with db.engine.begin() as connection:  # R1/R2 con folio compartido también lo impide
+        connection.execute(text("DELETE FROM technical_intervention_deliveries WHERE intervention_id <> (SELECT intervention_id FROM technical_reports WHERE id = :id)"), {"id": report["id"]})
+        connection.execute(text("DELETE FROM technical_reports WHERE id <> :id"), {"id": report["id"]})
+        connection.execute(text("DELETE FROM technical_interventions WHERE id <> (SELECT intervention_id FROM technical_reports WHERE id = :id)"), {"id": report["id"]})
+        connection.execute(text("UPDATE technical_reports SET is_current = false WHERE id = :id"), {"id": report["id"]})
+        connection.execute(text(CLONE_REPORT), {
+            "intervention": db.rows("SELECT intervention_id FROM technical_reports")[0][0], "folio": report["folio"], "revision": 2,
+            "current": True, "supersedes": report["id"], "source": report["id"],
+        })
+    with pytest.raises(Exception, match="comparten folio"):
+        db.alembic("downgrade", INTERVENTIONS_HEAD)
+    with db.engine.begin() as connection:
+        connection.execute(text("UPDATE technical_reports SET supersedes_report_id = NULL WHERE revision_number = 2"))
+        connection.execute(text("DELETE FROM technical_reports WHERE revision_number = 2"))
+        connection.execute(text("UPDATE technical_reports SET is_current = true"))
+    db.alembic("downgrade", INTERVENTIONS_HEAD)
+    assert db.revision() == INTERVENTIONS_HEAD
+    assert db.rows(DOCUMENT_SQL) == documents, "PDFs, hashes, folios y snapshots intactos tras revertir"
+    db.alembic("upgrade", "head")
+    assert db.rows(DOCUMENT_SQL) == documents

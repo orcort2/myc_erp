@@ -37,6 +37,20 @@ migration = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(migration)
 
 
+@pytest.fixture()
+def legacy_schema():
+    """Estado previo a SG-4J-A3 (intervention_id nullable) para simular datos
+    anteriores a la migración de backfill. Debe instanciarse ANTES de `sg3`."""
+    from app.core.db import Base
+
+    column = Base.metadata.tables["technical_reports"].c.intervention_id
+    column.nullable = True
+    try:
+        yield
+    finally:
+        column.nullable = False
+
+
 def row(id, equipment=1, report_type="installation", folio=None, status="draft", revision=1, current=True, supersedes=None):
     return SimpleNamespace(
         id=id, lab_equipment_id=equipment, report_type=report_type, folio=folio or f"MYC-IN10-26-{id:04d}",
@@ -202,7 +216,7 @@ def run_backfill(factory) -> dict:
     return result
 
 
-def test_backfill_creates_one_intervention_per_installation_preserving_every_document(sg3, isolated_storage):
+def test_backfill_creates_one_intervention_per_installation_preserving_every_document(legacy_schema, sg3, isolated_storage):
     client, factory, headers = sg3
     order, [equipment], [report] = order_with_reports(client, headers)
     capture(client, headers, order, equipment)
@@ -229,7 +243,7 @@ def test_backfill_creates_one_intervention_per_installation_preserving_every_doc
         assert db.execute(text("PRAGMA foreign_key_check")).all() == []
 
 
-def test_backfill_handles_reports_without_revision_history_or_delivery(sg3):
+def test_backfill_handles_reports_without_revision_history_or_delivery(legacy_schema, sg3):
     client, factory, headers = sg3
     order, [first, second], [r1, r2] = order_with_reports(client, headers, count=2)
     capture(client, headers, order, first)
@@ -241,7 +255,7 @@ def test_backfill_handles_reports_without_revision_history_or_delivery(sg3):
         assert db.scalar(select(func.count()).select_from(TechnicalReport).where(TechnicalReport.intervention_id.is_(None))) == 0
 
 
-def test_backfill_is_deterministic_and_resumable(sg3):
+def test_backfill_is_deterministic_and_resumable(legacy_schema, sg3):
     client, factory, headers = sg3
     order, equipments, reports = ready_chain(client, headers, count=2)
     _legacy_state(factory)

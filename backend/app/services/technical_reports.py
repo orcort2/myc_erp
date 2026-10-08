@@ -94,7 +94,7 @@ def _get_equipment_for_technical_report(
         .options(
             selectinload(LabWorkOrderEquipment.work_order),
             selectinload(LabWorkOrderEquipment.technical_reports),
-            selectinload(LabWorkOrderEquipment.current_technical_report),
+            selectinload(LabWorkOrderEquipment.technical_interventions),
         )
     )
 

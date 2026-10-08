@@ -391,16 +391,21 @@ class LabWorkOrderEquipment(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Bas
         order_by="TechnicalIntervention.id",
     )
 
-    current_technical_report: Mapped["TechnicalReport | None"] = relationship(
-        "TechnicalReport",
-        primaryjoin=(
-            "and_(LabWorkOrderEquipment.id == foreign(TechnicalReport.lab_equipment_id), "
-            "TechnicalReport.is_current.is_(True))"
-        ),
-        uselist=False,
-        viewonly=True,
-        lazy="selectin",
-    )
+    @property
+    def current_technical_report(self) -> "TechnicalReport | None":
+        """Compatibilidad (SG-4J-A3): reporte vigente de la intervención
+        PRINCIPAL del equipo. Con varias intervenciones ya no hay "un único
+        vigente por equipo"; la principal se define sin ambigüedad como la
+        intervención no cancelada de MENOR id que tenga revisión vigente (la
+        más antigua). Los consumidores que necesiten todas deben usar
+        `app/services/technical_interventions.py`."""
+        for intervention in sorted(self.technical_interventions, key=lambda item: item.id):
+            if intervention.status == "cancelled":
+                continue
+            report = intervention.current_report
+            if report is not None:
+                return report
+        return None
 
     @property
     def name(self) -> str:

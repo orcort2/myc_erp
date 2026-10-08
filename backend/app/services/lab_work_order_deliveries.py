@@ -42,6 +42,7 @@ from app.services.technical_interventions import (
     current_deliveries_for_intervention,
     delivery_backed_interventions,
     equipment_interventions,
+    equipment_report_folios,
 )
 
 
@@ -340,17 +341,18 @@ def _delivery_reference_folio(equipment: LabWorkOrderEquipment) -> str | None:
     tiene certificado: referencia el folio institucional del reporte vigente
     (la relación reporte <-> entrega sigue resolviéndose por equipment_id)."""
     if equipment.work_order.operational_category == "general_service":
-        report = equipment.current_technical_report
-        return report.folio if report is not None else None
+        folios = equipment_report_folios(equipment)
+        return ", ".join(folios)[:160] if folios else None
     return equipment.certificate_folio or equipment.report_number
 
 
 def _delivered_technical_report_ids(equipment_items: list[LabWorkOrderEquipment]) -> list[int]:
     return [
-        equipment.current_technical_report.id
+        ref.report.id
         for equipment in equipment_items
         if equipment.work_order.operational_category == "general_service"
-        and equipment.current_technical_report is not None
+        for ref in equipment_interventions(equipment)
+        if ref.report is not None
     ]
 
 

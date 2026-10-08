@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from weasyprint import HTML
 
 from app.models.lab_work_order import LabWorkOrder
+from app.services.technical_interventions import equipment_report_folios
 from app.services.work_order_pdfs import APP_DIR, _filename, _render_html
 
 
@@ -19,8 +20,8 @@ def _report_number_column(work_order: LabWorkOrder, item) -> str | None:
     institucional del Reporte técnico vigente del equipo (MYC-IN...); nunca el
     `report_number` del equipo."""
     if getattr(work_order, "operational_category", None) == "general_service":
-        report = getattr(item, "current_technical_report", None)
-        return report.folio if report is not None else None
+        folios = equipment_report_folios(item) if hasattr(item, "technical_interventions") else []
+        return ", ".join(folios) if folios else None
     return item.certificate_folio
 
 

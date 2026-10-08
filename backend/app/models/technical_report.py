@@ -7,6 +7,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     JSON,
@@ -48,23 +49,21 @@ class TechnicalReport(IntegerPkMixin, TimestampMixin, Base):
             "report_schema_version >= 1",
             name="ck_technical_report_schema_version",
         ),
-        UniqueConstraint(
-            "folio",
-            name="uq_technical_reports_folio",
-        ),
+        # SG-4J-A3 -- restricciones heredadas:
+        #  * `uq_technical_reports_folio` (folio único por reporte) se RETIRÓ: el
+        #    folio institucional pertenece a la intervención
+        #    (`technical_interventions.folio`, único) y R1/R2 de una misma
+        #    intervención lo comparten. `folio` queda indexado, no único.
+        #  * `uq_technical_reports_current_lab_equipment` (un vigente por equipo)
+        #    se RETIRÓ: la vigencia es por intervención (índice siguiente).
+        #  * `uq_technical_reports_supersedes_report_id` se CONSERVA: una
+        #    revisión sólo puede ser sucedida por una (sin bifurcaciones).
         UniqueConstraint(
             "supersedes_report_id",
             name="uq_technical_reports_supersedes_report_id",
         ),
-        Index(
-            "uq_technical_reports_current_lab_equipment",
-            "lab_equipment_id",
-            unique=True,
-            postgresql_where=text("is_current IS TRUE"),
-        ),
-        # SG-4J-A1: unicidad futura por intervención. Conviven con las
-        # restricciones heredadas (folio único, un vigente por equipo), que NO
-        # se retiran hasta que todos los consumidores migren.
+        Index("ix_technical_reports_folio", "folio"),
+        # Unicidad por intervención.
         UniqueConstraint(
             "intervention_id",
             "revision_number",
@@ -75,6 +74,22 @@ class TechnicalReport(IntegerPkMixin, TimestampMixin, Base):
             "intervention_id",
             unique=True,
             postgresql_where=text("is_current IS TRUE"),
+        ),
+        # Integridad estructural: el reporte pertenece al MISMO equipo que su
+        # intervención, y una revisión sólo supersede a otra de la misma
+        # intervención.
+        UniqueConstraint("id", "intervention_id", name="uq_technical_reports_id_intervention"),
+        ForeignKeyConstraint(
+            ["intervention_id", "lab_equipment_id"],
+            ["technical_interventions.id", "technical_interventions.lab_equipment_id"],
+            name="fk_technical_reports_intervention_equipment",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["supersedes_report_id", "intervention_id"],
+            ["technical_reports.id", "technical_reports.intervention_id"],
+            name="fk_technical_reports_supersedes_same_intervention",
+            ondelete="RESTRICT",
         ),
     )
 
@@ -88,16 +103,14 @@ class TechnicalReport(IntegerPkMixin, TimestampMixin, Base):
         index=True,
     )
 
-    # Identidad estable del trabajo técnico (SG-4J-A1). Nullable en base de
-    # datos durante la transición: el servicio siempre la asigna y la
-    # migración la rellena para todo el histórico; NOT NULL llega después.
-    intervention_id: Mapped[int | None] = mapped_column(
+    # Identidad estable del trabajo técnico (SG-4J-A1); NOT NULL desde SG-4J-A3.
+    intervention_id: Mapped[int] = mapped_column(
         ForeignKey(
             "technical_interventions.id",
             name="fk_technical_reports_intervention_id",
             ondelete="RESTRICT",
         ),
-        nullable=True,
+        nullable=False,
         index=True,
     )
 
@@ -207,8 +220,9 @@ class TechnicalReport(IntegerPkMixin, TimestampMixin, Base):
         back_populates="technical_reports",
     )
 
-    intervention: Mapped["TechnicalIntervention | None"] = relationship(
+    intervention: Mapped["TechnicalIntervention"] = relationship(
         back_populates="reports",
+        primaryjoin="TechnicalReport.intervention_id == TechnicalIntervention.id",
         foreign_keys=[intervention_id],
     )
 
@@ -221,6 +235,7 @@ class TechnicalReport(IntegerPkMixin, TimestampMixin, Base):
     )
 
     supersedes_report: Mapped["TechnicalReport | None"] = relationship(
+        primaryjoin="TechnicalReport.supersedes_report_id == TechnicalReport.id",
         remote_side="TechnicalReport.id",
         foreign_keys=[supersedes_report_id],
         uselist=False,

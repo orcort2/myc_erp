@@ -70,14 +70,12 @@ def test_current_revision_is_deterministic():
     assert current_revision(anomalous).revision_number == 3, "mayor revisión vigente; sin elegir al azar"
 
 
-def test_equipment_interventions_are_ordered_filtered_and_fall_back_to_legacy_rows():
+def test_equipment_interventions_are_ordered_and_filtered():
     first, second, cancelled = intervention(5, reports=[report(5)]), intervention(2, reports=[report(2, intervention_id=2)]), intervention(9, "cancelled")
     refs = equipment_interventions(equipment(first, cancelled, second))
     assert [ref.intervention_id for ref in refs] == [2, 5], "por id, sin canceladas"
     assert equipment_interventions(equipment(cancelled)) == []
-    legacy = report(7, intervention_id=None)
-    assert [ref.report for ref in equipment_interventions(equipment(legacy=legacy))] == [legacy]
-    assert equipment_interventions(equipment(legacy=report(8, intervention_id=3))) == [], "con intervención no hay respaldo implícito"
+    assert equipment_interventions(equipment(legacy=report(8, intervention_id=3))) == [], "sin intervenciones no hay respaldo implícito"
 
 
 def test_delivery_index_prefers_links_and_only_falls_back_by_equipment_when_unambiguous():
@@ -225,3 +223,28 @@ def test_finalize_resolves_the_delivery_through_the_intervention(sg3):
         link = db.scalar(select(TechnicalInterventionDelivery))
         assert link.technical_report_id == stored.id and link.intervention_id == stored.intervention_id
         assert stored.document_snapshot["delivery"]["delivery_id"] == link.delivery_id
+
+
+def test_equipment_report_folios_lists_every_mandatory_intervention_in_a_stable_order():
+    from app.services.technical_interventions import equipment_report_folios
+
+    eq = equipment(intervention(7, reports=[report(7)]), intervention(3, reports=[report(3, intervention_id=3)]), intervention(9, "cancelled"))
+    assert equipment_report_folios(eq) == ["MYC-IN10-26-0003", "MYC-IN10-26-0007"]
+
+
+def test_the_work_order_pdf_and_voucher_print_every_intervention_folio(sg3):
+    client, factory, headers = sg3
+    order, [equipment], [report] = closed_order(client, headers)
+    extra = _add_intervention(factory, equipment["id"], "cancelled", "MYC-IN10-26-7100")
+    from app.services.lab_work_order_pdfs import _report_number_column
+
+    with factory() as db:
+        eq = db.get(LabWorkOrderEquipment, equipment["id"])
+        order_row = db.get(LabWorkOrder, order["id"])
+        assert _report_number_column(order_row, eq) == report["folio"], "la cancelada no se imprime"
+        db.get(TechnicalIntervention, extra).status = "open"
+        db.commit()
+    with factory() as db:
+        eq = db.get(LabWorkOrderEquipment, equipment["id"])
+        folios = _report_number_column(db.get(LabWorkOrder, order["id"]), eq)
+        assert folios == f"{report['folio']}, MYC-IN10-26-7100"
