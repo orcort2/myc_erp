@@ -62,6 +62,20 @@ class TechnicalReport(IntegerPkMixin, TimestampMixin, Base):
             unique=True,
             postgresql_where=text("is_current IS TRUE"),
         ),
+        # SG-4J-A1: unicidad futura por intervención. Conviven con las
+        # restricciones heredadas (folio único, un vigente por equipo), que NO
+        # se retiran hasta que todos los consumidores migren.
+        UniqueConstraint(
+            "intervention_id",
+            "revision_number",
+            name="uq_technical_reports_intervention_revision",
+        ),
+        Index(
+            "uq_technical_reports_current_intervention",
+            "intervention_id",
+            unique=True,
+            postgresql_where=text("is_current IS TRUE"),
+        ),
     )
 
     lab_equipment_id: Mapped[int] = mapped_column(
@@ -71,6 +85,19 @@ class TechnicalReport(IntegerPkMixin, TimestampMixin, Base):
             ondelete="RESTRICT",
         ),
         nullable=False,
+        index=True,
+    )
+
+    # Identidad estable del trabajo técnico (SG-4J-A1). Nullable en base de
+    # datos durante la transición: el servicio siempre la asigna y la
+    # migración la rellena para todo el histórico; NOT NULL llega después.
+    intervention_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "technical_interventions.id",
+            name="fk_technical_reports_intervention_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
         index=True,
     )
 
@@ -178,6 +205,11 @@ class TechnicalReport(IntegerPkMixin, TimestampMixin, Base):
 
     lab_equipment: Mapped["LabWorkOrderEquipment"] = relationship(
         back_populates="technical_reports",
+    )
+
+    intervention: Mapped["TechnicalIntervention | None"] = relationship(
+        back_populates="reports",
+        foreign_keys=[intervention_id],
     )
 
     performed_by: Mapped["User | None"] = relationship(

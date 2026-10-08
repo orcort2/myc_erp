@@ -12,6 +12,7 @@ from app.models.lab_delivery_item import LabDeliveryItem
 from app.models.lab_work_order import LabWorkOrder, LabWorkOrderEquipment
 from app.models.lab_work_order_delivery import LabWorkOrderDelivery
 from app.models.operational_ticket import OperationalTicket
+from app.models.technical_intervention import TechnicalInterventionDelivery
 from app.models.user import User
 from app.schemas.lab_work_order import (
     LabDeliveryCreate,
@@ -330,6 +331,26 @@ def _delivered_technical_report_ids(equipment_items: list[LabWorkOrderEquipment]
     ]
 
 
+def _link_interventions_to_delivery(
+    db: Session, delivery: LabWorkOrderDelivery, equipment_items: list[LabWorkOrderEquipment]
+) -> None:
+    """SG-4J-A1: registra qué intervenciones respalda esta entrega física. Las
+    entregas anuladas conservan sus vínculos; sólo informa, no cambia reglas."""
+    items_by_equipment = {item.equipment_id: item for item in db.scalars(
+        select(LabDeliveryItem).where(LabDeliveryItem.delivery_id == delivery.id)
+    )}
+    for equipment in equipment_items:
+        report = equipment.current_technical_report
+        if report is None or report.intervention_id is None:
+            continue
+        item = items_by_equipment.get(equipment.id)
+        db.add(TechnicalInterventionDelivery(
+            intervention_id=report.intervention_id, delivery_id=delivery.id,
+            delivery_item_id=item.id if item is not None else None,
+        ))
+    db.flush()
+
+
 def _create_delivery_event(
     db: Session,
     *,
@@ -381,6 +402,7 @@ def _create_delivery_event(
             )
         )
     db.flush()
+    _link_interventions_to_delivery(db, delivery, equipment_items)
     delivery = _reload_delivery(db, delivery.id)
     pdf, _filename = generate_lab_delivery_receipt(root_work_order, delivery, user.full_name)
     delivery.voucher_pdf = pdf

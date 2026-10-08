@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.folio_sequence import InstitutionalFolioSequence
 from app.models.lab_work_order import LabWorkOrder, LabWorkOrderEquipment
+from app.models.technical_intervention import TechnicalIntervention, TechnicalInterventionDelivery
 from app.models.technical_report import TechnicalReport, TechnicalReportEvidence
 from app.models.user import User
 from app.schemas.technical_report import (
@@ -236,6 +237,14 @@ def _create_technical_report_uncommitted(
     El caller controla la transacción. Esta es la autoridad reutilizable para
     endpoint público, pruebas y futuras operaciones atómicas.
     """
+    # Serializa la creación por equipo: dos solicitudes simultáneas no pueden
+    # crear dos intervenciones/reportes vigentes (la segunda ve el vigente y
+    # responde 409 en lugar de chocar con el índice único).
+    db.scalar(
+        select(LabWorkOrderEquipment.id)
+        .where(LabWorkOrderEquipment.id == equipment_id)
+        .with_for_update()
+    )
     equipment = _get_equipment_for_technical_report(
         db,
         work_order_id,
@@ -307,7 +316,21 @@ def _create_technical_report_uncommitted(
         else None
     )
 
+    # SG-4J-A1: la intervención es la identidad estable del trabajo técnico.
+    # Hoy se crea exactamente una por reporte, de forma transparente; el folio
+    # institucional pertenece a la intervención y el reporte conserva su copia.
+    intervention = TechnicalIntervention(
+        lab_equipment_id=equipment.id,
+        intervention_type=payload.report_type,
+        folio=folio,
+        status="open",
+        created_by_user_id=user.id,
+    )
+    db.add(intervention)
+    db.flush()
+
     report = TechnicalReport(
+        intervention_id=intervention.id,
         lab_equipment_id=equipment.id,
         report_type=payload.report_type,
         folio=folio,
@@ -768,6 +791,28 @@ def confirm_technical_report_capture(
 # SG-4G: PDF institucional y cierre documental del reporte
 # ---------------------------------------------------------------------------
 
+def _link_report_to_delivery(db: Session, report: TechnicalReport, delivery, item) -> None:
+    """SG-4J-A1: deja constancia exacta de la entrega que usó el PDF final de
+    esta revisión (además del snapshot). No cambia ningún comportamiento."""
+    intervention = report.intervention
+    if intervention is None:
+        return
+    intervention.status = "completed"
+    link = db.scalar(
+        select(TechnicalInterventionDelivery).where(
+            TechnicalInterventionDelivery.intervention_id == intervention.id,
+            TechnicalInterventionDelivery.delivery_id == delivery.id,
+        )
+    )
+    if link is None:
+        link = TechnicalInterventionDelivery(
+            intervention_id=intervention.id, delivery_id=delivery.id, delivery_item_id=item.id,
+        )
+        db.add(link)
+    link.technical_report_id = report.id
+    db.flush()
+
+
 def finalize_technical_report(
     db: Session,
     work_order_id: int,
@@ -841,6 +886,7 @@ def finalize_technical_report(
         report.final_pdf_generated_at = now
         report.completed_at = now
         report.status = "completed"
+        _link_report_to_delivery(db, report, delivery, item)
         write_audit_log(
             db,
             action="technical_report.finalized",
@@ -922,6 +968,22 @@ def _discard_evidence_files(db: Session, paths: list[str], user: User, reason: s
     db.commit()
 
 
+def _delete_orphan_intervention(db: Session, intervention_id: int | None) -> None:
+    """Una intervención sin ningún reporte (borrador eliminado) deja de existir.
+    Su folio ya emitido sigue consumido: la secuencia nunca retrocede."""
+    if intervention_id is None:
+        return
+    remaining = db.scalar(select(TechnicalReport.id).where(TechnicalReport.intervention_id == intervention_id).limit(1))
+    if remaining is not None:
+        return
+    for link in db.scalars(select(TechnicalInterventionDelivery).where(TechnicalInterventionDelivery.intervention_id == intervention_id)):
+        db.delete(link)
+    intervention = db.get(TechnicalIntervention, intervention_id)
+    if intervention is not None:
+        db.delete(intervention)
+        db.flush()
+
+
 def delete_technical_report_draft(
     db: Session,
     work_order_id: int,
@@ -955,7 +1017,10 @@ def delete_technical_report_draft(
                 "evidence_count": len(report.evidence),
             },
         )
+        intervention_id = report.intervention_id
         db.delete(report)
+        db.flush()
+        _delete_orphan_intervention(db, intervention_id)
         db.commit()
     except Exception:
         db.rollback()
@@ -1013,6 +1078,10 @@ def change_technical_report_type(
         report.capture_values = {}
         report.folio = _allocate_technical_report_folio(db, payload.report_type)
         report.status = "draft"
+        if report.intervention is not None:
+            report.intervention.intervention_type = payload.report_type
+            report.intervention.folio = report.folio
+            report.intervention.status = "open"
         write_audit_log(
             db,
             action="technical_report.type_changed",
