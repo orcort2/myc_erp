@@ -493,3 +493,65 @@ def test_downgrade_is_refused_while_data_depends_on_the_new_structure_and_then_s
     assert db.rows(DOCUMENT_SQL) == documents, "PDFs, hashes, folios y snapshots intactos tras revertir"
     db.alembic("upgrade", "head")
     assert db.rows(DOCUMENT_SQL) == documents
+
+
+# --------------------------------------------------------------- SG-4J-A4: API por intervención en PostgreSQL
+
+def _interventions_url(order, equipment, suffix=""):
+    return f"/api/mobile/v1/technician/lab-work-orders/{order['id']}/equipment/{equipment['id']}/technical-interventions{suffix}"
+
+
+def test_concurrent_explicit_creations_yield_distinct_folios_without_orphans(db, api):
+    client, headers = api
+    order, [equipment], [report] = order_with_reports(client, headers, count=1)
+    barrier = Barrier(3)
+
+    def run():
+        barrier.wait()
+        return client.post(_interventions_url(order, equipment), json={"report_type": "installation"}, headers=headers)
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        responses = [future.result() for future in [pool.submit(run) for _ in range(3)]]
+    assert [response.status_code for response in responses] == [201, 201, 201], [r.text for r in responses]
+    folios = {response.json()["folio"] for response in responses} | {report["folio"]}
+    assert len(folios) == 4, "folios distintos, sin repetir ni saltar el consumido"
+    assert db.rows("SELECT count(*), count(DISTINCT folio) FROM technical_interventions") == [(4, 4)]
+    assert db.rows("SELECT count(*) FROM technical_reports r JOIN technical_interventions i ON i.id = r.intervention_id AND i.lab_equipment_id = r.lab_equipment_id") == [(4,)]
+    assert db.rows("SELECT count(*) FROM technical_interventions i WHERE NOT EXISTS (SELECT 1 FROM technical_reports r WHERE r.intervention_id = i.id)") == [(0,)]
+    assert db.rows("SELECT count(*) FROM technical_reports WHERE is_current AND revision_number = 1") == [(4,)]
+
+
+def test_concurrent_cancellations_apply_once(db, api):
+    client, headers = api
+    order, [equipment], _ = order_with_reports(client, headers, count=1)
+    created = client.post(_interventions_url(order, equipment), json={"report_type": "installation"}, headers=headers).json()
+    barrier = Barrier(2)
+
+    def run():
+        barrier.wait()
+        return client.post(_interventions_url(order, equipment, f"/{created['id']}/cancel"), json={"reason": "Alta por error"}, headers=headers).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        codes = sorted(future.result() for future in [pool.submit(run), pool.submit(run)])
+    assert codes == [200, 409], codes
+    assert db.rows("SELECT count(*) FROM audit_logs WHERE action = 'technical_intervention.cancelled'") == [(1,)]
+
+
+def test_api_reads_history_across_revisions_and_keeps_legacy_endpoints_compatible(db, api):
+    client, headers = api
+    order, [equipment], [report] = build_delivered(client, headers, count=1)
+    [item] = client.get(_interventions_url(order, equipment), headers=headers).json()
+    intervention = db.rows("SELECT intervention_id FROM technical_reports")[0][0]
+    with db.engine.begin() as connection:  # R2 histórica (misma intervención y folio)
+        connection.execute(text("UPDATE technical_reports SET is_current = false WHERE id = :id"), {"id": report["id"]})
+        connection.execute(text(CLONE_REPORT), {
+            "intervention": intervention, "folio": report["folio"], "revision": 2, "current": True, "supersedes": report["id"], "source": report["id"],
+        })
+    revisions = client.get(_interventions_url(order, equipment, f"/{item['id']}/revisions"), headers=headers).json()
+    assert [(r["revision_number"], r["is_current"], r["folio"]) for r in revisions] == [(1, False, report["folio"]), (2, True, report["folio"])]
+    assert revisions[0]["delivery_id"] is not None and revisions[0]["final_pdf_sha256"] == revisions[1]["final_pdf_sha256"]
+    detail = client.get(_interventions_url(order, equipment, f"/{item['id']}"), headers=headers).json()
+    assert detail["revisions_count"] == 2 and detail["current_revision"]["revision_number"] == 2
+    # El endpoint heredado resuelve la revisión vigente de la intervención principal.
+    legacy = client.get(report_url(order["id"], equipment["id"]), headers=headers).json()
+    assert legacy["revision_number"] == 2 and legacy["folio"] == report["folio"]

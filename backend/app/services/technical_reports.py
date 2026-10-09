@@ -254,7 +254,21 @@ def _create_technical_report_uncommitted(
         work_order_id,
         equipment_id,
     )
+    return _open_intervention(db, equipment, payload.report_type, user, allow_existing=False)
 
+
+def _open_intervention(
+    db: Session,
+    equipment: LabWorkOrderEquipment,
+    report_type: str,
+    user: User,
+    *,
+    allow_existing: bool,
+) -> TechnicalReport:
+    """Núcleo de creación: una intervención NUEVA con su primera revisión (R1,
+    borrador). El caller bloquea la fila del equipo y controla la transacción.
+    `allow_existing=False` (endpoint heredado): el equipo no puede tener ya un
+    reporte vigente. `True` (API por intervención): se admiten varias."""
     order = equipment.work_order
 
     if order.operational_category != "general_service":
@@ -265,20 +279,23 @@ def _create_technical_report_uncommitted(
 
     # Mismo lifecycle que la captura de FieldSheets: el reporte pertenece a la
     # etapa técnica, es decir, DESPUÉS de firmar la recepción.
-    if order.status not in {"received_signed", "in_progress"}:
+    # La API por intervención también admite `ready_to_close`: una intervención
+    # nueva vuelve a abrir el trabajo (la OT regresa a in_progress al sincronizar).
+    allowed_statuses = {"received_signed", "in_progress"} | ({"ready_to_close"} if allow_existing else set())
+    if order.status not in allowed_statuses:
         raise HTTPException(
             status_code=409,
             detail="La OT no admite captura técnica: firma primero la recepción",
         )
 
-    if payload.report_type not in ENABLED_TECHNICAL_REPORT_TYPES:
+    if report_type not in ENABLED_TECHNICAL_REPORT_TYPES:
         raise HTTPException(
             status_code=409,
             detail="Este tipo de reporte todavía no está habilitado",
         )
 
     current = equipment.current_technical_report
-    if current is not None:
+    if current is not None and not allow_existing:
         raise HTTPException(
             status_code=409,
             detail="El equipo ya tiene un reporte técnico vigente",
@@ -311,12 +328,12 @@ def _create_technical_report_uncommitted(
 
     folio = _allocate_technical_report_folio(
         db,
-        payload.report_type,
+        report_type,
     )
 
     conformity_text = (
         CLIENT_CONFORMITY_TEXT_INSTALLATION
-        if payload.report_type == "installation"
+        if report_type == "installation"
         else None
     )
 
@@ -325,18 +342,32 @@ def _create_technical_report_uncommitted(
     # institucional pertenece a la intervención y el reporte conserva su copia.
     intervention = TechnicalIntervention(
         lab_equipment_id=equipment.id,
-        intervention_type=payload.report_type,
+        intervention_type=report_type,
         folio=folio,
         status="open",
         created_by_user_id=user.id,
     )
     db.add(intervention)
     db.flush()
+    write_audit_log(
+        db,
+        action="technical_intervention.created",
+        entity="technical_interventions",
+        entity_id=intervention.id,
+        user_id=user.id,
+        new_values={
+            "lab_equipment_id": equipment.id,
+            "work_order_id": order.id,
+            "intervention_type": report_type,
+            "folio": folio,
+            "status": "open",
+        },
+    )
 
     report = TechnicalReport(
         intervention_id=intervention.id,
         lab_equipment_id=equipment.id,
-        report_type=payload.report_type,
+        report_type=report_type,
         folio=folio,
         status="draft",
         capture_values={},
@@ -472,6 +503,21 @@ def _lock_current_report(
     La pertenencia se resuelve desde la ruta (OT -> equipo -> vigente): un
     reporte de otro equipo u OT nunca es alcanzable."""
     equipment = _get_equipment_for_technical_report(db, work_order_id, equipment_id)
+    # Política de los endpoints heredados POR EQUIPO (SG-4J-A4): operan sobre "el"
+    # reporte del equipo, así que sólo son válidos mientras exista UNA intervención
+    # no cancelada. Con varias, una escritura sería ambigua y jamás se aplica en
+    # silencio sobre la principal: se exige la API por intervención.
+    if len([item for item in equipment.technical_interventions if item.status != "cancelled"]) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "TECHNICAL_INTERVENTION_AMBIGUOUS",
+                "message": (
+                    "El equipo tiene varias intervenciones técnicas: esta operación debe "
+                    "indicar la intervención (API por intervención)."
+                ),
+            },
+        )
     current = equipment.current_technical_report
     if current is None:
         raise HTTPException(status_code=404, detail="El equipo no tiene reporte técnico vigente")

@@ -43,6 +43,13 @@ from app.schemas.field_sheet import FieldSheetRead, FieldSheetUpdate
 from app.schemas.field_sheet_template import FieldSheetTemplateRead
 from app.schemas.lab_field_sheet_external import LabExternalStructureWrite
 from app.schemas.operational_ticket import LabRevisionRead
+from app.schemas.technical_intervention import (
+    TechnicalInterventionCancel,
+    TechnicalInterventionCreate,
+    TechnicalInterventionDetailRead,
+    TechnicalInterventionRead,
+    TechnicalReportRevisionRead,
+)
 from app.schemas.technical_report import (
     TechnicalReportCaptureUpdate,
     TechnicalReportCreate,
@@ -108,6 +115,7 @@ from app.services.lab_field_sheets import (
 )
 from app.services.lab_field_sheets_external import apply_lab_external_structure
 from app.services.lab_packages import generate_lab_package
+from app.services import technical_intervention_admin
 from app.services.technical_reports import (
     add_technical_report_evidence,
     confirm_technical_report_capture,
@@ -875,6 +883,75 @@ def post_change_technical_report_type(
     _ensure_internal_report_writer(context)
     ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
     return change_technical_report_type(db, work_order_id, equipment_id, payload, context.user)
+
+
+_INTERVENTIONS = "/{work_order_id}/equipment/{equipment_id}/technical-interventions"
+
+
+@router.get(_INTERVENTIONS, response_model=list[TechnicalInterventionRead])
+def list_technical_interventions(
+    work_order_id: int,
+    equipment_id: int,
+    status: Literal["open", "completed", "cancelled"] | None = Query(default=None),
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(require_mobile_permission(*_TECHNICAL_REPORT_READ)),
+) -> list[TechnicalInterventionRead]:
+    """Intervenciones del equipo (estado, tipo, folio y revisión vigente)."""
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    return technical_intervention_admin.list_interventions(db, work_order_id, equipment_id, status=status)
+
+
+@router.post(_INTERVENTIONS, response_model=TechnicalInterventionRead, status_code=201)
+def create_technical_intervention(
+    work_order_id: int,
+    equipment_id: int,
+    payload: TechnicalInterventionCreate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(require_mobile_permission(*_TECHNICAL_REPORT_WRITE)),
+) -> TechnicalInterventionRead:
+    """Alta explícita de una intervención (R1 en borrador); no crea R2."""
+    _ensure_internal_report_writer(context)
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    return technical_intervention_admin.create_intervention(db, work_order_id, equipment_id, payload, context.user)
+
+
+@router.get(_INTERVENTIONS + "/{intervention_id}", response_model=TechnicalInterventionDetailRead)
+def get_technical_intervention(
+    work_order_id: int,
+    equipment_id: int,
+    intervention_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(require_mobile_permission(*_TECHNICAL_REPORT_READ)),
+) -> TechnicalInterventionDetailRead:
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    return technical_intervention_admin.get_intervention(db, work_order_id, equipment_id, intervention_id)
+
+
+@router.get(_INTERVENTIONS + "/{intervention_id}/revisions", response_model=list[TechnicalReportRevisionRead])
+def list_technical_intervention_revisions(
+    work_order_id: int,
+    equipment_id: int,
+    intervention_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(require_mobile_permission(*_TECHNICAL_REPORT_READ)),
+) -> list[TechnicalReportRevisionRead]:
+    """Revisiones documentales de la intervención y sus metadatos (hash, PDF, entrega)."""
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    return technical_intervention_admin.list_revisions(db, work_order_id, equipment_id, intervention_id)
+
+
+@router.post(_INTERVENTIONS + "/{intervention_id}/cancel", response_model=TechnicalInterventionRead)
+def cancel_technical_intervention(
+    work_order_id: int,
+    equipment_id: int,
+    intervention_id: int,
+    payload: TechnicalInterventionCancel,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(require_mobile_permission(*_TECHNICAL_REPORT_WRITE)),
+) -> TechnicalInterventionRead:
+    _ensure_internal_report_writer(context)
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    return technical_intervention_admin.cancel_intervention(db, work_order_id, equipment_id, intervention_id, payload, context.user)
 
 
 @router.post(
