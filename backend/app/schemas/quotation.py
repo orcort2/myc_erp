@@ -21,6 +21,7 @@ QuotationStatus = Literal[
 
 
 class QuotationItemBase(BaseModel):
+    commercial_components: list[dict] | None = None
     catalog_item_id: int | None = None
 
     service_name: str | None = Field(
@@ -111,6 +112,7 @@ class QuotationItemUpdate(BaseModel):
     )
 
     description: str | None = None
+    commercial_components: list[dict] | None = None
 
     quantity: int | None = Field(
         default=None,
@@ -190,6 +192,7 @@ class QuotationItemRead(QuotationItemBase):
     operational_category: OperationalCategory | None = None
 
     operational_snapshot: dict | None = None
+    commercial_components: list[dict] | None = None
 
     equipment_snapshot: dict | None = None
 

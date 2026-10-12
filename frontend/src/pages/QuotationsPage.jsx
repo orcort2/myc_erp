@@ -378,8 +378,32 @@ function calculateQuotationDraftSummary(quotation, draftItems = []) {
   return { subtotal, tax, total: subtotal + tax };
 }
 
+function quotationCommercialComponents(item) {
+  const snapshot = item?.operational_snapshot || {};
+  if (snapshot.service_kind !== 'composite') return [];
+
+  const descriptions = new Map(
+    (snapshot.commercial_components || item.commercial_components || [])
+      .map((component) => [
+        Number(component.catalog_item_id),
+        component.description || ''
+      ])
+  );
+
+  return (snapshot.operational_items || []).map((component) => {
+    const id = Number(component.catalog_item_id);
+    const detail = component.service_snapshot || {};
+    return {
+      catalog_item_id: id,
+      name: detail.service_name_snapshot || component.service_name || 'Componente',
+      description: descriptions.get(id) || ''
+    };
+  });
+}
+
 function quotationItemToForm(item) {
   return {
+    commercialComponents: quotationCommercialComponents(item),
     catalogItemId: item.catalog_item_id || '',
     description: item.service_name || '',
     quantity: String(item.quantity ?? 1),
@@ -404,6 +428,12 @@ function buildQuotationItemPayload(itemForm) {
     catalog_item_id: itemForm.catalogItemId ? Number(itemForm.catalogItemId) : null,
     service_name: itemForm.description.trim(),
     description: itemForm.observations?.trim() || null,
+    ...(Array.isArray(itemForm.commercialComponents) ? {
+      commercial_components: itemForm.commercialComponents.map((component) => ({
+        catalog_item_id: component.catalog_item_id,
+        description: component.description || ''
+      }))
+    } : {}),
     quantity: Number(itemForm.quantity || 1),
     unit: itemForm.unit?.trim() || null,
     sat_key: itemForm.satKey || null,
@@ -1583,6 +1613,21 @@ function QuotationsPage({ user = null }) {
     }));
   }
 
+  function updateCommercialComponent(itemId, componentId, description) {
+    setEditingItemForms((current) => ({
+      ...current,
+      [itemId]: {
+        ...current[itemId],
+        commercialComponents: (current[itemId]?.commercialComponents || [])
+          .map((component) => (
+            component.catalog_item_id === componentId
+              ? { ...component, description }
+              : component
+          ))
+      }
+    }));
+  }
+
   function cancelEditQuotationItem(itemId) {
     setEditingItemForms((current) => {
       const next = { ...current };
@@ -2667,6 +2712,31 @@ function QuotationsPage({ user = null }) {
                                     rows={3}
                                     value={form.observations || ''}
                                   />
+                                  {form.commercialComponents?.length ? (
+                                    <div style={{ marginTop: 10 }}>
+                                      <strong>Servicio compuesto · Servicios incluidos</strong>
+                                      {form.commercialComponents.map((component) => (
+                                        <label
+                                          key={component.catalog_item_id}
+                                          style={{ display: 'block', marginTop: 8 }}
+                                        >
+                                          <small>{component.name}</small>
+                                          <textarea
+                                            className="quote-line-description"
+                                            maxLength={2000}
+                                            onChange={(event) => updateCommercialComponent(
+                                              item.id,
+                                              component.catalog_item_id,
+                                              event.target.value
+                                            )}
+                                            placeholder="Especificaciones de este servicio"
+                                            rows={2}
+                                            value={component.description}
+                                          />
+                                        </label>
+                                      ))}
+                                    </div>
+                                  ) : null}
                                   <select
                                     onChange={(event) => {
                                       const taxObject = event.target.value;
@@ -2688,6 +2758,20 @@ function QuotationsPage({ user = null }) {
                                   {item._exceptionalChanged ? <mark className="status-pill">Modificada</mark> : null}
                                   {item.description ? <small>{item.description}</small> : null}
                                   {item.quotation_legend ? <small>{item.quotation_legend}</small> : null}
+                                  {quotationCommercialComponents(item).length ? (
+                                    <div style={{ marginTop: 8 }}>
+                                      <small><strong>Servicio compuesto · Incluye:</strong></small>
+                                      {quotationCommercialComponents(item).map((component) => (
+                                        <small
+                                          key={component.catalog_item_id}
+                                          style={{ display: 'block', whiteSpace: 'pre-line' }}
+                                        >
+                                          {component.name}
+                                          {component.description ? ` — ${component.description}` : ''}
+                                        </small>
+                                      ))}
+                                    </div>
+                                  ) : null}
                                   {item.calibration_scope ? <small>Tipo: {item.calibration_scope === 'accredited_iso_17025' ? 'Acreditado' : item.calibration_scope === 'accredited_linked_lab' ? 'Vinculado' : 'Trazable'}</small> : null}
                                   <small>Impuesto: {Number(item.tax_rate ?? 0)}%</small>
                                 </>

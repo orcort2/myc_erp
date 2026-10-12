@@ -25,6 +25,7 @@ LOGO_PATH = PROJECT_ROOT / "frontend" / "src" / "assets" / "myc-logo.png"
 class PdfLine:
     description: str
     commercial_description: str | None
+    components: list[dict]
     legend: str | None
     quantity: int
     unit: str
@@ -155,9 +156,29 @@ def _line_from_item(item: QuotationItem) -> PdfLine:
     discount_percent = _money(item.discount_percent)
     subtotal = _money(item.total)
     tax_total = _money(item.tax_total)
+    snapshot = item.operational_snapshot or {}
+    components = []
+    if snapshot.get("service_kind") == "composite":
+        descriptions = {
+            str(entry.get("catalog_item_id")): entry.get("description", "")
+            for entry in snapshot.get("commercial_components") or []
+        }
+        for component in snapshot.get("operational_items") or []:
+            component_id = str(component.get("catalog_item_id"))
+            service_snapshot = component.get("service_snapshot") or {}
+            components.append({
+                "name": (
+                    service_snapshot.get("service_name_snapshot")
+                    or component.get("service_name")
+                    or "Componente"
+                ),
+                "description": descriptions.get(component_id, ""),
+            })
+
     return PdfLine(
         description=item.service_name or item.description or "Partida sin descripcion",
         commercial_description=item.description,
+        components=components,
         legend=item.quotation_legend,
         quantity=quantity,
         unit=item.unit or item.internal_unit or item.sat_unit or "Servicio",
