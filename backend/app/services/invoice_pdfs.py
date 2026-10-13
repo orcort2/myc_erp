@@ -333,6 +333,7 @@ def _extract_fiscal_context(invoice) -> dict[str, Any]:
         "exportation": "01",
         "uuid": invoice.cfdi_uuid or "",
         "stamped_at": invoice.stamped_at,
+        "issued_at": "",
         "issuer": {
             "rfc": "",
             "name": "",
@@ -368,6 +369,7 @@ def _extract_fiscal_context(invoice) -> dict[str, Any]:
     result.update(
         {
             "series": _attr(root, "Serie"),
+            "issued_at": _attr(root, "Fecha"),
             "folio": _attr(root, "Folio"),
             "identifier": "-".join(filter(None, (_attr(root, "Serie"), _attr(root, "Folio")))),
             "version": _attr(root, "Version", default=result["version"]),
@@ -681,6 +683,11 @@ def generate_invoice_pdf(
     settings = get_invoice_settings(db)
     template = env.get_template("invoice_pdf.html")
     context = _public_invoice_context(db, invoice, settings)
+    if context["is_stamped"] and not context["fiscal"]["issued_at"]:
+        raise HTTPException(
+            status_code=409,
+            detail="cfdi_xml_issue_date_unavailable",
+        )
 
     html = template.render(**context)
     pdf = HTML(
