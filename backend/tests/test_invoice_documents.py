@@ -262,6 +262,26 @@ class DraftInvoicePrintTests(unittest.TestCase):
         self.assertIn("13/10/2026 12:24:20", html)
         self.assertNotIn("12/10/2026", html)
 
+    def test_precomprobante_without_xml_is_still_generated(self):
+        from datetime import datetime
+        from app.services import invoice_pdfs
+
+        context, _ = self._render(issued_on=datetime(2026, 10, 12))
+        self.assertFalse(context["is_stamped"])
+        self.assertEqual(context["fiscal"]["issued_at"], "")
+
+        with patch.object(invoice_pdfs, "get_invoice", return_value=context["invoice"]), \
+             patch.object(invoice_pdfs, "get_invoice_settings", return_value=SimpleNamespace(emitter_data={
+                 "rfc": "EMI010101AAA", "legal_name": "MYC"
+             })), \
+             patch.object(invoice_pdfs, "_public_invoice_context", return_value=context), \
+             patch.object(invoice_pdfs, "HTML") as html:
+            html.return_value.write_pdf.return_value = b"%PDF-precomprobante"
+            pdf, filename = invoice_pdfs.generate_invoice_pdf(object(), 41)
+
+        self.assertEqual(pdf, b"%PDF-precomprobante")
+        self.assertIn("Borrador", filename)
+
     def test_stamped_pdf_without_xml_issue_date_is_rejected(self):
         from datetime import datetime
         from fastapi import HTTPException
