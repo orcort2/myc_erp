@@ -811,3 +811,239 @@ está en `architecture/MOBILE_DEVELOPER_AUTHORITY.md`; el contrato de sesión
 y biometría Mobile permanece en `architecture/MOBILE_SECURITY_CONTEXT.md`,
 sin cambios en esta fase. Inventario en `PROJECT_FILE_REGISTRY.md`. Los
 cortes anteriores permanecen trazables en Git.
+
+
+<!-- MYC_PRODUCTION_READINESS_START -->
+
+# Continuidad operativa MYC ERP - 2026-10-13
+
+## Estado del repositorio
+
+- Repositorio: `orcort2/myc_erp`.
+- Rama de integracion: `main`.
+- Commit anterior a esta actualizacion: `2acadb8`.
+- Desarrollo habitual: MYC Local.
+- Base de datos local habitual: `erp_myc`.
+- Produccion: servidor Windows con servicios independientes.
+- No crear entornos ni bases de datos adicionales sin autorizacion.
+- No desplegar ni modificar datos de produccion sin validacion y autorizacion.
+- Mantener separados los worktrees de desarrollos paralelos.
+
+## Prioridad P0 - Facturacion fiscal productiva
+
+**Objetivo:** cerrar el modulo de facturacion para operar con CFDI
+reales en produccion y no depender de Facturama Sandbox.
+
+**Estado:** cierre pendiente; requiere auditoria tecnica y fiscal
+del codigo vigente y del proveedor.
+
+### Componentes que deben auditarse
+
+1. Configuracion efectiva de Facturama y separacion Sandbox/produccion.
+2. Credenciales productivas y proteccion de secretos.
+3. Datos fiscales del emisor y receptores.
+4. Validaciones CFDI 4.0 y catalogos SAT.
+5. Timbrado real y manejo de respuestas y errores.
+6. Persistencia de UUID, XML, PDF y datos fiscales.
+7. Facturas PUE y PPD y consistencia de sus estados.
+8. Registro de pagos, parcialidades y saldos.
+9. Complementos de recepcion de pagos 2.0.
+10. Cancelaciones SAT, motivos, sustitucion y aceptacion.
+11. Notas de credito y relaciones fiscales.
+12. Conciliacion de estados entre ERP, proveedor y SAT.
+13. Idempotencia, transacciones, permisos y auditoria.
+14. Pruebas automatizadas, escenarios controlados y rollback.
+15. Habilitacion productiva supervisada y evidencia de cierre.
+
+### Evidencia inicial identificada
+
+- `backend/app/services/invoices.py`: servicio de facturas,
+  pagos, notas de credito y transiciones de estado.
+- `backend/app/routers/invoices.py`: rutas de facturacion,
+  documentos y conciliacion.
+- `backend/app/models/invoice.py`: modelos de persistencia.
+- `backend/app/core/config.py`: configuracion de aplicacion.
+
+Estas rutas son puntos de partida, no evidencia de que
+el flujo fiscal productivo este completo.
+
+### Criterios de cierre
+
+- Emitir CFDI reales con datos correctos y UUID verificable.
+- Obtener y conservar XML y representacion PDF.
+- Registrar cobros y saldos sin duplicidades.
+- Emitir complementos de pago cuando correspondan.
+- Gestionar cancelaciones y notas de credito correctamente.
+- Conciliar estados fiscales y financieros.
+- Validar seguridad, auditoria y permisos.
+- Disponer de respaldo y procedimiento de recuperacion.
+- Contar con evidencia de pruebas y autorizacion de despliegue.
+
+No emitir CFDI reales de prueba sin autorizacion expresa.
+
+## Prioridad P1 - Correo y contrasenas
+
+- Completar entrega de correo productivo.
+- Verificar correo de cotizaciones y facturas.
+- Completar restablecimiento seguro de contrasenas.
+- Revisar worktrees y pruebas antes de integrar.
+
+## Prioridad P1 - Modalidad de grupos LAB
+
+- Contrastar codigo vigente con el historial de este documento.
+- Verificar seleccion de modalidad por OT: grupal o individual.
+- Confirmar si los cambios documentados fueron integrados.
+- No duplicar una implementacion ya existente.
+
+## Prioridad P1 - Regeneracion documental
+
+- Permitir regeneracion controlada de documentos operativos
+  tras cambios autorizados.
+- Conservar trazabilidad, versiones y auditoria.
+- Proteger documentos fiscales y certificados autenticados.
+
+## Prioridad P2 - Otros desarrollos
+
+- Fase 3B de paridad administrativa LAB.
+- PDF compuesto de cotizaciones.
+- Reportes tecnicos de servicio general.
+- Administracion remota y Developer Broker.
+- Seguimiento de distribucion iOS.
+
+## Cambio reciente integrado
+
+- Commit `2acadb8`: selector de ubicacion predeterminada
+  para mantenimiento.
+- Worktree temporal y base de datos de mantenimiento eliminados.
+- Base de datos local principal conservada.
+- Validacion funcional final: verificar contra codigo y UI.
+
+## Inventario de archivos para auditoria
+
+Archivos rastreados por Git cuyos nombres coinciden con
+los componentes fiscales o de correo:
+
+- `backend/app/models/invoice.py`
+- `backend/app/models/password_reset_token.py`
+- `backend/app/models/sat_catalog.py`
+- `backend/app/resolution_engine/application/compensation.py`
+- `backend/app/resolution_engine/application/compensation_runner.py`
+- `backend/app/resolution_engine/contracts/compensation.py`
+- `backend/app/resolution_engine/domain/compensation.py`
+- `backend/app/resolution_engine/infrastructure/compensation.py`
+- `backend/app/resolution_engine/infrastructure/persistence/compensation.py`
+- `backend/app/routers/invoices.py`
+- `backend/app/routers/sat_catalogs.py`
+- `backend/app/schemas/invoice.py`
+- `backend/app/schemas/sat_catalog.py`
+- `backend/app/services/facturama/__init__.py`
+- `backend/app/services/facturama/client.py`
+- `backend/app/services/facturama/exceptions.py`
+- `backend/app/services/facturama/health.py`
+- `backend/app/services/facturama/invoice_mapper.py`
+- `backend/app/services/facturama/invoices.py`
+- `backend/app/services/invoice_pdfs.py`
+- `backend/app/services/invoices.py`
+- `backend/app/services/password_reset.py`
+- `backend/app/services/quotation_email.py`
+- `backend/app/services/sat_catalogs/__init__.py`
+- `backend/app/services/sat_catalogs/definitions.py`
+- `backend/app/services/sat_catalogs/importer.py`
+- `backend/app/services/sat_catalogs/normalizers.py`
+- `backend/app/services/sat_catalogs/parsers.py`
+- `backend/app/services/sat_catalogs/reports.py`
+- `backend/app/services/sat_catalogs/sat_xls_source.py`
+- `backend/app/services/sat_catalogs/service.py`
+- `backend/app/services/sat_catalogs/validators.py`
+- `backend/app/templates/invoice_payment_receipt_pdf.html`
+- `backend/app/templates/invoice_pdf.html`
+- `backend/migrations/versions/3c4d5e6f7a8b_add_quotation_payment_terms_and_snapshots.py`
+- `backend/migrations/versions/640da69de732_invoice_workbench_review.py`
+- `backend/migrations/versions/650da69de732_add_fiscal_profile_snapshots.py`
+- `backend/migrations/versions/660da69de732_add_client_fiscal_review.py`
+- `backend/migrations/versions/670da69de732_add_facturama_invoice_traceability.py`
+- `backend/migrations/versions/6ae1d4877cdb_communication_conversations.py`
+- `backend/migrations/versions/b2d5f8a1c3e7_add_password_reset.py`
+- `backend/migrations/versions/d6e8f0a2b4c5_resolution_engine_phase_6_compensation.py`
+- `backend/migrations/versions/f6a7b8c9d0e1_create_sat_catalog_infrastructure.py`
+- `backend/migrations/versions/f8a9b0c1d2e3_optimize_sat_catalog_search.py`
+- `backend/migrations/versions/f9b0c1d2e3f4_allow_long_sat_descriptions.py`
+- `backend/migrations/versions/fa1b2c3d4e5_add_sat_catalog_fulltext_index.py`
+- `backend/migrations/versions/fb2c3d4e5f6_add_invoice_sat_catalogs.py`
+- `backend/migrations/versions/fc3d4e5f6a7_optimize_sat_code_prefix_search.py`
+- `backend/resources/sat/CHECKSUMS.txt`
+- `backend/resources/sat/RELEASE_SOURCE.txt`
+- `backend/resources/sat/VERSION.txt`
+- `backend/resources/sat/reports/sat_official_xls_comparison.json`
+- `backend/resources/sat/reports/sat_official_xls_import.json`
+- `backend/resources/sat/reports/sat_official_xls_import_20260714.json`
+- `backend/scripts/import_sat_official_xls_catalogs.py`
+- `backend/tests/resolution_engine/test_compensation.py`
+- `backend/tests/resolution_engine/test_compensation_persistence.py`
+- `backend/tests/test_facturama_environment.py`
+- `backend/tests/test_facturama_infrastructure.py`
+- `backend/tests/test_facturama_invoice_mapper.py`
+- `backend/tests/test_facturama_reconciliation.py`
+- `backend/tests/test_invoice_documents.py`
+- `backend/tests/test_invoice_listing.py`
+- `backend/tests/test_invoice_payments.py`
+- `backend/tests/test_invoice_settings.py`
+- `backend/tests/test_password_reset.py`
+- `backend/tests/test_password_reset_schema.py`
+- `backend/tests/test_sat_catalog_importer.py`
+- `backend/tests/test_sat_xls_source.py`
+- `docs/architecture/CATALOGOS_SAT.md`
+- `docs/architecture/INVOICE_WORKBENCH_CONTROLLER.md`
+- `docs/architecture/PASSWORD_RESET.md`
+- `docs/architecture/QUOTATION_EMAIL_AND_CONTACTS.md`
+- `docs/architecture/resolution-engine/18_COMPENSATION_ENGINE.md`
+- `docs/audits/AUDITORIA_TECNICA_FACTURACION_CFDI_4_0.md`
+- `docs/closures/REPORTE_CARGA_INICIAL_CATALOGOS_SAT.md`
+- `frontend/src/components/activity/ActivityConversation.jsx`
+- `frontend/src/components/ets-billing/EtsBillingTab.jsx`
+- `frontend/src/components/ets-billing/etsInvoicePresentation.js`
+- `frontend/src/components/ets-billing/etsInvoicePresentation.test.js`
+- `frontend/src/components/invoice-workbench/InvoiceAdvancedFiscalSection.jsx`
+- `frontend/src/components/invoice-workbench/InvoiceClientSection.jsx`
+- `frontend/src/components/invoice-workbench/InvoiceConceptsSection.jsx`
+- `frontend/src/components/invoice-workbench/InvoiceDetailView.jsx`
+- `frontend/src/components/invoice-workbench/InvoiceDraftView.jsx`
+- `frontend/src/components/invoice-workbench/InvoiceFiscalSection.jsx`
+- `frontend/src/components/invoice-workbench/InvoicePaymentModal.jsx`
+- `frontend/src/components/invoice-workbench/InvoiceQuotationList.jsx`
+- `frontend/src/components/invoice-workbench/InvoiceSummaryPanel.jsx`
+- `frontend/src/components/invoice-workbench/InvoiceToolbar.jsx`
+- `frontend/src/components/invoice-workbench/InvoiceWorkbenchDialog.jsx`
+- `frontend/src/components/invoice-workbench/InvoiceWorkbenchHeader.jsx`
+- `frontend/src/components/invoice-workbench/InvoiceWorkbenchModal.jsx`
+- `frontend/src/components/invoice-workbench/InvoiceWorkbenchSidebar.jsx`
+- `frontend/src/components/invoice-workbench/SatCatalogField.jsx`
+- `frontend/src/components/invoice-workbench/cfdiLabels.test.js`
+- `frontend/src/components/invoice-workbench/invoice-workbench.css`
+- `frontend/src/components/invoice-workbench/invoicePaymentForm.js`
+- `frontend/src/components/invoice-workbench/invoicePaymentForm.test.js`
+- `frontend/src/components/invoice-workbench/invoiceSettings.js`
+- `frontend/src/components/invoice-workbench/invoiceSettings.test.js`
+- `frontend/src/components/invoice-workbench/invoiceWorkbenchDraft.js`
+- `frontend/src/components/invoice-workbench/useInvoiceWorkbenchController.js`
+- `frontend/src/pages/BillingPage.jsx`
+- `frontend/src/pages/labs/InvoiceWorkbenchLabPage.jsx`
+- `frontend/src/utils/invoiceWorkbenchContext.js`
+- `frontend/src/utils/invoiceWorkbenchContext.test.js`
+- `myc-mobile-sdk57-backup/src/app/(client)/invoices.tsx`
+- `myc-mobile/app/(client)/invoices.tsx`
+
+## Instrucciones para el siguiente chat
+
+1. Leer este documento completo.
+2. Empezar exclusivamente por facturacion P0.
+3. Auditar configuracion, modelos, routers, servicios y pruebas.
+4. Contrastar documentacion con implementacion real.
+5. Identificar funcionalidades completas, incompletas y simuladas.
+6. No confundir registros internos con CFDI timbrados.
+7. No activar produccion sin autorizacion.
+8. Trabajar con MYC Local y comandos verificables.
+9. Mantener el historial operativo y actualizar estados con evidencia.
+10. Cerrar cada fase con pruebas y commit documentado.
+
+<!-- MYC_PRODUCTION_READINESS_END -->
