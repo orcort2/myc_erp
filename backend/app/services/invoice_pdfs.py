@@ -683,6 +683,11 @@ def generate_invoice_pdf(
     settings = get_invoice_settings(db)
     template = env.get_template("invoice_pdf.html")
     context = _public_invoice_context(db, invoice, settings)
+    if context["is_stamped"] and not context["fiscal"]["issued_at"]:
+        raise HTTPException(
+            status_code=409,
+            detail="cfdi_xml_issue_date_unavailable",
+        )
 
     html = template.render(**context)
     pdf = HTML(
