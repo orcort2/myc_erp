@@ -262,6 +262,27 @@ class DraftInvoicePrintTests(unittest.TestCase):
         self.assertIn("13/10/2026 12:24:20", html)
         self.assertNotIn("12/10/2026", html)
 
+    def test_stamped_pdf_without_xml_issue_date_is_rejected(self):
+        from datetime import datetime
+        from fastapi import HTTPException
+        from app.services import invoice_pdfs
+
+        with patch.object(invoice_pdfs, "get_invoice") as get_invoice, \
+             patch.object(invoice_pdfs, "get_invoice_settings") as get_settings, \
+             patch.object(invoice_pdfs, "_public_invoice_context", return_value={
+                 "is_stamped": True,
+                 "fiscal": {"issued_at": ""},
+             }), \
+             patch.object(invoice_pdfs, "HTML") as html:
+            get_invoice.return_value = SimpleNamespace()
+            get_settings.return_value = SimpleNamespace()
+            with self.assertRaises(HTTPException) as caught:
+                invoice_pdfs.generate_invoice_pdf(object(), 5)
+
+        self.assertEqual(caught.exception.status_code, 409)
+        self.assertEqual(caught.exception.detail, "cfdi_xml_issue_date_unavailable")
+        html.assert_not_called()
+
     def test_draft_has_internal_reference_without_fiscal_identity(self):
         context, html = self._render()
         self.assertEqual(context["fiscal"]["series"], "")
