@@ -158,7 +158,8 @@ function mapCatalogItemFromApi(item) {
     saleModel: item.sale_model ?? '',
     saleSpecification: item.sale_specification ?? '',
     includedCalibrationCatalogItemId: item.included_calibration_catalog_item_id ? String(item.included_calibration_catalog_item_id) : '',
-    maintenanceType: ['preventive', 'corrective'].includes(item.calibration_scope) ? item.calibration_scope : 'preventive',
+    maintenanceType: item.maintenance_type ?? (['preventive', 'corrective'].includes(item.calibration_scope) ? item.calibration_scope : 'preventive'),
+    maintenanceLocation: item.maintenance_location ?? 'laboratory',
     maintenanceBaseMaterialsText: JSON.stringify(item.maintenance_base_materials ?? [], null, 2),
     quotationLegend: item.quotation_legend ?? '',
     category: item.category ?? '',
@@ -231,7 +232,7 @@ function mapCatalogPayloadFromForm(form) {
     sale_specification: operationalCategory === 'sale' ? form.saleSpecification.trim() || null : null,
     included_calibration_catalog_item_id: operationalCategory === 'sale' ? Number(form.includedCalibrationCatalogItemId) || null : null,
     maintenance_type: operationalCategory === 'maintenance' ? form.maintenanceType : null,
-    maintenance_location: null,
+    maintenance_location: operationalCategory === 'maintenance' ? (form.maintenanceLocation || 'laboratory') : null,
     maintenance_base_materials: operationalCategory === 'maintenance' && form.maintenanceType === 'corrective'
       ? JSON.parse(form.maintenanceBaseMaterialsText || '[]')
       : [],
@@ -3830,18 +3831,32 @@ function QuotationsPage({ user = null }) {
                           </select>
                         </label>
 
+                        <label>
+                          Ubicación predeterminada
+
+                          <select
+                            value={productForm.maintenanceLocation || 'laboratory'}
+                            onChange={(event) =>
+                              updateProductForm(
+                                'maintenanceLocation',
+                                event.target.value,
+                              )
+                            }
+                            required
+                          >
+                            <option value="laboratory">
+                              Laboratorio MYC
+                            </option>
+                            <option value="field">
+                              Campo / instalaciones del cliente
+                            </option>
+                          </select>
+                        </label>
+
                         <div className="catalog-form-info">
-                          <span>
-                            Modalidad operativa
-                          </span>
-
-                          <strong>
-                            Se define por equipo en el ETS
-                          </strong>
-
                           <p>
-                            Cada unidad podrá ejecutarse en laboratorio
-                            o en campo de forma independiente.
+                            La ubicación podrá modificarse por equipo
+                            durante la ejecución del ETS.
                           </p>
                         </div>
 
