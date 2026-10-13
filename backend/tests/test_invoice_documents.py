@@ -169,7 +169,7 @@ class DraftInvoicePrintTests(unittest.TestCase):
         "receiver_cfdi_use_code": "G03",
     }
 
-    def _render(self, cfdi_uuid=None, stamped_at=None, xml_path=None):
+    def _render(self, cfdi_uuid=None, stamped_at=None, xml_path=None, issued_on=None):
         from app.services import invoice_pdfs
 
         item = SimpleNamespace(
@@ -181,7 +181,7 @@ class DraftInvoicePrintTests(unittest.TestCase):
             facturama_xml_path=xml_path, fiscal_snapshot=self.SNAPSHOT, cfdi_uuid=cfdi_uuid, stamped_at=stamped_at, usage_cfdi=None,
             payment_method="PUE", payment_form="03", currency="MXN", items=[item],
             fiscal_client=None, client=SimpleNamespace(rfc="OTRO", legal_name="Cliente Vivo", commercial_name=None),
-            total=1.16, subtotal=1, tax_total=0.16, discount_total=0, withholding_total=0, issued_on=None, observations=None,
+            total=1.16, subtotal=1, tax_total=0.16, discount_total=0, withholding_total=0, issued_on=issued_on, observations=None,
         )
         settings = SimpleNamespace(emitter_data={"rfc": "EMI010101AAA", "legal_name": "MYC"})
         tpl = SimpleNamespace(company_name="MYC", company_address="Calle 1", company_phone="", company_email="", company_website="")
@@ -241,6 +241,26 @@ class DraftInvoicePrintTests(unittest.TestCase):
                 self.assertNotIn('F-MYCF-2026-0002', html)
                 for extension in ("pdf", "xml"):
                     self.assertEqual(invoice_document_filename(context["invoice"], extension), f"Factura_MYC_MYCF-3.{extension}")
+
+    def test_stamped_issue_date_comes_from_xml_not_erp(self):
+        from datetime import datetime
+        from app.services import invoice_pdfs
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "cfdi.xml"
+            source.write_text(
+                '<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" '
+                'Serie="MYCF" Folio="1" Fecha="2026-10-13T12:24:20"/>'
+            )
+            with patch.object(invoice_pdfs, "resolve_storage_path", return_value=source):
+                context, html = self._render(
+                    "UUID-1234", "2026-10-13", str(source),
+                    issued_on=datetime(2026, 10, 12),
+                )
+
+        self.assertEqual(context["fiscal"]["issued_at"], "2026-10-13T12:24:20")
+        self.assertIn("13/10/2026 12:24:20", html)
+        self.assertNotIn("12/10/2026", html)
 
     def test_draft_has_internal_reference_without_fiscal_identity(self):
         context, html = self._render()
