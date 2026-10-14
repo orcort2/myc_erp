@@ -159,6 +159,7 @@ function mapCatalogItemFromApi(item) {
     saleSpecification: item.sale_specification ?? '',
     includedCalibrationCatalogItemId: item.included_calibration_catalog_item_id ? String(item.included_calibration_catalog_item_id) : '',
     maintenanceType: ['preventive', 'corrective'].includes(item.calibration_scope) ? item.calibration_scope : 'preventive',
+    maintenanceLocation: item.maintenance_location ?? 'laboratory',
     maintenanceBaseMaterialsText: JSON.stringify(item.maintenance_base_materials ?? [], null, 2),
     quotationLegend: item.quotation_legend ?? '',
     category: item.category ?? '',
@@ -231,7 +232,7 @@ function mapCatalogPayloadFromForm(form) {
     sale_specification: operationalCategory === 'sale' ? form.saleSpecification.trim() || null : null,
     included_calibration_catalog_item_id: operationalCategory === 'sale' ? Number(form.includedCalibrationCatalogItemId) || null : null,
     maintenance_type: operationalCategory === 'maintenance' ? form.maintenanceType : null,
-    maintenance_location: null,
+    maintenance_location: operationalCategory === 'maintenance' ? form.maintenanceLocation : null,
     maintenance_base_materials: operationalCategory === 'maintenance' && form.maintenanceType === 'corrective'
       ? JSON.parse(form.maintenanceBaseMaterialsText || '[]')
       : [],
@@ -1194,6 +1195,11 @@ function QuotationsPage({ user = null }) {
     }
     if (productForm.category === 'Calibracion' && !productForm.serviceType) {
       setError('Selecciona el tipo de servicio.');
+      return;
+    }
+    if (productForm.operationalCategory === 'maintenance' &&
+        !['laboratory', 'field'].includes(productForm.maintenanceLocation)) {
+      setError('Selecciona el lugar del mantenimiento.');
       return;
     }
     const linkedServiceError = validateLinkedServiceFields(productForm);
@@ -3746,7 +3752,20 @@ function QuotationsPage({ user = null }) {
                           </select>
                         </label>
 
-                        <div className="catalog-form-info">
+                        <label>
+          Lugar del mantenimiento
+          <select
+            required
+            value={productForm.maintenanceLocation || ''}
+            onChange={(event) => updateProductForm('maintenanceLocation', event.target.value)}
+          >
+            <option value="">Seleccionar lugar</option>
+            <option value="laboratory">Laboratorio</option>
+            <option value="field">Campo / instalaciones del cliente</option>
+          </select>
+        </label>
+
+        <div className="catalog-form-info">
                           <span>
                             Modalidad operativa
                           </span>
