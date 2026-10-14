@@ -22,6 +22,7 @@ class TemplateDefinition:
     variables: tuple[TemplateVariable, ...]
     subject: str
     body: str
+    required_body_suffix: str | None = None
 
     @property
     def variable_names(self) -> frozenset[str]:
@@ -36,6 +37,10 @@ class TemplateDefinition:
 
 
 _SIGNATURE = "Atentamente,\nMetrología y Servicios MYC"
+_INVOICE_DRAFT_NOTICE = (
+    "IMPORTANTE: Este documento es un borrador / pre-comprobante y no constituye "
+    "un CFDI ni tiene validez fiscal. Puede sufrir modificaciones antes de su emisión."
+)
 
 TEMPLATE_DEFINITIONS: dict[str, TemplateDefinition] = {
     definition.key: definition
@@ -108,19 +113,40 @@ TEMPLATE_DEFINITIONS: dict[str, TemplateDefinition] = {
                 "Quedamos atentos a sus comentarios.\n\n{advisor_name}\nMetrología y Servicios MYC"
             ),
         ),
-        TemplateDefinition(
-            key="invoice_send",
-            name="Envío de factura",
-            variables=tuple(
-                TemplateVariable(name)
-                for name in ("contact_name", "client_name", "fiscal_identifier", "cfdi_uuid", "total")
-            ),
-            subject="Factura {fiscal_identifier} - Metrología y Servicios MYC",
-            body=(
-                "Estimado(a) {contact_name},\n\n"
-                "Adjuntamos la factura {fiscal_identifier} de {client_name} por un total de {total}.\n"
-                "Folio fiscal (UUID): {cfdi_uuid}\n\n" + _SIGNATURE
-            ),
-        ),
+                TemplateDefinition(
+                    key="invoice_draft_send",
+                    name="Envío de pre-comprobante de factura",
+                    variables=tuple(
+                        TemplateVariable(name)
+                        for name in (
+                            "contact_name",
+                            "client_name",
+                            "fiscal_identifier",
+                            "total",
+                        )
+                    ),
+                    subject="Pre-comprobante de factura {fiscal_identifier} - Metrología y Servicios MYC",
+                    body=(
+                        "Estimado(a) {contact_name},\n\n"
+                        "Adjuntamos el pre-comprobante de la factura {fiscal_identifier} de {client_name} "
+                        "por un total de {total}, para su revisión previa a la emisión fiscal.\n\n"
+                        + _SIGNATURE
+                    ),
+                    required_body_suffix=_INVOICE_DRAFT_NOTICE,
+                ),
+                TemplateDefinition(
+                    key="invoice_send",
+                    name="Envío de factura",
+                    variables=tuple(
+                        TemplateVariable(name)
+                        for name in ("contact_name", "client_name", "fiscal_identifier", "cfdi_uuid", "total")
+                    ),
+                    subject="Factura {fiscal_identifier} - Metrología y Servicios MYC",
+                    body=(
+                        "Estimado(a) {contact_name},\n\n"
+                        "Adjuntamos la factura {fiscal_identifier} de {client_name} por un total de {total}.\n"
+                        "Folio fiscal (UUID): {cfdi_uuid}\n\n" + _SIGNATURE
+                    ),
+                ),
     )
 }

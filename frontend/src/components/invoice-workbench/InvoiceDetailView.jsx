@@ -5,12 +5,14 @@ import {
   Download,
   FileCode2,
   FileText,
+  Mail,
   ReceiptText,
   ShieldCheck,
 } from 'lucide-react';
 import { useState } from 'react';
 
 import InvoicePaymentModal from './InvoicePaymentModal.jsx';
+import InvoiceEmailModal from './InvoiceEmailModal.jsx';
 import { canIssueInvoiceAfterPayment } from './invoicePaymentForm.js';
 
 const STATUS_LABELS = {
@@ -86,6 +88,7 @@ export default function InvoiceDetailView({
   client = null,
   canEmit = false,
   canManagePayments = false,
+  canEmailInvoices = false,
   isSaving = false,
   issueBlockedReason = '',
   onIssue,
@@ -95,6 +98,7 @@ export default function InvoiceDetailView({
   onRegisterPayment,
 }) {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
 
   if (!invoice) {
     return <EmptyInvoiceState />;
@@ -119,6 +123,7 @@ export default function InvoiceDetailView({
     'Sin RFC';
 
   return (
+    <>
     <section className="invoice-detail-view">
       <header className="invoice-case-panel__heading">
         <div>
@@ -148,6 +153,17 @@ export default function InvoiceDetailView({
               <FileCode2 size={16} />
               Descargar XML
             </button>
+            {canEmailInvoices && (
+                <button
+                  className="table-button"
+                  disabled={isSaving}
+                  onClick={() => setEmailModalOpen(true)}
+                  type="button"
+                >
+                  <Mail size={16} />
+                  Enviar por correo
+                </button>
+              )}
           </div>
 
           <span
@@ -465,5 +481,14 @@ export default function InvoiceDetailView({
         open={paymentModalOpen}
       />
     </section>
+
+    {emailModalOpen ? (
+      <InvoiceEmailModal
+        invoiceId={invoice.id}
+        folio={getInvoiceLabel(invoice)}
+        onClose={() => setEmailModalOpen(false)}
+      />
+    ) : null}
+    </>
   );
 }

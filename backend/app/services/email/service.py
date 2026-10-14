@@ -59,7 +59,23 @@ def preview_email(
     """
     settings = settings or get_settings()
     definition = get_definition(template_key)
-    template = get_template(db, template_key)
+    # Preview is read-only: do not initialize and commit default templates.
+    from sqlalchemy import select
+    from app.models.email import EmailTemplate
+
+    template = db.scalar(
+        select(EmailTemplate).where(
+            EmailTemplate.template_key == template_key
+        )
+    )
+    if template is None:
+        template = EmailTemplate(
+            template_key=definition.key,
+            name=definition.name,
+            subject_template=definition.subject,
+            body_template=definition.body,
+        )
+
     return render_email(
         definition,
         subject_template=template.subject_template,

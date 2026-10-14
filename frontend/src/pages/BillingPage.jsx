@@ -168,6 +168,7 @@ function BillingPage({ user = null }) {
   });
   const canManageInvoices = hasPermission(user, 'invoices.manage');
   const canManagePayments = hasPermission(user, 'payments.manage');
+  const canEmailInvoices = hasPermission(user, 'invoices.email.send');
   const availableViews = MAIN_VIEWS.filter((view) => view.key !== 'settings' || canManageInvoices);
 
   const invoiceByQuotationId = useMemo(() => {
@@ -849,6 +850,7 @@ function BillingPage({ user = null }) {
             facturamaStatus?.connected
         )}
         canManagePayments={canManagePayments}
+        canEmailInvoices={canEmailInvoices}
         issueBlockedReason={
           facturamaStatus?.connected
             ? ''

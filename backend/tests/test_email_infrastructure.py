@@ -22,6 +22,7 @@ from app.services.email.renderer import render_email
 from app.services.email.service import RetryNotAllowed, preview_email
 from app.services.email.templates import ensure_default_templates, update_template
 from app.services.email.transport import OutgoingMessage, SmtpTransport, normalize_address
+from app.services.email.catalog import _INVOICE_DRAFT_NOTICE
 
 SECRET_URL = "https://erp.example.test/portal/verificar-correo?token=SUPERSECRETTOKEN"
 
@@ -128,7 +129,7 @@ def test_renderer_redacts_secret_variables_for_snapshots():
 def test_default_templates_are_idempotent_and_never_overwrite_edits(db):
     ensure_default_templates(db); ensure_default_templates(db)
     keys = set(db.scalars(select(EmailTemplate.template_key)).all())
-    assert keys == {"portal_email_verification", "portal_invitation", "password_reset", "quotation_send", "invoice_send"}
+    assert keys == {"portal_email_verification", "portal_invitation", "password_reset", "quotation_send", "invoice_draft_send", "invoice_send",}
     update_template(db, "quotation_send", actor_id=1, subject_template="Nueva {quotation_folio}")
     ensure_default_templates(db)
     assert db.scalar(select(EmailTemplate).where(EmailTemplate.template_key == "quotation_send")).subject_template == "Nueva {quotation_folio}"
@@ -463,3 +464,34 @@ def test_email_disabled_needs_no_smtp_config_in_any_environment():
     assert make_settings(email_enabled=False, smtp_host="", email_from_address="").email_enabled is False
     assert make_settings(**PROD, email_enabled=False, smtp_host="", email_from_address="").email_enabled is False
     assert Settings(_env_file=None).email_enabled is False  # development defaults
+
+def test_invoice_draft_template_always_appends_required_non_fiscal_notice(db):
+    ensure_default_templates(db)
+
+    template = db.scalar(
+        select(EmailTemplate).where(
+            EmailTemplate.template_key == "invoice_draft_send"
+        )
+    )
+
+    template.body_template = (
+        "Hola {contact_name},\n\n"
+        "Adjuntamos el documento de {client_name}."
+    )
+    db.commit()
+
+    rendered = preview_email(
+        db,
+        template_key="invoice_draft_send",
+        context={
+            "contact_name": "Ana",
+            "client_name": "Cliente Demo",
+            "fiscal_identifier": "MYCF-001",
+            "total": "$1,000.00",
+        },
+    )
+
+    assert _INVOICE_DRAFT_NOTICE in rendered.body_text
+    assert _INVOICE_DRAFT_NOTICE in rendered.body_html
+    assert "no constituye un CFDI" in rendered.body_text
+    assert "validez fiscal" in rendered.body_text

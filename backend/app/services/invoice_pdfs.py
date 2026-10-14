@@ -17,6 +17,17 @@ from sqlalchemy.orm import Session
 from weasyprint import HTML
 
 from app.models.sat_catalog import SatCatalog, SatCatalogRecord
+from app.models.invoice import InvoiceSettings
+from app.models.document_template import DocumentTemplate
+from app.models.institutional_configuration import InstitutionalConfiguration
+from app.services.document_templates import (
+    DEFAULT_QUOTATION_TEMPLATE,
+    QUOTATION_TEMPLATE_KEY,
+)
+from app.services.institutional_configurations import (
+    DEFAULT_INSTITUTIONAL_VALUES,
+    DEFAULT_CONFIGURATION_KEY,
+)
 from app.services.document_templates import get_or_create_quotation_template
 from app.services.institutional_configurations import (
     get_or_create_institutional_configuration,
@@ -25,6 +36,7 @@ from app.services.invoices import (
     get_invoice,
     get_invoice_payment,
     get_invoice_settings,
+    default_invoice_settings,
 )
 from app.services.sat_catalogs.service import is_record_current, latest_version
 from app.services.storage_service import resolve_storage_path
@@ -484,15 +496,39 @@ def _extract_fiscal_context(invoice) -> dict[str, Any]:
     return result
 
 
+def _read_document_configuration(db: Session, model, condition, defaults):
+    """Use persisted configuration or transient defaults without committing."""
+    with db.no_autoflush:
+        record = db.scalar(select(model).where(condition))
+    return record if record is not None else model(**defaults)
+
+
 def _public_invoice_context(
     db: Session,
     invoice,
     settings,
+    *,
+    read_only: bool = False,
 ) -> dict[str, Any]:
     fiscal = _extract_fiscal_context(invoice)
     emitter_data = settings.emitter_data or {}
-    quotation_template = get_or_create_quotation_template(db)
-    institution = get_or_create_institutional_configuration(db)
+    if read_only:
+        quotation_template = _read_document_configuration(
+            db,
+            DocumentTemplate,
+            (DocumentTemplate.template_key == QUOTATION_TEMPLATE_KEY)
+            & (DocumentTemplate.is_active.is_(True)),
+            DEFAULT_QUOTATION_TEMPLATE,
+        )
+        institution = _read_document_configuration(
+            db,
+            InstitutionalConfiguration,
+            InstitutionalConfiguration.configuration_key == DEFAULT_CONFIGURATION_KEY,
+            DEFAULT_INSTITUTIONAL_VALUES,
+        )
+    else:
+        quotation_template = get_or_create_quotation_template(db)
+        institution = get_or_create_institutional_configuration(db)
 
     issuer_rfc = fiscal["issuer"]["rfc"] or emitter_data.get("rfc", "")
     issuer_name = (
@@ -676,11 +712,25 @@ def _public_invoice_context(
 def generate_invoice_pdf(
     db: Session,
     invoice_id: int,
+    *,
+    recalculate: bool = True,
+    read_only: bool = False,
 ) -> tuple[bytes, str]:
-    invoice = get_invoice(db, invoice_id)
-    settings = get_invoice_settings(db)
+    invoice = get_invoice(db, invoice_id, recalculate=recalculate)
+    if read_only:
+        with db.no_autoflush:
+            settings = db.scalar(
+                select(InvoiceSettings).where(InvoiceSettings.key == "default")
+            )
+        if settings is None:
+            settings = default_invoice_settings()
+    else:
+        settings = get_invoice_settings(db)
+
     template = env.get_template("invoice_pdf.html")
-    context = _public_invoice_context(db, invoice, settings)
+    context = _public_invoice_context(
+        db, invoice, settings, read_only=read_only
+    )
 
     html = template.render(**context)
     pdf = HTML(
@@ -694,8 +744,10 @@ def generate_invoice_pdf(
 def get_invoice_fiscal_xml(
     db: Session,
     invoice_id: int,
+    *,
+    recalculate: bool = True,
 ) -> tuple[bytes, str]:
-    invoice = get_invoice(db, invoice_id)
+    invoice = get_invoice(db, invoice_id, recalculate=recalculate)
     document_path = resolve_storage_path(invoice.facturama_xml_path)
 
     if document_path is None or not document_path.is_file():

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -20,7 +20,18 @@ from app.schemas.invoice import (
     InvoiceUpdate,
     ReleasedUninvoicedRow,
 )
-from app.services.auth import require_permission
+from app.schemas.email import (
+    InvoiceEmailDeliveryRead,
+    InvoiceEmailPreview,
+    InvoiceEmailRequest,
+    InvoiceEmailSendResult,
+)
+from app.services.invoice_email import (
+    list_invoice_email_deliveries,
+    preview_invoice_email,
+    send_invoice_email,
+)
+from app.services.auth import require_permission, user_has_permission
 from app.services.invoice_pdfs import (
     generate_invoice_payment_receipt_pdf,
     generate_invoice_pdf,
@@ -92,6 +103,62 @@ def read_invoice(
     current_user: User = Depends(require_permission("invoices.read")),
 ):
     return get_invoice(db, invoice_id)
+
+
+@router.post(
+    "/invoices/{invoice_id}/email/preview",
+    response_model=InvoiceEmailPreview,
+)
+def preview_invoice_email_route(
+    invoice_id: int,
+    payload: InvoiceEmailRequest | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("invoices.email.send")),
+) -> InvoiceEmailPreview:
+    payload = payload or InvoiceEmailRequest()
+    return preview_invoice_email(
+        db,
+        invoice_id,
+        to=payload.to,
+        cc=payload.cc,
+    )
+
+
+@router.post(
+    "/invoices/{invoice_id}/email/send",
+    response_model=InvoiceEmailSendResult,
+)
+def send_invoice_email_route(
+    invoice_id: int,
+    payload: InvoiceEmailRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("invoices.email.send")),
+) -> InvoiceEmailSendResult:
+    return send_invoice_email(
+        db,
+        invoice_id,
+        to=payload.to or [],
+        cc=payload.cc,
+        actor=current_user,
+    )
+
+
+@router.get(
+    "/invoices/{invoice_id}/email/deliveries",
+    response_model=list[InvoiceEmailDeliveryRead],
+)
+def invoice_email_deliveries_route(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("email.deliveries.read")),
+) -> list[InvoiceEmailDeliveryRead]:
+    if not user_has_permission(current_user, "invoices.read"):
+        raise HTTPException(
+            status_code=403,
+            detail="Permiso insuficiente",
+        )
+
+    return list_invoice_email_deliveries(db, invoice_id)
 
 
 @router.post("/invoices", response_model=InvoiceRead)
