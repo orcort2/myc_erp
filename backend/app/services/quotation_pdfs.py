@@ -10,6 +10,8 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.orm import Session
 from weasyprint import HTML
 
+from app.schemas.service_scope import SERVICE_SCOPE_LEGENDS
+from app.schemas.service_type import (SERVICE_TYPE_TO_CALIBRATION_SCOPE, ServiceType)
 from app.models.quotation import Quotation, QuotationItem
 from app.models.user import User
 from app.services.document_templates import get_or_create_quotation_template
@@ -166,13 +168,53 @@ def _line_from_item(item: QuotationItem) -> PdfLine:
         for component in snapshot.get("operational_items") or []:
             component_id = str(component.get("catalog_item_id"))
             service_snapshot = component.get("service_snapshot") or {}
+            maintenance = (
+                service_snapshot.get("maintenance_configuration_snapshot")
+                or {}
+            )
+            scope = service_snapshot.get("calibration_scope_snapshot")
+            service_type = service_snapshot.get("service_type_snapshot")
+            category = service_snapshot.get("operational_category")
+
+            legend_key = None
+            if category == "maintenance":
+                maintenance_type = maintenance.get("maintenance_type")
+                if maintenance_type in {"preventive", "corrective"}:
+                    legend_key = maintenance_type
+            elif category == "calibration":
+                if scope in {
+                    "accredited_iso_17025",
+                    "traceable",
+                    "accredited_linked_lab",
+                }:
+                    legend_key = scope
+                elif service_type in {
+                    "accredited",
+                    "traceable",
+                    "linked",
+                }:
+                    legend_key = SERVICE_TYPE_TO_CALIBRATION_SCOPE[
+                        ServiceType(service_type)
+                    ]
+
+            description = descriptions.get(component_id)
+            if description is None:
+                description = (
+                    service_snapshot.get("service_description_snapshot") or ""
+                )
+
+            legend = SERVICE_SCOPE_LEGENDS.get(legend_key, "")
+            if legend and legend.casefold() in description.casefold():
+                legend = ""
+
             components.append({
                 "name": (
                     service_snapshot.get("service_name_snapshot")
                     or component.get("service_name")
                     or "Componente"
                 ),
-                "description": descriptions.get(component_id, ""),
+                "description": description,
+                "legend": legend,
             })
 
     return PdfLine(

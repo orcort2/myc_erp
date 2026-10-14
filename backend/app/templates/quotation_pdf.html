@@ -427,6 +427,11 @@
                           {{ component.description }}
                         </div>
                       {% endif %}
+                      {% if component.legend %}
+                        <div style="margin-left:12px;">
+                          {{ component.legend }}
+                        </div>
+                      {% endif %}
                     </div>
                   {% endfor %}
                 </div>
