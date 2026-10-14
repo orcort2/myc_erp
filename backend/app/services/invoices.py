@@ -47,36 +47,41 @@ def _money(value: Decimal | int | float | None) -> Decimal:
     return Decimal(value or 0).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+def default_invoice_settings() -> InvoiceSettings:
+    """Build the official defaults without database writes."""
+    return InvoiceSettings(
+        key="default",
+        forms_of_payment={"items": ["Transferencia", "Efectivo", "Tarjeta", "Cheque"]},
+        methods_of_payment={"items": ["PUE", "PPD"]},
+        usage_cfdi_catalog={"items": ["G03", "P01"]},
+        tax_regime_catalog={"items": ["601", "603", "612"]},
+        currency_catalog={"items": ["MXN", "USD"]},
+        sat_product_keys={"items": ["81141504", "84111506"]},
+        sat_units={"items": ["E48", "ACT"]},
+        banks={"items": ["BBVA", "Banamex", "Santander"]},
+        bank_accounts={"items": []},
+        legal_texts={"invoice_legend": "Documento administrativo interno, no CFDI timbrado"},
+        billing_emails={"items": ["cobranza@myc.com.mx"]},
+        emitter_data={
+            "commercial_name": "MYC SYSTEM",
+            "legal_name": "METROLOGIA Y SERVICIOS MYC",
+            "rfc": "",
+            "tax_regime": "",
+            "postal_code": "",
+            "address": "",
+            "email": "",
+            "phone": "",
+            "place_of_issue": "",
+        },
+        pdf_template_name="invoice_pdf.html",
+        cfdi_future_parameters={},
+    )
+
+
 def get_invoice_settings(db: Session, *, commit: bool = True) -> InvoiceSettings:
     settings = db.scalar(select(InvoiceSettings).where(InvoiceSettings.key == "default"))
     if settings is None:
-        settings = InvoiceSettings(
-            key="default",
-            forms_of_payment={"items": ["Transferencia", "Efectivo", "Tarjeta", "Cheque"]},
-            methods_of_payment={"items": ["PUE", "PPD"]},
-            usage_cfdi_catalog={"items": ["G03", "P01"]},
-            tax_regime_catalog={"items": ["601", "603", "612"]},
-            currency_catalog={"items": ["MXN", "USD"]},
-            sat_product_keys={"items": ["81141504", "84111506"]},
-            sat_units={"items": ["E48", "ACT"]},
-            banks={"items": ["BBVA", "Banamex", "Santander"]},
-            bank_accounts={"items": []},
-            legal_texts={"invoice_legend": "Documento administrativo interno, no CFDI timbrado"},
-            billing_emails={"items": ["cobranza@myc.com.mx"]},
-            emitter_data={
-                "commercial_name": "MYC SYSTEM",
-                "legal_name": "METROLOGIA Y SERVICIOS MYC",
-                "rfc": "",
-                "tax_regime": "",
-                "postal_code": "",
-                "address": "",
-                "email": "",
-                "phone": "",
-                "place_of_issue": "",
-            },
-            pdf_template_name="invoice_pdf.html",
-            cfdi_future_parameters={},
-        )
+        settings = default_invoice_settings()
         # A savepoint also handles two first-time callers without committing
         # the invoice transaction or rolling back the caller's other work.
         try:
@@ -352,7 +357,12 @@ def list_invoices(db: Session, *, service_order_id: int | None = None) -> list[I
     return list(db.scalars(query).all())
 
 
-def get_invoice(db: Session, invoice_id: int) -> Invoice:
+def get_invoice(
+    db: Session,
+    invoice_id: int,
+    *,
+    recalculate: bool = True,
+) -> Invoice:
     invoice = db.scalar(
         select(Invoice)
         .where(Invoice.id == invoice_id, Invoice.is_active.is_(True))
@@ -368,7 +378,8 @@ def get_invoice(db: Session, invoice_id: int) -> Invoice:
     )
     if invoice is None:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
-    _recalculate_invoice(invoice)
+    if recalculate:
+        _recalculate_invoice(invoice)
     return invoice
 
 

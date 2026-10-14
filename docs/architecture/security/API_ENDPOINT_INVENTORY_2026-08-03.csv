@@ -214,6 +214,9 @@ PATCH,/api/invoices/{invoice_id},invoices,update_invoice_route,authenticated_per
 PUT,/api/invoices/{invoice_id},invoices,update_invoice_route,authenticated_permission,access_jwt,invoices.manage,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/invoices/{invoice_id}/confirm-review,invoices,confirm_invoice_review_route,authenticated_permission,access_jwt,invoices.manage,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/invoices/{invoice_id}/credit-notes,invoices,create_credit_note_route,authenticated_permission,access_jwt,invoices.manage,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+GET,/api/invoices/{invoice_id}/email/deliveries,invoices,invoice_email_deliveries_route,authenticated_permission,access_jwt,email.deliveries.read,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+POST,/api/invoices/{invoice_id}/email/preview,invoices,preview_invoice_email_route,authenticated_permission,access_jwt,invoices.email.send,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+POST,/api/invoices/{invoice_id}/email/send,invoices,send_invoice_email_route,authenticated_permission,access_jwt,invoices.email.send,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/invoices/{invoice_id}/facturama-documents/recover,invoices,recover_facturama_documents_route,authenticated_permission,access_jwt,invoices.manage,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 GET,/api/invoices/{invoice_id}/facturama-documents/{kind},invoices,facturama_document_route,authenticated_permission,access_jwt,invoices.read,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 GET,/api/invoices/{invoice_id}/fiscal-xml,invoices,invoice_fiscal_xml,authenticated_permission,access_jwt,invoices.read,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011

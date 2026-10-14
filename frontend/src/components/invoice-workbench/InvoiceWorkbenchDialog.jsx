@@ -141,6 +141,7 @@ export default function InvoiceWorkbenchDialog({
   isSaving = false,
   canIssue = false,
   canManagePayments = false,
+  canEmailInvoices = false,
   issueBlockedReason = '',
   originElement = null,
   onConceptChange,
@@ -297,6 +298,7 @@ export default function InvoiceWorkbenchDialog({
         <InvoiceDetailView
           canEmit={canIssue}
           canManagePayments={canManagePayments}
+          canEmailInvoices={canEmailInvoices}
           client={client}
           invoice={invoice}
           isSaving={isSaving}

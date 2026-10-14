@@ -387,6 +387,25 @@ export async function getInvoice(invoiceId) {
   return request(`/invoices/${invoiceId}`);
 }
 
+// EMAIL-120: correo contextual de facturas.
+export function previewInvoiceEmail(invoiceId, payload = {}) {
+  return request(`/invoices/${encodeURIComponent(invoiceId)}/email/preview`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function sendInvoiceEmail(invoiceId, payload) {
+  return request(`/invoices/${encodeURIComponent(invoiceId)}/email/send`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listInvoiceEmailDeliveries(invoiceId) {
+  return request(`/invoices/${encodeURIComponent(invoiceId)}/email/deliveries`);
+}
+
 export async function createInvoice(payload) {
   return request('/invoices', {
     method: 'POST',

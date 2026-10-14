@@ -1,8 +1,11 @@
+import pytest
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 from app.models.email import EmailDelivery, EmailTemplate
+from pydantic import ValidationError
 
+from app.schemas.email import InvoiceEmailRequest
 
 def test_email_migration_keeps_its_place_in_the_chain():
     script = ScriptDirectory.from_config(Config("alembic.ini"))
@@ -17,3 +20,14 @@ def test_model_matches_migration_contract():
     assert {i.name for i in deliveries.indexes} >= {"ix_email_deliveries_related_entity", "ix_email_deliveries_status", "ix_email_deliveries_template_key"}
     assert next(iter(deliveries.c.requested_by_id.foreign_keys)).target_fullname == "users.id"
     assert not any("password" in c.name or "secret" in c.name or "token" in c.name for c in deliveries.c)
+
+def test_invoice_email_request_only_accepts_recipients():
+    payload = InvoiceEmailRequest(to=["cliente@example.com"], cc=["copia@example.com"],)
+    assert payload.to == ["cliente@example.com"]
+    assert payload.cc == ["copia@example.com"]
+    with pytest.raises(ValidationError):
+        InvoiceEmailRequest(to=["cliente@example.com"], subject="Asunto manipulado",)
+    with pytest.raises(ValidationError):
+        InvoiceEmailRequest(to=["cliente@example.com"], body_html="<b>Manipulado</b>",)
+    with pytest.raises(ValidationError):
+        InvoiceEmailRequest(to=["cliente@example.com"], attachments=["archivo.pdf"],)

@@ -265,6 +265,13 @@ def _certificate_policy(method: str, path: str) -> AccessPolicy:
 
 
 def _invoice_policy(method: str, path: str) -> AccessPolicy:
+    # EMAIL-111: permisos especificos para correo de facturas.
+    if "/email/" in path and path.startswith("/api/invoices/"):
+        if method == "GET" and path.endswith("/email/deliveries"):
+            return _permission("email.deliveries.read")
+        if method == "POST" and path.endswith(("/email/preview", "/email/send")):
+            return _permission("invoices.email.send")
+
     if path.startswith("/api/invoice-payments"):
         return _permission("payments.read")
     if path.endswith("/payments"):

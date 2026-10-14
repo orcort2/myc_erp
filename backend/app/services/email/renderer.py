@@ -67,10 +67,17 @@ def render_email(
     redact_secrets: bool = False,
 ) -> RenderedEmail:
     validate_template_text(definition, subject_template, body_template)
+
+    effective_body_template = body_template
+
+    if definition.required_body_suffix:
+        effective_body_template = (
+            f"{body_template.rstrip()}\n\n{definition.required_body_suffix}"
+        )
     unknown = set(context) - definition.variable_names
     if unknown:
         raise EmailTemplateError(f"Variables de contexto no permitidas: {sorted(unknown)}.")
-    used = set(placeholders(subject_template)) | set(placeholders(body_template))
+    used = set(placeholders(subject_template)) | set(placeholders(effective_body_template))
     missing = used - set(context)
     if missing:
         raise EmailTemplateError(f"Faltan variables de contexto: {sorted(missing)}.")
@@ -94,11 +101,11 @@ def render_email(
     if not subject or len(subject) > MAX_SUBJECT_LENGTH:
         raise EmailTemplateError("El asunto está vacío o excede la longitud permitida.")
 
-    body_text = _substitute(body_template, text_values).replace("\r\n", "\n").strip()
+    body_text = _substitute(effective_body_template, text_values).replace("\r\n", "\n").strip()
     paragraphs = [
         # Static template text is escaped; variable HTML is injected afterwards.
         "<br>".join(_substitute_escaped(line, html_values) for line in block.split("\n"))
-        for block in body_template.replace("\r\n", "\n").strip().split("\n\n")
+        for block in effective_body_template.replace("\r\n", "\n").strip().split("\n\n")
     ]
     body_html = _wrap_html(organization_name, subject, paragraphs)
     return RenderedEmail(subject=subject, body_text=body_text, body_html=body_html)
