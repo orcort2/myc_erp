@@ -1,4 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
+import {
+  CheckCircle2,
+  FileText,
+  Mail,
+  Paperclip,
+  Send,
+  ShieldCheck
+} from 'lucide-react';
 
 import { previewQuotationEmail, sendQuotationEmail } from '../services/api.js';
 import {
@@ -24,62 +32,187 @@ function formatSize(bytes) {
   return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-function RecipientField({ label, suggestions, selected, onToggle, manual, onAdd, inputLabel, blocked = [], disabled = false }) {
+function RecipientField({
+  label,
+  suggestions,
+  selected,
+  onToggle,
+  manual,
+  onAdd,
+  inputLabel,
+  blocked = [],
+  disabled = false
+}) {
   const [value, setValue] = useState('');
   const [error, setError] = useState('');
-
-  function add() {
-    const result = onAdd(value);
-    setError(result);
-    if (!result) setValue('');
-  }
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   const rows = [
-    ...suggestions.map((item) => ({ email: item.email, name: item.name, note: sourceLabels[item.source] ?? '' })),
-    ...manual.map((email) => ({ email, name: '', note: 'Manual' }))
+    ...suggestions.map((item) => ({
+      email: item.email,
+      name: item.name,
+      note: sourceLabels[item.source] ?? ''
+    })),
+    ...manual.map((email) => ({
+      email,
+      name: '',
+      note: 'Manual'
+    }))
   ];
 
+  const uniqueRows = rows.filter(
+    (row, index, all) =>
+      all.findIndex(
+        (candidate) =>
+          candidate.email.toLowerCase() === row.email.toLowerCase()
+      ) === index
+  );
+
+  const available = uniqueRows.filter(
+    (row) =>
+      !hasEmail(selected, row.email) &&
+      !hasEmail(blocked, row.email) &&
+      (
+        !value.trim() ||
+        `${row.name} ${row.email}`.toLowerCase().includes(
+          value.trim().toLowerCase()
+        )
+      )
+  );
+
+  function add() {
+    const address = value.trim();
+    if (!address) return;
+
+    const match = available.find(
+      (row) =>
+        row.email.toLowerCase() === address.toLowerCase()
+    );
+
+    const result = onAdd(match?.email ?? address);
+    setError(result);
+
+    if (!result) {
+      setValue('');
+      setShowSuggestions(false);
+    }
+  }
+
+  function choose(email) {
+    const result = onAdd(email);
+    setError(result);
+
+    if (!result) {
+      setValue('');
+      setShowSuggestions(false);
+    }
+  }
+
   return (
-    <fieldset className="quotation-email__recipients" disabled={disabled}>
-      <legend>{label}</legend>
-      {rows.map((row) => {
-        const inOtherList = hasEmail(blocked, row.email);
-        return (
-          <label className="quotation-email__recipient" key={row.email}>
-            <input
-              checked={hasEmail(selected, row.email)}
-              disabled={inOtherList}
-              onChange={() => onToggle(row.email)}
-              type="checkbox"
-            />
-            <span className="quotation-email__recipient-text">
-              <strong>{row.name || row.email}</strong>
-              {row.name ? <span>{row.email}</span> : null}
-              <small>{inOtherList ? 'Ya está en Para' : row.note}</small>
-            </span>
-          </label>
-        );
-      })}
-      <div className="quotation-email__manual">
-        <input
-          aria-label={inputLabel}
-          onChange={(event) => setValue(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              add();
+    <div className="quotation-email__address-row">
+      <span className="quotation-email__address-label">{label}</span>
+
+      <div className="quotation-email__address-content">
+        <div className="quotation-email__address-input-row">
+          {selected.map((email) => {
+            const contact = uniqueRows.find(
+              (row) => row.email.toLowerCase() === email.toLowerCase()
+            );
+
+            return (
+              <span className="quotation-email__address-chip" key={email}>
+                <span
+                  className="quotation-email__address-chip-text"
+                  title={contact?.name ? `${contact.name} <${email}>` : email}
+                >
+                  {contact?.name || email}
+                </span>
+
+                <button
+                  aria-label={`Quitar ${email} de ${label}`}
+                  className="quotation-email__address-remove"
+                  disabled={disabled}
+                  onClick={() => onToggle(email)}
+                  title={`Quitar ${email}`}
+                  type="button"
+                >
+                  ×
+                </button>
+              </span>
+            );
+          })}
+
+          <input
+            aria-label={inputLabel}
+            autoComplete="off"
+            className="quotation-email__address-input"
+            disabled={disabled}
+            onBlur={() => {
+              // Permite que los clics en sugerencias se procesen.
+              window.setTimeout(() => setShowSuggestions(false), 150);
+            }}
+            onChange={(event) => {
+              setValue(event.target.value);
+              setError('');
+              setShowSuggestions(true);
+            }}
+            onFocus={() => setShowSuggestions(true)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ',') {
+                event.preventDefault();
+                add();
+              }
+
+              if (
+                event.key === 'Backspace' &&
+                !value &&
+                selected.length > 0
+              ) {
+                onToggle(selected[selected.length - 1]);
+              }
+
+              if (event.key === 'Escape') {
+                setShowSuggestions(false);
+              }
+            }}
+            placeholder={
+              selected.length ? 'Agregar otro...' : 'Escribir destinatario'
             }
-          }}
-          placeholder="otro@empresa.com"
-          type="email"
-          value={value}
-        />
-        <button className="table-button" onClick={add} type="button">
-          + Agregar
-        </button>
+            type="email"
+            value={value}
+          />
+        </div>
+
+        {showSuggestions && available.length > 0 ? (
+          <div className="quotation-email__address-suggestions">
+            {available.map((row) => (
+              <button
+                className="quotation-email__address-suggestion"
+                disabled={disabled}
+                key={row.email}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => choose(row.email)}
+                type="button"
+              >
+                <span className="quotation-email__suggestion-avatar">
+                  {(row.name || row.email).charAt(0).toUpperCase()}
+                </span>
+
+                <span className="quotation-email__suggestion-info">
+                  <strong>{row.name || row.email}</strong>
+                  {row.name ? <small>{row.email}</small> : null}
+                  {row.note ? <small>{row.note}</small> : null}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {error ? (
+          <span className="field-error">{error}</span>
+        ) : null}
       </div>
-      {error ? <span className="field-error">{error}</span> : null}
-    </fieldset>
+    </div>
   );
 }
 
@@ -199,10 +332,16 @@ function QuotationEmailModal({ quotationId, folio, onClose, onSent = () => {}, i
   return (
     <div className="modal-backdrop" role="presentation">
       <section aria-label={`Enviar cotización ${folio}`} aria-modal="true" className="client-modal quotation-email-modal" role="dialog">
-        <div className="client-modal-header">
-          <div>
-            <p>Correo</p>
-            <h2>Enviar cotización {folio}</h2>
+        <div className="client-modal-header quotation-email__header">
+          <div className="quotation-email__heading">
+            <span className="quotation-email__heading-icon">
+              <Mail size={23} aria-hidden="true" />
+            </span>
+            <div>
+              <p>COMUNICACIÓN COMERCIAL</p>
+              <h2>Enviar cotización</h2>
+              <span className="quotation-email__folio">{folio}</span>
+            </div>
           </div>
           <button aria-label="Cerrar" disabled={isSending} onClick={onClose} type="button">
             ×
@@ -212,10 +351,64 @@ function QuotationEmailModal({ quotationId, folio, onClose, onSent = () => {}, i
         {error ? <div className="form-error">{error}</div> : null}
 
         {result ? (
-          <div className={result.sent ? 'form-notice' : 'form-error'}>{sendResultMessage(result)}</div>
+          <section
+            className={`quotation-email__result ${result.sent ? 'is-success' : 'is-error'}`}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="quotation-email__result-icon">
+              {result.sent
+                ? <CheckCircle2 size={30} aria-hidden="true" />
+                : <Mail size={30} aria-hidden="true" />}
+            </span>
+            <div>
+              <h3>
+                {result.sent
+                  ? 'Correo aceptado para envío'
+                  : 'No se pudo enviar el correo'}
+              </h3>
+              <p>{sendResultMessage(result)}</p>
+              <p className="quotation-email__result-folio">
+                Cotización: <strong>{folio}</strong>
+              </p>
+              <p>
+                Destinatarios: <strong>{to.join(', ')}</strong>
+              </p>
+              {cc.length > 0 ? (
+                <p>Con copia: <strong>{cc.join(', ')}</strong></p>
+              ) : null}
+              {result.delivery_id != null ? (
+                <p className="quotation-email__result-id">
+                  Registro de envío #{result.delivery_id}
+                </p>
+              ) : null}
+              {result.sent ? (
+                <p className="quotation-email__delivery-note">
+                  La aceptación por el servidor SMTP no confirma
+                  la entrega al buzón del destinatario.
+                </p>
+              ) : null}
+            </div>
+          </section>
         ) : preview ? (
           <>
-            <div className="quotation-email__recipients-grid">
+            <div className="quotation-email__intro">
+              <ShieldCheck size={19} aria-hidden="true" />
+              <span>
+                Envío institucional de MYC. Revisa los destinatarios
+                y el documento antes de confirmar.
+              </span>
+            </div>
+
+            <div className="quotation-email__section-heading">
+              <span className="quotation-email__step">01</span>
+              <div>
+                <h3>Destinatarios</h3>
+                <p>Selecciona a quién se enviará la cotización.</p>
+              </div>
+            </div>
+
+            <div className="quotation-email__compose-recipients">
               <RecipientField
                 disabled={isSending}
                 inputLabel="Agregar destinatario"
@@ -239,6 +432,14 @@ function QuotationEmailModal({ quotationId, folio, onClose, onSent = () => {}, i
               />
             </div>
 
+            <div className="quotation-email__section-heading">
+              <span className="quotation-email__step">02</span>
+              <div>
+                <h3>Mensaje y documento</h3>
+                <p>Vista previa del contenido generado por el ERP.</p>
+              </div>
+            </div>
+
             <section className="quotation-email__message" aria-busy={isRefreshingPreview}>
               <div>
                 <span className="quotation-email__label">Asunto</span>
@@ -252,10 +453,16 @@ function QuotationEmailModal({ quotationId, folio, onClose, onSent = () => {}, i
                 <iframe className="quotation-email__frame" sandbox="" srcDoc={preview.body_html} title="Vista previa del mensaje" />
               </div>
               <div>
-                <span className="quotation-email__label">Adjunto</span>
+                <span className="quotation-email__label">
+                  <Paperclip size={14} aria-hidden="true" />
+                  Documentos adjuntos
+                </span>
                 {preview.attachments.map((file) => (
                   <div className="quotation-email__attachment" key={file.filename}>
-                    <strong>PDF oficial</strong>
+                    <strong className="quotation-email__file-title">
+                      <FileText size={17} aria-hidden="true" />
+                      PDF oficial
+                    </strong>
                     <span>
                       {file.filename}
                       {formatSize(file.size) ? ` · ${formatSize(file.size)}` : ''}
@@ -275,7 +482,8 @@ function QuotationEmailModal({ quotationId, folio, onClose, onSent = () => {}, i
           </button>
           {!result && preview ? (
             <button className="primary-button" disabled={!canSend} onClick={send} type="button">
-              {isSending ? 'Enviando…' : 'Enviar'}
+              <Send size={16} aria-hidden="true" />
+              {isSending ? 'Enviando…' : 'Enviar cotización'}
             </button>
           ) : null}
         </div>

@@ -50,8 +50,10 @@ export function buildSendPayload(to, cc) {
 // SMTP accepted != delivered/read: never claim the client received it.
 export function sendResultMessage(result) {
   return result?.sent
-    ? 'El relay aceptó el correo para envío.'
-    : 'No fue posible enviar el correo.';
+    ? 'El servidor de correo aceptó el mensaje para su envío. '
+      + 'Puedes consultar el registro en el historial de la cotización.'
+    : 'El servidor no confirmó la aceptación del mensaje. '
+      + 'Revisa el historial antes de intentar nuevamente.';
 }
 
 export const emailStatusLabels = {

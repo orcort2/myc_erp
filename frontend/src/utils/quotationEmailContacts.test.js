@@ -130,8 +130,8 @@ test('modal previews backend subject/message/PDF read-only and never claims deli
   assert.match(modal, /sandbox=""/);
   assert.match(modal, /PDF oficial/);
   assert.doesNotMatch(modal, /<textarea|contentEditable/);
-  assert.equal(sendResultMessage({ sent: true }), 'El relay aceptó el correo para envío.');
-  assert.equal(sendResultMessage({ sent: false }), 'No fue posible enviar el correo.');
+  assert.equal(sendResultMessage({ sent: true }), 'El servidor de correo aceptó el mensaje para su envío. Puedes consultar el registro en el historial de la cotización.');
+  assert.equal(sendResultMessage({ sent: false }), 'El servidor no confirmó la aceptación del mensaje. Revisa el historial antes de intentar nuevamente.');
   assert.doesNotMatch(modal + history, /recibi[óo] el correo|entregado|le[ií]do/i);
 });
 
@@ -170,7 +170,7 @@ test('manual recipients, read-only sandboxed preview and non-delivery wording su
   assert.doesNotMatch(modal, /dangerouslySetInnerHTML|<textarea/);
   assert.match(modal, /Vista previa/);
   assert.match(modal, /PDF oficial/);
-  assert.equal(sendResultMessage({ sent: true }), 'El relay aceptó el correo para envío.');
+  assert.equal(sendResultMessage({ sent: true }), 'El servidor de correo aceptó el mensaje para su envío. Puedes consultar el registro en el historial de la cotización.');
   assert.doesNotMatch(modal + history, /cliente recibi[óo]|entregado|le[ií]do/i);
 });
 

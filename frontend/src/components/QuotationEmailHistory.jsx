@@ -1,4 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import {
+  CheckCircle2,
+  Clock3,
+  Mail,
+  RotateCcw,
+  XCircle
+} from 'lucide-react';
 
 import { listQuotationEmailDeliveries } from '../services/api.js';
 import { emailStatusLabels } from '../utils/quotationEmail.js';
@@ -29,7 +36,10 @@ function QuotationEmailHistory({ quotationId, refreshKey = 0, canResend = false,
     <section className="quotation-section" aria-label="Correos de la cotización">
       <div className="quotation-section__title">
         <p>Correos</p>
-        <h3>Envíos por correo</h3>
+        <h3>
+          <Mail size={19} aria-hidden="true" />
+          Historial de correos
+        </h3>
       </div>
       {error ? <div className="form-error">{error}</div> : null}
       {isLoading ? <div className="clients-empty">Cargando correos…</div> : null}
@@ -39,8 +49,20 @@ function QuotationEmailHistory({ quotationId, refreshKey = 0, canResend = false,
           <article className="quotation-email-delivery" key={delivery.id}>
             <div className="quotation-email-delivery__body">
               <div className="quotation-email-delivery__top">
-                <strong>{emailStatusLabels[delivery.status] ?? delivery.status}</strong>
-                <span>{new Date(delivery.created_at).toLocaleString('es-MX')}</span>
+                <strong className={`quotation-email__status is-${delivery.status}`}>
+                  {delivery.status === 'sent'
+                    ? <CheckCircle2 size={15} aria-hidden="true" />
+                    : delivery.status === 'failed'
+                      ? <XCircle size={15} aria-hidden="true" />
+                      : <Clock3 size={15} aria-hidden="true" />}
+                  {emailStatusLabels[delivery.status] ?? delivery.status}
+                </strong>
+                <time dateTime={delivery.created_at}>
+                  {new Date(delivery.created_at).toLocaleString('es-MX', {
+                    dateStyle: 'medium',
+                    timeStyle: 'short'
+                  })}
+                </time>
               </div>
               <span>Para: {delivery.to.join(', ')}</span>
               {delivery.cc.length ? <span>CC: {delivery.cc.join(', ')}</span> : null}
@@ -54,6 +76,7 @@ function QuotationEmailHistory({ quotationId, refreshKey = 0, canResend = false,
             </div>
             {delivery.status === 'failed' && canResend ? (
               <button className="table-button" onClick={() => onResend(delivery)} type="button">
+                <RotateCcw size={14} aria-hidden="true" />
                 Reenviar
               </button>
             ) : null}
