@@ -131,10 +131,13 @@ export function Field({
   hint,
   required,
   maxLength,
+  onBlur,
 }: {
   label: string;
   value: string;
   onChange(value: string): void;
+  /** Opt-in: p.ej. flush inmediato del autosave de FieldSheet. */
+  onBlur?(): void;
   placeholder?: string;
   multiline?: boolean;
   keyboardType?:
@@ -158,6 +161,7 @@ export function Field({
         keyboardType={keyboardType ?? 'default'}
         maxLength={maxLength}
         multiline={multiline}
+        onBlur={onBlur}
         onChangeText={onChange}
         placeholder={placeholder}
         placeholderTextColor={colors.textSubtle}

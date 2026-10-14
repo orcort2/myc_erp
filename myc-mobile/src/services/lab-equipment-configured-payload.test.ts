@@ -14,6 +14,7 @@ import {
   hasEquipmentEditChanges,
   hydrateEquipmentFormValues,
   selectFinalClient,
+  serviceChangeNotice,
   validateServiceSelection,
 } from './lab-equipment-configured-payload';
 import { shouldResetFormAfterSubmit } from './lab-client-selector';
@@ -352,4 +353,45 @@ test('observations: editar únicamente la observación se detecta como cambio re
   const initial = hydrateEquipmentFormValues(savedEquipment({ observations: null }));
   const edited = { ...initial, equipment: { ...initial.equipment, observations: 'No tiene empaque' } };
   assert.equal(hasEquipmentEditChanges(diffEquipmentEdit(initial, edited)), true);
+});
+
+test('editar solo la marca: equipmentChanged=true y serviceChanged=false', () => {
+  const initial = hydrateEquipmentFormValues(savedEquipment({ brand: 'N/D' }));
+  const current = { ...initial, equipment: { ...initial.equipment, brand: 'Winters' } };
+  assert.deepEqual(diffEquipmentEdit(initial, current), {
+    equipmentChanged: true, certificateClientChanged: false, serviceChanged: false,
+  });
+});
+
+test('el body de edición conserva el servicio actual (tipo y empresa vinculada) sin inventar otro', () => {
+  const accredited = hydrateEquipmentFormValues(savedEquipment({ brand: 'N/D' }));
+  const body = buildEquipmentEditRequestBody(
+    { ...accredited, equipment: { ...accredited.equipment, brand: 'Winters' } }, 3,
+  );
+  assert.deepEqual(body.service, { service_type: 'accredited', linked_company_id: null });
+
+  // Vinculado nunca viaja con empresa (ver test 9): el backend, autoridad del
+  // diff, no debe tratar ese null como un cambio de servicio.
+  const linked = hydrateEquipmentFormValues(savedEquipment({ service_type: 'linked', linked_company_id: 12 }));
+  const linkedBody = buildEquipmentEditRequestBody(
+    { ...linked, equipment: { ...linked.equipment, brand: 'Winters' } }, 3,
+  );
+  assert.deepEqual(linkedBody.service, { service_type: 'linked', linked_company_id: null });
+});
+
+test('leyenda de cambio de servicio: texto simple con nuevo folio y consecutivo; solo si el servicio realmente cambia a MYCA/MYCT', () => {
+  const notice = serviceChangeNotice('edit', 'accredited', 'traceable');
+  assert.equal(notice, 'Si cambias el tipo de servicio, se asignará un nuevo folio y el consecutivo avanzará.');
+  assert.match(notice!, /nuevo folio/);
+  assert.match(notice!, /consecutivo avanzará/);
+  assert.doesNotMatch(notice!, /pool|reasign|liber|rechaz/i);
+  assert.equal(serviceChangeNotice('edit', 'accredited', 'accredited'), null, 'mismo servicio: no sugiere consumir folio');
+  assert.equal(serviceChangeNotice('create', undefined, 'accredited'), null);
+  assert.equal(serviceChangeNotice('edit', 'accredited', 'linked'), null, 'Vinculado no consume consecutivo MYCA/MYCT');
+});
+
+test('la advertencia vieja ya no existe en el formulario', () => {
+  const form = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../components/lab/LabEquipmentForm.tsx'), 'utf8');
+  assert.doesNotMatch(form, /será rechazado|ya tiene folio reservado|Reconfirmar el mismo servicio/);
+  assert.match(form, /serviceChangeNotice\(mode, initialValues\?\.service\.serviceType, service\)/);
 });

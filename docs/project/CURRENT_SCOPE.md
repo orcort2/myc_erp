@@ -10,6 +10,13 @@
 
 # Alcance actual del ERP MYC
 
+## Creación de grupos LAB internos (2026-10-06, en revisión)
+
+Incluye modalidad base y configuración inicial por OT para grupos directos de
+staff MYC, homogéneos o mixtos, con o sin vínculo ETS, en una sola transacción.
+Excluye solicitudes externas y cambios al motor de firma/finalización.
+[Contrato](../architecture/LAB_WORK_ORDERS.md#modalidades-iniciales-de-grupos-directos-internos-2026-10-06).
+
 ## ETS ↔ LAB — Fase 3: gobierno ERP y Captura PDF-only (2026-09-29, en revisión)
 
 Incluye: Master de catálogo desconectado (LEGACY), proyección READ-ONLY grupo/OT/equipo/

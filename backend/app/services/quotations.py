@@ -458,6 +458,7 @@ def _quotation_item_values(
     values = payload.model_dump(
         exclude_unset=True,
     )
+    commercial_components = values.pop('commercial_components', None)
 
     context_ids = (
         values.get("source_service_order_id"),
@@ -755,6 +756,54 @@ def _quotation_item_values(
                 "o selecciona un concepto del catalogo"
             ),
         )
+
+
+    if commercial_components is not None:
+        snapshot = values.get("operational_snapshot")
+        if snapshot is None and existing_item is not None:
+            snapshot = existing_item.operational_snapshot
+
+        if not isinstance(snapshot, dict) or snapshot.get("service_kind") != "composite":
+            raise HTTPException(
+                status_code=422,
+                detail="Las descripciones de componentes requieren un servicio compuesto",
+            )
+
+        operational_items = snapshot.get("operational_items") or []
+        allowed = {
+            str(component.get("catalog_item_id"))
+            for component in operational_items
+        }
+
+        seen = set()
+        cleaned = []
+        for component in commercial_components:
+            if not isinstance(component, dict):
+                raise HTTPException(status_code=422, detail="Componente comercial invalido")
+
+            component_id = str(component.get("catalog_item_id", ""))
+            if component_id not in allowed or component_id in seen:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Componente ajeno o duplicado en el servicio compuesto",
+                )
+            seen.add(component_id)
+
+            description = component.get("description") or ""
+            if not isinstance(description, str) or len(description) > 2000:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Descripcion de componente invalida",
+                )
+            cleaned.append({
+                "catalog_item_id": int(component_id),
+                "description": description.strip(),
+            })
+
+        values["operational_snapshot"] = {
+            **snapshot,
+            "commercial_components": cleaned,
+        }
 
     return values
 

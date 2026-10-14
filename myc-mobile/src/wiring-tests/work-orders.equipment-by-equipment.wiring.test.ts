@@ -17,13 +17,13 @@ const source = readFileSync(
   'utf8',
 );
 
-test('el selector de modalidad sólo se muestra al crear una OT nueva, nunca al editar ni en flujos de grupo', () => {
-  assert.match(source, /!workOrder && groupMode === 'none' &&[\s\S]{0,150}WORKFLOW_MODE_OPTIONS\.map/);
+test('el selector de modalidad se muestra en altas individuales y grupos internos, nunca en edición ni solicitud externa', () => {
+  assert.match(source, /!workOrder && groupMode !== 'request' &&[\s\S]{0,150}WORKFLOW_MODE_OPTIONS\.map/);
 });
 
 test('workflow_mode viaja en el payload de creación, nunca en el PATCH de edición', () => {
   const call = source.slice(source.indexOf('async function createWorkOrder'), source.indexOf('async function completeDelivery'));
-  assert.match(call, /workOrder \? \{ expected_edit_version: workOrder\.edit_version \} : \{ workflow_mode: workflowMode \}/);
+  assert.match(call, /workOrder\s*\? \{ expected_edit_version: workOrder\.edit_version \}\s*:\s*buildLabWorkflowCreationPayload\(groupMode, workflowMode, groupQuantity, manualGroupWorkflow, memberWorkflowModes\)/);
 });
 
 test('cada equipo activo reconstruye su acción exclusivamente desde describeEquipmentByEquipmentAction (backend), no desde un evento de guardado', () => {

@@ -42,7 +42,12 @@ from app.models.user import Role, User
 from app.schemas.lab_client import LabClientCreate
 from app.schemas.lab_work_order import LabEquipmentConfiguredCreate, LabWorkOrderCreate
 from app.services.lab_clients import create_lab_client
-from app.services.lab_work_orders import create_configured_equipment, create_work_order
+from app.services.lab_work_orders import (
+    _available_external_certificate_folios,
+    create_configured_equipment,
+    create_work_order,
+    update_configured_equipment,
+)
 from app.services.portal.permission_service import ensure_portal_catalog
 
 
@@ -1118,8 +1123,9 @@ def test_reserved_folio_is_never_reused(phase2_context):
     assert first_folio != second_folio
 
 
-def test_unsafe_service_change_on_reserved_folio_is_rejected(phase2_context):
-    """22. Cambio inseguro de servicio se rechaza (409), sin liberar el folio."""
+def test_explicit_service_change_on_reserved_folio_before_signature_is_allowed(phase2_context):
+    """22 (política 2026-10). Antes de firma, un folio reserved ya no congela
+    el servicio: accredited -> traceable reasigna MYCT y retira el MYCA."""
     client, factory, tokens, _tenants = phase2_context
     headers = auth(tokens["tech"])
     order_id = _create_order(client, headers)
@@ -1132,15 +1138,17 @@ def test_unsafe_service_change_on_reserved_folio_is_rejected(phase2_context):
     original_folio = created.json()["equipment"][-1]["certificate_folio"]
 
     response = client.put(
-        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/service",
+        SERVICE_URL.format(order_id=order_id, equipment_id=equipment_id),
         json={"service_type": "traceable", "linked_company_id": None},
         headers=headers,
     )
-    assert response.status_code == 409, response.text
+    assert response.status_code == 200, response.text
     with factory() as db:
         equipment = db.get(LabWorkOrderEquipment, equipment_id)
-        assert equipment.certificate_folio == original_folio
-        assert equipment.service_type == "accredited"
+        assert equipment.service_type == "traceable"
+        assert equipment.certificate_folio.startswith("MYCT-")
+        assert equipment.certificate_folio != original_folio
+        assert equipment.automatic_certificate_folio == equipment.certificate_folio
 
 
 def test_reconfirming_the_same_service_on_reserved_folio_is_a_safe_noop(phase2_context):
@@ -1714,105 +1722,449 @@ def test_combined_edit_persists_all_three_sections(phase2_context):
     assert equipment["certificate_folio"] == f"MYCA-{month_year}-4700"
 
 
-def test_edit_fails_with_409_when_reserved_folio_would_be_destroyed(phase2_context):
-    """3. Fallo del servicio por folio reservado produce 409."""
-    client, factory, tokens, _tenants = phase2_context
-    headers = auth(tokens["tech"])
+FOLIO_FIELDS = ("service_type", "certificate_folio", "automatic_certificate_folio", "folio_status", "folio_ticket_id", "linked_company_id")
+
+
+def _folio_state(factory, equipment_id: int) -> dict:
+    with factory() as db:
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        return {field: getattr(equipment, field) for field in FOLIO_FIELDS}
+
+
+def _create_equipment(client, headers, service_type="accredited", **kwargs):
     order_id = _create_order(client, headers)
     created = client.post(
         CONFIGURED_URL.format(order_id=order_id),
-        json=configured_payload(1, "accredited"),
+        json=configured_payload(1, service_type, **kwargs),
         headers=headers,
     )
-    equipment_id = created.json()["equipment"][-1]["id"]
+    assert created.status_code == 201, created.text
+    return order_id, created.json()["equipment"][-1]["id"]
 
-    response = client.patch(
+
+def _edit(client, headers, order_id, equipment_id, equipment_changes=None, service_type="accredited", **kwargs):
+    body = configured_payload(1, service_type, **kwargs)
+    body["equipment"].update(equipment_changes or {})
+    return client.patch(
         CONFIGURED_EDIT_URL.format(order_id=order_id, equipment_id=equipment_id),
-        json=configured_payload(
-            2, "traceable",  # intenta cambiar instrumento Y servicio a la vez
-            certificate_client={
-                "certificate_client_mode": "different",
-                "final_client_company_snapshot": "Cliente Que No Debe Persistir",
-            },
-        ),
+        json=body,
         headers=headers,
+    )
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"brand": "Winters"},
+        {"model": "WM-100"},
+        {"serial_number": "SER-CORREGIDO"},
+        {"identification": "ID-CORREGIDO"},
+        {"instrument": "Manómetro corregido"},
+        {"is_good_condition": False},
+        {"observations": "Golpe en carcasa"},
+        {
+            "brand": "Winters", "model": "WM-100", "serial_number": "S-9",
+            "identification": "ID-9", "instrument": "Otro", "observations": "obs",
+        },
+    ],
+)
+def test_basic_data_edit_with_unchanged_service_keeps_folio_byte_for_byte(phase2_context, changes):
+    """1-6. Con service_type intacto, editar datos básicos NO toca servicio ni
+    folio aunque el folio esté reserved: 200 y el estado de folio idéntico."""
+    client, factory, tokens, _tenants = phase2_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = _create_equipment(client, headers, "accredited")
+    before = _folio_state(factory, equipment_id)
+    assert before["folio_status"] == "reserved" and before["certificate_folio"]
+
+    response = _edit(client, headers, order_id, equipment_id, changes)
+    assert response.status_code == 200, response.text
+    assert _folio_state(factory, equipment_id) == before
+    with factory() as db:
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        for key, value in changes.items():
+            assert getattr(equipment, key) == value
+
+
+def test_noop_service_does_not_consume_sequence_nor_create_ticket(phase2_context):
+    """14. No-op de servicio: ni secuencia, ni tickets, ni snapshots linked."""
+    client, factory, tokens, _tenants = phase2_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = _create_equipment(client, headers, "accredited")
+    with factory() as db:
+        counter_before = db.scalar(
+            select(InstitutionalFolioSequence.next_value).where(InstitutionalFolioSequence.prefix == "MYCA")
+        )
+        tickets_before = len(list(db.scalars(select(OperationalTicket))))
+    response = _edit(client, headers, order_id, equipment_id, {"brand": "Winters"})
+    assert response.status_code == 200, response.text
+    with factory() as db:
+        assert db.scalar(
+            select(InstitutionalFolioSequence.next_value).where(InstitutionalFolioSequence.prefix == "MYCA")
+        ) == counter_before
+        assert len(list(db.scalars(select(OperationalTicket)))) == tickets_before
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        assert equipment.linked_company_name_snapshot is None
+
+
+def test_linked_noop_edit_keeps_linked_snapshots_and_ticket(phase2_context):
+    client, factory, tokens, _tenants = phase2_context
+    headers = auth(tokens["tech"])
+    with factory() as db:
+        linked = LinkedCompany(name="Vinculada X", abbreviation="VX", default_certificate_prefix="VX")
+        db.add(linked)
+        db.commit()
+        linked_id = linked.id
+    order_id, equipment_id = _create_equipment(client, headers, "linked", linked_company_id=linked_id)
+    with factory() as db:
+        before = {
+            "name": db.get(LabWorkOrderEquipment, equipment_id).linked_company_name_snapshot,
+            "prefix": db.get(LabWorkOrderEquipment, equipment_id).linked_company_prefix_snapshot,
+        }
+    state_before = _folio_state(factory, equipment_id)
+    response = _edit(client, headers, order_id, equipment_id, {"model": "M-1"}, "linked", linked_company_id=linked_id)
+    assert response.status_code == 200, response.text
+    assert _folio_state(factory, equipment_id) == state_before
+    with factory() as db:
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        assert equipment.linked_company_name_snapshot == before["name"]
+        assert equipment.linked_company_prefix_snapshot == before["prefix"]
+
+
+def test_linked_edit_without_company_in_payload_is_not_a_service_change(phase2_context):
+    """Mobile nunca reenvía la empresa vinculada: editar la marca de un
+    Vinculado con empresa no debe reasignar servicio ni perder snapshots."""
+    client, factory, tokens, _tenants = phase2_context
+    headers = auth(tokens["tech"])
+    with factory() as db:
+        linked = LinkedCompany(name="Vinculada Y", abbreviation="VY", default_certificate_prefix="VY")
+        db.add(linked)
+        db.commit()
+        linked_id = linked.id
+    order_id, equipment_id = _create_equipment(client, headers, "linked", linked_company_id=linked_id)
+    before = _folio_state(factory, equipment_id)
+    response = _edit(client, headers, order_id, equipment_id, {"brand": "Winters"}, "linked", linked_company_id=None)
+    assert response.status_code == 200, response.text
+    assert _folio_state(factory, equipment_id) == before
+    with factory() as db:
+        assert db.get(LabWorkOrderEquipment, equipment_id).linked_company_name_snapshot == "Vinculada Y"
+
+
+def test_edit_with_existing_field_sheet_and_same_service_does_not_hit_service_guard(phase2_context):
+    """7. Una FieldSheet existente ya no bloquea editar la identidad si el
+    servicio no cambia; la hoja vigente refleja la identidad corregida."""
+    client, factory, tokens, _tenants = phase2_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = _create_equipment(client, headers, "accredited")
+    with factory() as db:
+        db.get(LabWorkOrder, order_id).workflow_mode = "equipment_by_equipment"
+        db.commit()
+    sheet = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert sheet.status_code == 201, sheet.text
+    before = _folio_state(factory, equipment_id)
+
+    response = _edit(client, headers, order_id, equipment_id, {"brand": "Winters"})
+    assert response.status_code == 200, response.text
+    assert _folio_state(factory, equipment_id) == before
+    with factory() as db:
+        field_sheet = db.get(FieldSheet, sheet.json()["id"])
+        assert field_sheet.capture_values["brand"] == "Winters"
+
+
+@pytest.mark.parametrize(
+    "start,target,prefix",
+    [("accredited", "traceable", "MYCT-"), ("traceable", "accredited", "MYCA-")],
+)
+def test_explicit_service_change_before_signature_reassigns_folio(phase2_context, start, target, prefix):
+    """8 & 9. El folio anterior pierde autoridad y se asigna el del nuevo
+    servicio, atómico y con edit_version coherente."""
+    client, factory, tokens, _tenants = phase2_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = _create_equipment(client, headers, start)
+    before = _folio_state(factory, equipment_id)
+    with factory() as db:
+        version_before = db.get(LabWorkOrder, order_id).edit_version
+
+    response = _edit(client, headers, order_id, equipment_id, None, target)
+    assert response.status_code == 200, response.text
+    after = _folio_state(factory, equipment_id)
+    assert after["service_type"] == target
+    assert after["certificate_folio"].startswith(prefix)
+    assert after["automatic_certificate_folio"] == after["certificate_folio"]
+    assert after["certificate_folio"] != before["certificate_folio"]
+    assert after["folio_status"] == "reserved"
+    with factory() as db:
+        assert db.get(LabWorkOrder, order_id).edit_version == version_before + 1
+
+
+def test_linked_to_accredited_cancels_ticket_and_reserves_myca(phase2_context):
+    """10."""
+    client, factory, tokens, _tenants = phase2_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = _create_equipment(client, headers, "linked")
+    ticket_id = _folio_state(factory, equipment_id)["folio_ticket_id"]
+    assert ticket_id is not None
+    response = _edit(client, headers, order_id, equipment_id, None, "accredited")
+    assert response.status_code == 200, response.text
+    after = _folio_state(factory, equipment_id)
+    assert after["certificate_folio"].startswith("MYCA-") and after["folio_ticket_id"] is None
+    with factory() as db:
+        assert db.get(OperationalTicket, ticket_id).status == "cancelled"
+
+
+def test_accredited_to_linked_releases_old_folio_and_opens_linked_flow(phase2_context):
+    """11."""
+    client, factory, tokens, _tenants = phase2_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = _create_equipment(client, headers, "accredited")
+    response = _edit(client, headers, order_id, equipment_id, None, "linked")
+    assert response.status_code == 200, response.text
+    after = _folio_state(factory, equipment_id)
+    assert after["service_type"] == "linked"
+    assert after["certificate_folio"] is None and after["automatic_certificate_folio"] is None
+    assert after["folio_status"] == "pending"
+    assert after["folio_ticket_id"] is not None
+    with factory() as db:
+        ticket = db.get(OperationalTicket, after["folio_ticket_id"])
+        assert ticket.type == "linked_folio" and ticket.status == "pending"
+
+
+def test_failed_new_folio_reservation_rolls_back_everything(phase2_context):
+    """12. Si no se puede reservar el nuevo folio, ni datos básicos, ni
+    cliente documental, ni folio anterior, ni edit_version cambian."""
+    client, factory, tokens, _tenants = phase2_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = _create_equipment(client, headers, "accredited")
+    before = _folio_state(factory, equipment_id)
+    with factory() as db:
+        version_before = db.get(LabWorkOrder, order_id).edit_version
+        db.add(InstitutionalFolioSequence(document_type="lab_certificate", prefix="MYCT", year=0, next_value=8000))
+        db.commit()
+    response = _edit(
+        client, headers, order_id, equipment_id, {"brand": "NoDebePersistir"}, "traceable",
+        certificate_client={
+            "certificate_client_mode": "different",
+            "final_client_company_snapshot": "Cliente Que No Debe Persistir",
+        },
     )
     assert response.status_code == 409, response.text
-
-
-def test_edit_409_does_not_change_basic_data(phase2_context):
-    """4. Después del 409 los datos básicos NO cambiaron."""
-    client, factory, tokens, _tenants = phase2_context
-    headers = auth(tokens["tech"])
-    order_id = _create_order(client, headers)
-    created = client.post(
-        CONFIGURED_URL.format(order_id=order_id),
-        json=configured_payload(1, "accredited"),
-        headers=headers,
-    )
-    equipment_id = created.json()["equipment"][-1]["id"]
-
-    client.patch(
-        CONFIGURED_EDIT_URL.format(order_id=order_id, equipment_id=equipment_id),
-        json=configured_payload(2, "traceable"),
-        headers=headers,
-    )
+    assert _folio_state(factory, equipment_id) == before
     with factory() as db:
         equipment = db.get(LabWorkOrderEquipment, equipment_id)
-        assert equipment.instrument == "Instrumento 1"  # NO "Instrumento 2"
-        assert equipment.service_type == "accredited"
-
-
-def test_edit_409_does_not_change_documentary_client(phase2_context):
-    """5. Después del 409 el cliente documental NO cambió."""
-    client, factory, tokens, _tenants = phase2_context
-    headers = auth(tokens["tech"])
-    order_id = _create_order(client, headers)
-    created = client.post(
-        CONFIGURED_URL.format(order_id=order_id),
-        json=configured_payload(1, "accredited"),
-        headers=headers,
-    )
-    equipment_id = created.json()["equipment"][-1]["id"]
-
-    client.patch(
-        CONFIGURED_EDIT_URL.format(order_id=order_id, equipment_id=equipment_id),
-        json=configured_payload(
-            1, "traceable",
-            certificate_client={
-                "certificate_client_mode": "different",
-                "final_client_company_snapshot": "Cliente Que No Debe Persistir",
-            },
-        ),
-        headers=headers,
-    )
-    with factory() as db:
-        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        assert equipment.brand == "MYC Test"
         assert equipment.certificate_client_mode == "order"
         assert equipment.final_client_company_snapshot is None
+        assert db.get(LabWorkOrder, order_id).edit_version == version_before
 
 
-def test_edit_409_does_not_partially_bump_edit_version(phase2_context):
-    """6. edit_version no queda incrementado parcialmente tras el 409."""
+def test_signed_reception_blocks_ordinary_edit_and_service_change(phase2_context):
+    """13."""
     client, factory, tokens, _tenants = phase2_context
     headers = auth(tokens["tech"])
-    order_id = _create_order(client, headers)
-    created = client.post(
-        CONFIGURED_URL.format(order_id=order_id),
-        json=configured_payload(1, "accredited"),
+    order_id, equipment_id = _create_equipment(client, headers, "accredited")
+    signed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures/individual",
+        json=_signatures_payload(),
         headers=headers,
     )
-    equipment_id = created.json()["equipment"][-1]["id"]
-    with factory() as db:
-        edit_version_before = db.get(LabWorkOrder, order_id).edit_version
+    assert signed.status_code == 200, signed.text
+    before = _folio_state(factory, equipment_id)
+    assert _edit(client, headers, order_id, equipment_id, {"brand": "Winters"}).status_code == 409
+    assert _edit(client, headers, order_id, equipment_id, None, "traceable").status_code == 409
+    assert _folio_state(factory, equipment_id) == before
 
-    client.patch(
-        CONFIGURED_EDIT_URL.format(order_id=order_id, equipment_id=equipment_id),
-        json=configured_payload(2, "traceable"),
-        headers=headers,
-    )
+
+def _add_external_pool(factory, tenant_id, myca, myct):
     with factory() as db:
-        assert db.get(LabWorkOrder, order_id).edit_version == edit_version_before
+        admin = db.scalar(select(User).where(User.username == "lab-admin"))
+        ticket = OperationalTicket(
+            type="certificate_folio_block", status="resolved", work_order_id=None,
+            operator_client_id=tenant_id, requested_by_user_id=admin.id, reason="Prueba",
+            description="Pool", accredited_quantity=len(myca), traceable_quantity=len(myct),
+            resolution_snapshot={"folios": {"MYCA": myca, "MYCT": myct}, "used": {}},
+        )
+        db.add(ticket)
+        db.commit()
+        return ticket.id
+
+
+def test_external_pool_folio_is_released_and_reconciled_on_service_change(phase2_context):
+    """15. Cambio de servicio antes de firma con folio del pool externo: el
+    folio viejo sale de 'used' (queda registrado en 'released'), el nuevo
+    queda en 'used', sin doble uso ni fuga."""
+    _client, factory, _tokens, tenants = phase2_context
+    ticket_id = _add_external_pool(factory, tenants["client_a"].id, ["MYCA-01-26-0001"], ["MYCT-01-26-0001"])
+    with factory() as db:
+        admin = db.scalar(select(User).where(User.username == "lab-admin"))
+        order = create_work_order(
+            db, LabWorkOrderCreate(**create_payload()), admin, operator_client_id=tenants["client_a"].id
+        )
+        result = create_configured_equipment(
+            db, order.id, LabEquipmentConfiguredCreate(**configured_payload(1, "accredited")),
+            admin, operator_client_id=tenants["client_a"].id, external=True,
+        )
+        equipment_id = result.equipment[-1].id
+        assert db.get(OperationalTicket, ticket_id).resolution_snapshot["used"].keys() == {"MYCA-01-26-0001"}
+
+        update_configured_equipment(
+            db, order.id, equipment_id,
+            LabEquipmentConfiguredCreate(**configured_payload(1, "traceable")),
+            admin, operator_client_id=tenants["client_a"].id, external=True,
+        )
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        snapshot = db.get(OperationalTicket, ticket_id).resolution_snapshot
+        assert equipment.certificate_folio == "MYCT-01-26-0001"
+        assert set(snapshot["used"]) == {"MYCT-01-26-0001"}
+        assert snapshot["used"]["MYCT-01-26-0001"]["equipment_id"] == equipment_id
+        assert [item["folio"] for item in snapshot["released"]] == ["MYCA-01-26-0001"]
+
+
+def _external_equipment(db, admin, order_id, tenant_id, service_type, index=1):
+    result = create_configured_equipment(
+        db, order_id, LabEquipmentConfiguredCreate(**configured_payload(index, service_type)),
+        admin, operator_client_id=tenant_id, external=True,
+    )
+    return result.equipment[-1].id
+
+
+def test_released_external_folio_round_trips_to_the_pool_and_is_reserved_exactly_once(phase2_context):
+    """Reserva externa -> cambio de servicio antes de firma -> release ->
+    el folio vuelve a estar disponible -> se reserva legítimamente una sola vez."""
+    _client, factory, _tokens, tenants = phase2_context
+    tenant = tenants["client_a"].id
+    ticket_id = _add_external_pool(factory, tenant, ["MYCA-01-26-0001"], ["MYCT-01-26-0001"])
+    with factory() as db:
+        admin = db.scalar(select(User).where(User.username == "lab-admin"))
+        order = create_work_order(db, LabWorkOrderCreate(**create_payload()), admin, operator_client_id=tenant)
+        first = _external_equipment(db, admin, order.id, tenant, "accredited", 1)
+        assert _available_external_certificate_folios(db, tenant, "MYCA") == []
+
+        update_configured_equipment(
+            db, order.id, first, LabEquipmentConfiguredCreate(**configured_payload(1, "traceable")),
+            admin, operator_client_id=tenant, external=True,
+        )
+        # MYCA vuelve al pool; MYCT quedó consumido por el equipo.
+        assert [f for f, _ in _available_external_certificate_folios(db, tenant, "MYCA")] == ["MYCA-01-26-0001"]
+        assert _available_external_certificate_folios(db, tenant, "MYCT") == []
+
+        second = _external_equipment(db, admin, order.id, tenant, "accredited", 2)
+        assert db.get(LabWorkOrderEquipment, second).certificate_folio == "MYCA-01-26-0001"
+        assert _available_external_certificate_folios(db, tenant, "MYCA") == []
+        # una sola vez: un tercer equipo ya no encuentra MYCA
+        with pytest.raises(Exception) as excinfo:
+            _external_equipment(db, admin, order.id, tenant, "accredited", 3)
+        assert getattr(excinfo.value, "status_code", None) == 409
+        db.rollback()
+        used = db.get(OperationalTicket, ticket_id).resolution_snapshot["used"]
+        assert used["MYCA-01-26-0001"]["equipment_id"] == second
+        assert used["MYCT-01-26-0001"]["equipment_id"] == first
+
+
+def test_release_never_touches_an_identical_folio_of_another_operator_client(phase2_context):
+    """Aislamiento: el mismo string de folio (incluso con el mismo equipment_id
+    en 'used') en el pool de OTRO operator_client_id no se toca."""
+    _client, factory, _tokens, tenants = phase2_context
+    tenant_a, tenant_b = tenants["client_a"].id, tenants["client_b"].id
+    _add_external_pool(factory, tenant_a, ["MYCA-01-26-0001"], ["MYCT-01-26-0001"])
+    with factory() as db:
+        admin = db.scalar(select(User).where(User.username == "lab-admin"))
+        order = create_work_order(db, LabWorkOrderCreate(**create_payload()), admin, operator_client_id=tenant_a)
+        equipment_id = _external_equipment(db, admin, order.id, tenant_a, "accredited")
+    foreign_snapshot = {
+        "folios": {"MYCA": ["MYCA-01-26-0001"], "MYCT": []},
+        "used": {"MYCA-01-26-0001": {"equipment_id": equipment_id, "assigned_at": "x"}},
+    }
+    with factory() as db:
+        admin = db.scalar(select(User).where(User.username == "lab-admin"))
+        foreign = OperationalTicket(
+            type="certificate_folio_block", status="resolved", work_order_id=None,
+            operator_client_id=tenant_b, requested_by_user_id=admin.id, reason="Otro", description="Pool ajeno",
+            accredited_quantity=1, traceable_quantity=0, resolution_snapshot=foreign_snapshot,
+        )
+        db.add(foreign)
+        db.commit()
+        foreign_id = foreign.id
+        order_id = db.get(LabWorkOrderEquipment, equipment_id).work_order_id
+        update_configured_equipment(
+            db, order_id, equipment_id, LabEquipmentConfiguredCreate(**configured_payload(1, "traceable")),
+            admin, operator_client_id=tenant_a, external=True,
+        )
+        assert db.get(OperationalTicket, foreign_id).resolution_snapshot == foreign_snapshot
+        assert _available_external_certificate_folios(db, tenant_b, "MYCA") == []
+
+
+def test_authorized_folio_is_never_released_on_service_change(phase2_context):
+    """Un folio authorized no se libera: 409, pool y equipo intactos."""
+    _client, factory, _tokens, tenants = phase2_context
+    tenant = tenants["client_a"].id
+    ticket_id = _add_external_pool(factory, tenant, ["MYCA-01-26-0001"], ["MYCT-01-26-0001"])
+    with factory() as db:
+        admin = db.scalar(select(User).where(User.username == "lab-admin"))
+        order = create_work_order(db, LabWorkOrderCreate(**create_payload()), admin, operator_client_id=tenant)
+        equipment_id = _external_equipment(db, admin, order.id, tenant, "accredited")
+        db.get(LabWorkOrderEquipment, equipment_id).folio_status = "authorized"
+        db.commit()
+        pool_before = db.get(OperationalTicket, ticket_id).resolution_snapshot
+        with pytest.raises(Exception) as excinfo:
+            update_configured_equipment(
+                db, order.id, equipment_id, LabEquipmentConfiguredCreate(**configured_payload(1, "traceable")),
+                admin, operator_client_id=tenant, external=True,
+            )
+        assert getattr(excinfo.value, "status_code", None) == 409
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        assert (equipment.service_type, equipment.certificate_folio) == ("accredited", "MYCA-01-26-0001")
+        assert db.get(OperationalTicket, ticket_id).resolution_snapshot == pool_before
+
+
+def test_internal_sequence_folio_is_burned_never_recycled(phase2_context):
+    """accredited -> traceable -> accredited con secuenciador interno: el MYCA
+    original no reaparece y los contadores sólo avanzan."""
+    client, factory, tokens, _tenants = phase2_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = _create_equipment(client, headers, "accredited")
+    first = _folio_state(factory, equipment_id)["certificate_folio"]
+    with factory() as db:
+        myca_after_first = db.scalar(select(InstitutionalFolioSequence.next_value).where(InstitutionalFolioSequence.prefix == "MYCA"))
+    assert _edit(client, headers, order_id, equipment_id, None, "traceable").status_code == 200
+    assert _edit(client, headers, order_id, equipment_id, None, "accredited").status_code == 200
+    again = _folio_state(factory, equipment_id)["certificate_folio"]
+    assert again.startswith("MYCA-") and again != first
+    with factory() as db:
+        assert db.scalar(select(InstitutionalFolioSequence.next_value).where(InstitutionalFolioSequence.prefix == "MYCA")) == myca_after_first + 1
+
+
+def test_external_pool_service_change_without_available_folio_rolls_back_pool(phase2_context):
+    """15b. Si el pool del nuevo prefijo está vacío, 409 y el pool original
+    permanece intacto (el folio viejo sigue 'used' por este equipo)."""
+    _client, factory, _tokens, tenants = phase2_context
+    ticket_id = _add_external_pool(factory, tenants["client_a"].id, ["MYCA-01-26-0001"], [])
+    with factory() as db:
+        admin = db.scalar(select(User).where(User.username == "lab-admin"))
+        order = create_work_order(
+            db, LabWorkOrderCreate(**create_payload()), admin, operator_client_id=tenants["client_a"].id
+        )
+        result = create_configured_equipment(
+            db, order.id, LabEquipmentConfiguredCreate(**configured_payload(1, "accredited")),
+            admin, operator_client_id=tenants["client_a"].id, external=True,
+        )
+        equipment_id = result.equipment[-1].id
+        with pytest.raises(Exception) as excinfo:
+            update_configured_equipment(
+                db, order.id, equipment_id,
+                LabEquipmentConfiguredCreate(**configured_payload(1, "traceable")),
+                admin, operator_client_id=tenants["client_a"].id, external=True,
+            )
+        assert getattr(excinfo.value, "status_code", None) == 409
+        snapshot = db.get(OperationalTicket, ticket_id).resolution_snapshot
+        assert set(snapshot["used"]) == {"MYCA-01-26-0001"}
+        assert not snapshot.get("released")
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        assert equipment.service_type == "accredited"
+        assert equipment.certificate_folio == "MYCA-01-26-0001"
 
 
 def test_edit_cross_tenant_final_client_rolls_back_completely(phase2_context):

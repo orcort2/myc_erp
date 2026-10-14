@@ -274,6 +274,12 @@ class QuotationItem(
     )
 
 
+    @property
+    def commercial_components(self) -> list[dict] | None:
+        snapshot = self.operational_snapshot or {}
+        return snapshot.get("commercial_components")
+
+
 class QuotationItemDecision(
     IntegerPkMixin,
     TimestampMixin,

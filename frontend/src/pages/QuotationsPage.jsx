@@ -158,7 +158,8 @@ function mapCatalogItemFromApi(item) {
     saleModel: item.sale_model ?? '',
     saleSpecification: item.sale_specification ?? '',
     includedCalibrationCatalogItemId: item.included_calibration_catalog_item_id ? String(item.included_calibration_catalog_item_id) : '',
-    maintenanceType: ['preventive', 'corrective'].includes(item.calibration_scope) ? item.calibration_scope : 'preventive',
+    maintenanceType: item.maintenance_type ?? (['preventive', 'corrective'].includes(item.calibration_scope) ? item.calibration_scope : 'preventive'),
+    maintenanceLocation: item.maintenance_location ?? 'laboratory',
     maintenanceBaseMaterialsText: JSON.stringify(item.maintenance_base_materials ?? [], null, 2),
     quotationLegend: item.quotation_legend ?? '',
     category: item.category ?? '',
@@ -231,7 +232,7 @@ function mapCatalogPayloadFromForm(form) {
     sale_specification: operationalCategory === 'sale' ? form.saleSpecification.trim() || null : null,
     included_calibration_catalog_item_id: operationalCategory === 'sale' ? Number(form.includedCalibrationCatalogItemId) || null : null,
     maintenance_type: operationalCategory === 'maintenance' ? form.maintenanceType : null,
-    maintenance_location: null,
+    maintenance_location: operationalCategory === 'maintenance' ? (form.maintenanceLocation || 'laboratory') : null,
     maintenance_base_materials: operationalCategory === 'maintenance' && form.maintenanceType === 'corrective'
       ? JSON.parse(form.maintenanceBaseMaterialsText || '[]')
       : [],
@@ -378,8 +379,32 @@ function calculateQuotationDraftSummary(quotation, draftItems = []) {
   return { subtotal, tax, total: subtotal + tax };
 }
 
+function quotationCommercialComponents(item) {
+  const snapshot = item?.operational_snapshot || {};
+  if (snapshot.service_kind !== 'composite') return [];
+
+  const descriptions = new Map(
+    (snapshot.commercial_components || item.commercial_components || [])
+      .map((component) => [
+        Number(component.catalog_item_id),
+        component.description || ''
+      ])
+  );
+
+  return (snapshot.operational_items || []).map((component) => {
+    const id = Number(component.catalog_item_id);
+    const detail = component.service_snapshot || {};
+    return {
+      catalog_item_id: id,
+      name: detail.service_name_snapshot || component.service_name || 'Componente',
+      description: descriptions.get(id) || ''
+    };
+  });
+}
+
 function quotationItemToForm(item) {
   return {
+    commercialComponents: quotationCommercialComponents(item),
     catalogItemId: item.catalog_item_id || '',
     description: item.service_name || '',
     quantity: String(item.quantity ?? 1),
@@ -404,6 +429,12 @@ function buildQuotationItemPayload(itemForm) {
     catalog_item_id: itemForm.catalogItemId ? Number(itemForm.catalogItemId) : null,
     service_name: itemForm.description.trim(),
     description: itemForm.observations?.trim() || null,
+    ...(Array.isArray(itemForm.commercialComponents) ? {
+      commercial_components: itemForm.commercialComponents.map((component) => ({
+        catalog_item_id: component.catalog_item_id,
+        description: component.description || ''
+      }))
+    } : {}),
     quantity: Number(itemForm.quantity || 1),
     unit: itemForm.unit?.trim() || null,
     sat_key: itemForm.satKey || null,
@@ -1583,6 +1614,21 @@ function QuotationsPage({ user = null }) {
     }));
   }
 
+  function updateCommercialComponent(itemId, componentId, description) {
+    setEditingItemForms((current) => ({
+      ...current,
+      [itemId]: {
+        ...current[itemId],
+        commercialComponents: (current[itemId]?.commercialComponents || [])
+          .map((component) => (
+            component.catalog_item_id === componentId
+              ? { ...component, description }
+              : component
+          ))
+      }
+    }));
+  }
+
   function cancelEditQuotationItem(itemId) {
     setEditingItemForms((current) => {
       const next = { ...current };
@@ -2667,6 +2713,31 @@ function QuotationsPage({ user = null }) {
                                     rows={3}
                                     value={form.observations || ''}
                                   />
+                                  {form.commercialComponents?.length ? (
+                                    <div style={{ marginTop: 10 }}>
+                                      <strong>Servicio compuesto · Servicios incluidos</strong>
+                                      {form.commercialComponents.map((component) => (
+                                        <label
+                                          key={component.catalog_item_id}
+                                          style={{ display: 'block', marginTop: 8 }}
+                                        >
+                                          <small>{component.name}</small>
+                                          <textarea
+                                            className="quote-line-description"
+                                            maxLength={2000}
+                                            onChange={(event) => updateCommercialComponent(
+                                              item.id,
+                                              component.catalog_item_id,
+                                              event.target.value
+                                            )}
+                                            placeholder="Especificaciones de este servicio"
+                                            rows={2}
+                                            value={component.description}
+                                          />
+                                        </label>
+                                      ))}
+                                    </div>
+                                  ) : null}
                                   <select
                                     onChange={(event) => {
                                       const taxObject = event.target.value;
@@ -2688,6 +2759,20 @@ function QuotationsPage({ user = null }) {
                                   {item._exceptionalChanged ? <mark className="status-pill">Modificada</mark> : null}
                                   {item.description ? <small>{item.description}</small> : null}
                                   {item.quotation_legend ? <small>{item.quotation_legend}</small> : null}
+                                  {quotationCommercialComponents(item).length ? (
+                                    <div style={{ marginTop: 8 }}>
+                                      <small><strong>Servicio compuesto · Incluye:</strong></small>
+                                      {quotationCommercialComponents(item).map((component) => (
+                                        <small
+                                          key={component.catalog_item_id}
+                                          style={{ display: 'block', whiteSpace: 'pre-line' }}
+                                        >
+                                          {component.name}
+                                          {component.description ? ` — ${component.description}` : ''}
+                                        </small>
+                                      ))}
+                                    </div>
+                                  ) : null}
                                   {item.calibration_scope ? <small>Tipo: {item.calibration_scope === 'accredited_iso_17025' ? 'Acreditado' : item.calibration_scope === 'accredited_linked_lab' ? 'Vinculado' : 'Trazable'}</small> : null}
                                   <small>Impuesto: {Number(item.tax_rate ?? 0)}%</small>
                                 </>
@@ -3746,18 +3831,32 @@ function QuotationsPage({ user = null }) {
                           </select>
                         </label>
 
+                        <label>
+                          Ubicación predeterminada
+
+                          <select
+                            value={productForm.maintenanceLocation || 'laboratory'}
+                            onChange={(event) =>
+                              updateProductForm(
+                                'maintenanceLocation',
+                                event.target.value,
+                              )
+                            }
+                            required
+                          >
+                            <option value="laboratory">
+                              Laboratorio MYC
+                            </option>
+                            <option value="field">
+                              Campo / instalaciones del cliente
+                            </option>
+                          </select>
+                        </label>
+
                         <div className="catalog-form-info">
-                          <span>
-                            Modalidad operativa
-                          </span>
-
-                          <strong>
-                            Se define por equipo en el ETS
-                          </strong>
-
                           <p>
-                            Cada unidad podrá ejecutarse en laboratorio
-                            o en campo de forma independiente.
+                            La ubicación podrá modificarse por equipo
+                            durante la ejecución del ETS.
                           </p>
                         </div>
 

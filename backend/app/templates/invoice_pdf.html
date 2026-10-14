@@ -497,7 +497,7 @@
 
       <div class="invoice-meta__row">
         <span>Fecha y hora de emisión</span>
-        <strong>{{ invoice.issued_on|date }}</strong>
+        <strong>{{ fiscal.issued_at|date(true) if is_stamped else invoice.issued_on|date }}</strong>
       </div>
 
       <div class="invoice-meta__row">

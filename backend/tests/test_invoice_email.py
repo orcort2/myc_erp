@@ -291,7 +291,7 @@ def test_issued_preview_uses_institutional_pdf_and_fiscal_xml(world, tmp_path):
     xml_path.write_bytes(
         b'<?xml version="1.0" encoding="UTF-8"?>'
         b'<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" '
-        b'Serie="MYCF" Folio="100"/>'
+        b'Serie="MYCF" Folio="100" Fecha="2026-10-01T12:00:00"/>'
     )
 
     invoice = w.db.get(Invoice, w.invoice.id)
@@ -422,7 +422,7 @@ def test_issued_send_attaches_institutional_pdf_and_fiscal_xml(world, tmp_path):
     xml_path.write_bytes(
         b'<?xml version="1.0" encoding="UTF-8"?>'
         b'<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" '
-        b'Serie="MYCF" Folio="100"/>'
+        b'Serie="MYCF" Folio="100" Fecha="2026-10-01T12:00:00"/>'
     )
 
     invoice = w.db.get(Invoice, w.invoice.id)

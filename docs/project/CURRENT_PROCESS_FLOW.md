@@ -573,6 +573,29 @@ arriba; o `equipment_by_equipment`). La elección es backend-autoritativa y
 persistente -- sobrevive refresh/kill/logout/reload y nunca se reinterpreta
 para OT históricas.
 
+Al regresar a foreground (mismo proceso), Mobile refresca la OT abierta y
+conserva la Captura Técnica -- y con ella la FieldSheet activa, su modo de
+vista/edición y los valores locales no confirmados -- mientras la OT, el equipo
+y la hoja sigan siendo válidos. `resolveStepAfterStatusUpdate` recibe si la
+respuesta pertenece a la misma OT abierta y sólo conserva `technical` cuando el
+status sigue admitiendo captura (`received_signed`, `in_progress`,
+`ready_to_close` revisado desde "Revisar captura técnica", y `draft` con
+`equipment_by_equipment` o reapertura con firma preservada). Los estados
+terminales, `draft` sin esas condiciones y la protección de firmas del mismo
+cohorte conservan su autoridad. Abrir otra OT (o la misma tras cerrar el modal)
+parte del destino que dicta su status.
+
+El contexto de captura pertenece a UNA OT (`LabTechnicalCapture` se monta con
+`key={workOrder.id}`). Un detalle refrescado que retira el equipo, reemplaza su
+hoja vigente o ya no la tiene (`field_sheet_id` null posterior a la confirmación de una
+creación local) se reconcilia explícitamente con aviso, sin evaluar mientras hay una
+operación propia en curso y revalidando al terminar; "Volver a equipos",
+completar o descartar la hoja limpian el contexto. Las lecturas de refresh se
+aplican sólo si siguen siendo la más reciente y la OT sigue abierta: una
+respuesta vieja nunca reemplaza datos o contexto más nuevos. Todo ocurre en
+memoria: no hay persistencia durable y la recuperación tras process kill/cold
+start queda fuera de alcance.
+
 ```text
 Login interno técnico
 → OT's → Generar orden → elegir "Equipo por equipo"
@@ -597,16 +620,23 @@ desde backend.
 
 ### Grupos mixtos y firma grupal mixta (2026-09-04)
 
-Al crear un grupo de N OT, la modalidad elegida se aplica a las N filas
-materializadas en esa sola operación. "Asignar OT extra" permite elegir una
-modalidad propia para la nueva OT, independiente de sus hermanas -- un
-mismo `root_work_order_id` puede mezclar `group`/`equipment_by_equipment`
-libremente.
+Al generar un grupo directo interno, Mobile permite elegir cantidad, modalidad
+base y “Aplicar a todas” o “Configurar manualmente”. La configuración manual
+inicializa cada OT con la base; al cambiar cantidad conserva las posiciones que
+siguen dentro del rango y usa la base actual para las nuevas. Si cambia la modalidad
+base durante la configuración manual, todas las posiciones se reinicializan con
+la nueva base y las excepciones se configuran después. El grupo nace homogéneo o
+mixto en una sola transacción, también con vínculo ETS opcional a la raíz.
+Las solicitudes externas conservan su flujo histórico y quedan fuera de esta
+configuración.
+“Asignar OT extra” permite elegir una modalidad propia para la nueva OT,
+independiente de sus hermanas. `workflow_mode` pertenece a cada `LabWorkOrder`.
+[Contrato de creación](../architecture/LAB_WORK_ORDERS.md#modalidades-iniciales-de-grupos-directos-internos-2026-10-06).
 
 ```text
 Grupo de 3 OT: OT1/OT2 equipment_by_equipment (captura ya lista en campo),
 OT3 group (su equipo va al laboratorio)
-→ Admin convierte OT3 a "group" con motivo (Cambiar modalidad de trabajo)
+→ Modalidades definidas al crear el grupo interno (o corregidas después por Admin con motivo)
 → prevalidación backend del scope grupal completo (cada miembro según su
   propia modalidad -- OT1/OT2 "listas para terminar", OT3 "lista para
   aceptar recepción", nunca se le exige FieldSheet completa)

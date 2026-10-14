@@ -416,6 +416,21 @@
           <tr>
             <td class="description">
               {{ line.description }}
+              {% if line.components %}
+                <div style="margin-top:6px;font-size:9px;">
+                  <strong>Servicios incluidos:</strong>
+                  {% for component in line.components %}
+                    <div style="margin-top:4px;">
+                      {{ loop.index }}. {{ component.name }}
+                      {% if component.description %}
+                        <div style="margin-left:12px;white-space:pre-line;">
+                          {{ component.description }}
+                        </div>
+                      {% endif %}
+                    </div>
+                  {% endfor %}
+                </div>
+              {% endif %}
               {% if line.commercial_description %}<span class="commercial-description">{{ line.commercial_description }}</span>{% endif %}
               {% if line.legend %}<span class="legend">{{ line.legend }}</span>{% endif %}
             </td>

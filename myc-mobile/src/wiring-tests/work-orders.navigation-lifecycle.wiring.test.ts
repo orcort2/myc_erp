@@ -111,6 +111,40 @@ test('los efectos sensibles a refresh/notificación/sesión nunca tocan setOpen'
   }
 });
 
+test('cambio entre OT relacionadas sólo muestra carga tras latencia y descarta respuestas obsoletas', () => {
+  const start = workOrdersSource.indexOf('async function selectRelated(id: number)');
+  const end = workOrdersSource.indexOf('function showEquipmentEditor', start);
+  assert.ok(start >= 0 && end > start);
+
+  const block = workOrdersSource.slice(start, end);
+
+  assert.doesNotMatch(block, /setBusy\(/);
+  assert.match(block, /const requestId = \+\+relatedSelectionSequence\.current/);
+  assert.match(block, /RELATED_WORK_ORDER_LOADING_DELAY_MS/);
+  assert.match(block, /setTimeout\(/);
+  assert.match(block, /setRelatedLoading\(true\)/);
+  assert.match(block, /clearTimeout\(loadingTimer\)/);
+  assert.match(block, /setRelatedLoading\(false\)/);
+  assert.match(block, /if \(requestId !== relatedSelectionSequence\.current\) return;/);
+  assert.match(block, /setWorkOrder\(detail\)/);
+});
+
+
 test('onRequestClose del Modal principal apunta exclusivamente a closeFlow', () => {
   assert.match(workOrdersSource, /<Modal\s+animationType="slide"\s+onRequestClose=\{closeFlow\}\s+visible=\{open\}>/);
+});
+
+test('foreground refresca la OT abierta y reconcilia con el workflow recién recibido', () => {
+  assert.match(notificationSyncSource, /emit\(\{ event_type: 'app.foreground', source: 'foreground' \}\)/);
+  const start = workOrdersSource.indexOf('useEffect(() => subscribe((event) => {');
+  const end = workOrdersSource.indexOf('}), [closureScope', start);
+  assert.ok(start >= 0 && end > start);
+  const subscription = workOrdersSource.slice(start, end);
+  assert.match(subscription, /if \(!affectsWorkOrders\(event\)\) return;/);
+  assert.match(subscription, /request<LabWorkOrder>\(`/);
+  assert.match(subscription, /setWorkOrder\(detail\)/);
+  assert.match(subscription, /setStep\(\(current\) => resolveStepAfterStatusUpdate\(\s*current,\s*sameSignatureCohort,\s*detail\.status,\s*detail\.workflow_mode,\s*\{ sameWorkOrder: true, canSkipSignatures: skipPreservedSignatures \},\s*\)\)/);
+  // Una respuesta vieja nunca gana: secuencia + identidad de la OT abierta.
+  assert.match(subscription, /const sequence = \+\+detailRefreshSequence\.current/);
+  assert.match(subscription, /sequence !== detailRefreshSequence\.current \|\| openWorkOrderIdRef\.current !== requestedId/);
 });

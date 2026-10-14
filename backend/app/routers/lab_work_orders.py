@@ -164,11 +164,17 @@ def create_mobile_staff_group(
             status_code=403,
             detail="La creación directa de grupos está reservada a staff MYC",
         )
-    base = LabWorkOrderGroupCreate(**payload.model_dump(exclude={"service_order_id"}))
+    base = LabWorkOrderGroupCreate(**payload.model_dump(exclude={"service_order_id", "member_workflow_modes"}))
     if payload.service_order_id is None:
-        # Legacy exacto: grupo LAB sin vínculo ERP.
-        return create_work_order_group(db, base, context.user, operator_client_id=None)
-    return create_linked_work_order_group(db, base, payload.service_order_id, context.user)
+        # Grupo LAB sin vínculo ERP; sin configuración individual conserva el legacy.
+        return create_work_order_group(
+            db, base, context.user, operator_client_id=None,
+            member_workflow_modes=payload.member_workflow_modes,
+        )
+    return create_linked_work_order_group(
+        db, base, payload.service_order_id, context.user,
+        member_workflow_modes=payload.member_workflow_modes,
+    )
 
 
 @router.get("/group-requests/review", response_model=list[LabWorkOrderGroupRequestRead])

@@ -15,7 +15,7 @@ import {
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing, typography } from '@/src/design/tokens';
-import { CloseButton, PrimaryButton, SecondaryButton } from '@/src/design/primitives';
+import { PrimaryButton, SecondaryButton } from '@/src/design/primitives';
 import { computeSectionProgress } from '@/src/services/field-sheet-progress';
 import {
   addRow,
@@ -23,9 +23,10 @@ import {
   exitAfterSuccessfulSave,
   initWorkspaceState,
   markSaveError,
-  markSaved,
+  markSavedSnapshot,
   markSaving,
   removeRow,
+  resultsFooterAction,
   setCellValue,
   type SaveState,
 } from '@/src/services/field-sheet-results-workspace-state';
@@ -113,6 +114,12 @@ export function FieldSheetResultsWorkspace({
 
   const [state, setState] = useState(() => initWorkspaceState(rows));
   const [cellErrors, setCellErrors] = useState<Record<string, string>>({});
+  // Un solo guardado de Resultados en vuelo a la vez (las ediciones siguen
+  // permitidas): evita PATCH concurrentes que el servidor podría aplicar en
+  // orden inverso. saveSeq invalida respuestas que llegan después de reabrir.
+  const [isSaving, setIsSaving] = useState(false);
+  const saveInFlight = useRef(false);
+  const saveSeq = useRef(0);
 
   /**
    * Sólo se utiliza para navegación mediante "Next".
@@ -133,6 +140,7 @@ export function FieldSheetResultsWorkspace({
     const justOpened = visible && !wasVisible.current;
 
     if (justOpened) {
+      saveSeq.current += 1;
       setState(initWorkspaceState(rows));
       setCellErrors({});
     }
@@ -149,33 +157,41 @@ export function FieldSheetResultsWorkspace({
   );
 
   async function handleSave(): Promise<boolean> {
+    if (saveInFlight.current) return false;
+    saveInFlight.current = true;
+    setIsSaving(true);
+    const seq = ++saveSeq.current;
+    // Lo que se envía es una foto: la respuesta sólo confirma ESTAS filas.
+    const submitted = state.rows;
     setState((current) => markSaving(current));
 
     try {
-      await onSave(state.rows);
-
-      setState((current) =>
-        markSaved(current, current.rows),
-      );
-
+      await onSave(submitted);
+      if (seq === saveSeq.current) {
+        setState((current) => markSavedSnapshot(current, submitted));
+      }
       return true;
     } catch (error) {
-      if (error instanceof ApiError) {
-        setCellErrors(Object.fromEntries(error.fieldErrors.map((item) => {
-          const leaf = item.field.split('.').at(-1) ?? item.field;
-          return [leaf, item.message];
-        })));
+      if (seq === saveSeq.current) {
+        if (error instanceof ApiError) {
+          setCellErrors(Object.fromEntries(error.fieldErrors.map((item) => {
+            const leaf = item.field.split('.').at(-1) ?? item.field;
+            return [leaf, item.message];
+          })));
+        }
+        setState((current) =>
+          markSaveError(
+            current,
+            error instanceof Error
+              ? error.message
+              : 'No fue posible guardar',
+          ),
+        );
       }
-      setState((current) =>
-        markSaveError(
-          current,
-          error instanceof Error
-            ? error.message
-            : 'No fue posible guardar',
-        ),
-      );
-
       return false;
+    } finally {
+      saveInFlight.current = false;
+      setIsSaving(false);
     }
   }
 
@@ -257,8 +273,6 @@ export function FieldSheetResultsWorkspace({
                   </Text>
                 )}
             </View>
-
-            <CloseButton onPress={requestClose} />
           </View>
 
           <KeyboardAvoidingView
@@ -604,19 +618,21 @@ export function FieldSheetResultsWorkspace({
               })}
             </ScrollView>
 
-            {!readOnly && (
-              <View style={styles.footer}>
+            <View style={styles.footer}>
+              {!readOnly && resultsFooterAction(state) === 'save' ? (
                 <PrimaryButton
-                  disabled={state.saveState === 'saving'}
+                  disabled={isSaving}
                   icon="content-save"
                   label="Guardar resultados"
-                  loading={state.saveState === 'saving'}
+                  loading={isSaving}
                   onPress={() => {
                     void handleSave();
                   }}
                 />
-              </View>
-            )}
+              ) : (
+                <SecondaryButton icon="close" label="Cerrar" onPress={requestClose} />
+              )}
+            </View>
           </KeyboardAvoidingView>
         </SafeAreaView>
       </SafeAreaProvider>
