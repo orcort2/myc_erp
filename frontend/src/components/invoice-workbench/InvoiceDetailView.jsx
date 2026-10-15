@@ -57,7 +57,11 @@ function getInvoiceLabel(invoice) {
   const series = String(invoice?.series || '').trim();
   const folio = String(invoice?.folio || '').trim();
 
-  if (series && folio) return `${series}-${folio}`;
+  if (series && folio) {
+    return folio.startsWith(`${series}-`)
+      ? folio
+      : `${series}-${folio}`;
+  }
   return series || folio || 'Factura sin folio';
 }
 
