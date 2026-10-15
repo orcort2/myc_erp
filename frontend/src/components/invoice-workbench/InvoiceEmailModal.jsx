@@ -1,4 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
+import {
+  CheckCircle2,
+  FileText,
+  Mail,
+  Paperclip,
+  Send,
+  ShieldCheck,
+} from 'lucide-react';
 
 import { previewInvoiceEmail, sendInvoiceEmail } from '../../services/api.js';
 import {
@@ -234,10 +242,16 @@ function InvoiceEmailModal({ invoiceId, folio, onClose, onSent = () => {}, initi
   return (
     <div className="modal-backdrop" role="presentation">
       <section aria-label={`Enviar factura ${folio}`} aria-modal="true" className="client-modal quotation-email-modal" role="dialog">
-        <div className="client-modal-header">
-          <div>
-            <p>Correo</p>
-            <h2>Enviar factura {folio}</h2>
+        <div className="client-modal-header quotation-email__header">
+          <div className="quotation-email__heading">
+            <span className="quotation-email__heading-icon">
+              <Mail size={23} aria-hidden="true" />
+            </span>
+            <div>
+              <p>COMUNICACIÓN COMERCIAL</p>
+              <h2>Enviar factura</h2>
+              <span className="quotation-email__folio">{folio}</span>
+            </div>
           </div>
           <button aria-label="Cerrar" disabled={isSending} onClick={onClose} type="button">
             ×
@@ -247,10 +261,58 @@ function InvoiceEmailModal({ invoiceId, folio, onClose, onSent = () => {}, initi
         {error ? <div className="form-error">{error}</div> : null}
 
         {result ? (
-          <div className={result.sent ? 'form-notice' : 'form-error'}>{sendResultMessage(result)}</div>
+          <section
+            className={`quotation-email__result ${result.sent ? 'is-success' : 'is-error'}`}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="quotation-email__result-icon">
+              {result.sent
+                ? <CheckCircle2 size={30} aria-hidden="true" />
+                : <Mail size={30} aria-hidden="true" />}
+            </span>
+            <div>
+              <h3>{result.sent ? 'Correo aceptado para envío' : 'No se pudo enviar el correo'}</h3>
+              <p>{sendResultMessage(result)}</p>
+              <p className="quotation-email__result-folio">
+                Factura: <strong>{folio}</strong>
+              </p>
+              <p>Destinatarios: <strong>{to.join(', ')}</strong></p>
+              {cc.length > 0 ? (
+                <p>Con copia: <strong>{cc.join(', ')}</strong></p>
+              ) : null}
+              {result.delivery_id != null ? (
+                <p className="quotation-email__result-id">
+                  Registro de envío #{result.delivery_id}
+                </p>
+              ) : null}
+              {result.sent ? (
+                <p className="quotation-email__delivery-note">
+                  La aceptación por el servidor SMTP no confirma
+                  la entrega al buzón del destinatario.
+                </p>
+              ) : null}
+            </div>
+          </section>
         ) : preview ? (
           <>
-            <div className="quotation-email__recipients-grid">
+            <div className="quotation-email__intro">
+              <ShieldCheck size={19} aria-hidden="true" />
+              <span>
+                Envío institucional de MYC. Revisa los destinatarios
+                y el documento antes de confirmar.
+              </span>
+            </div>
+
+            <div className="quotation-email__section-heading">
+              <span className="quotation-email__step">01</span>
+              <div>
+                <h3>Destinatarios</h3>
+                <p>Selecciona a quién se enviará la factura.</p>
+              </div>
+            </div>
+
+            <div className="quotation-email__compose-recipients">
               <RecipientField
                 disabled={isSending}
                 inputLabel="Agregar destinatario"
@@ -272,6 +334,14 @@ function InvoiceEmailModal({ invoiceId, folio, onClose, onSent = () => {}, initi
                 selected={cc}
                 suggestions={suggestions}
               />
+            </div>
+
+            <div className="quotation-email__section-heading">
+              <span className="quotation-email__step">02</span>
+              <div>
+                <h3>Mensaje y documento</h3>
+                <p>Vista previa del contenido generado por el ERP.</p>
+              </div>
             </div>
 
             <section className="quotation-email__message" aria-busy={isRefreshingPreview}>
@@ -299,10 +369,14 @@ function InvoiceEmailModal({ invoiceId, folio, onClose, onSent = () => {}, initi
                 <iframe className="quotation-email__frame" sandbox="" srcDoc={preview.body_html} title="Vista previa del mensaje" />
               </div>
               <div>
-                <span className="quotation-email__label">Adjunto</span>
+                <span className="quotation-email__label">
+                  <Paperclip size={14} aria-hidden="true" />
+                  Documentos adjuntos
+                </span>
                 {preview.attachments.map((file) => (
                   <div className="quotation-email__attachment" key={file.filename}>
-                    <strong>
+                    <strong className="quotation-email__file-title">
+                      <FileText size={17} aria-hidden="true" />
                         {file.content_type === 'application/xml'
                           ? 'XML fiscal'
                           : file.content_type === 'application/pdf'
@@ -328,7 +402,8 @@ function InvoiceEmailModal({ invoiceId, folio, onClose, onSent = () => {}, initi
           </button>
           {!result && preview ? (
             <button className="primary-button" disabled={!canSend} onClick={send} type="button">
-              {isSending ? 'Enviando…' : 'Enviar'}
+              <Send size={16} aria-hidden="true" />
+              {isSending ? 'Enviando…' : 'Enviar factura'}
             </button>
           ) : null}
         </div>

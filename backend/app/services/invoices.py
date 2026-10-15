@@ -268,11 +268,24 @@ def _build_invoice_item(db: Session, payload, *, invoice_id: int | None = None) 
         if existing is not None:
             raise HTTPException(status_code=409, detail="El certificado ya esta facturado")
         equipment_id = equipment_id or certificate.equipment_id
+    description = payload.description
+    if payload.quotation_item_id is not None:
+        quotation_item = db.get(QuotationItem, payload.quotation_item_id)
+        if quotation_item is not None:
+            legacy = {
+                "",
+                "Servicio",
+                (quotation_item.service_name or "").strip(),
+                (quotation_item.description or "").strip(),
+            }
+            if (description or "").strip() in legacy:
+                description = _quotation_invoice_description(quotation_item)
+
     item = InvoiceItem(
         quotation_item_id=payload.quotation_item_id,
         certificate_id=payload.certificate_id,
         equipment_id=equipment_id,
-        description=payload.description,
+        description=description,
         quantity=payload.quantity,
         unit=payload.unit,
         sat_unit=payload.sat_unit,
@@ -316,6 +329,46 @@ def _recalculate_invoice(invoice: Invoice) -> None:
         invoice.status = "overdue"
 
 
+
+def _quotation_invoice_description(item: QuotationItem) -> str:
+    """Build the fiscal concept description from the quotation snapshot."""
+    snapshot = getattr(item, 'operational_snapshot', None) or {}
+    components = []
+    if snapshot.get("service_kind") == "composite":
+        descriptions = {
+            str(entry.get("catalog_item_id")): entry.get("description", "")
+            for entry in snapshot.get("commercial_components") or []
+        }
+        for component in snapshot.get("operational_items") or []:
+            component_id = str(component.get("catalog_item_id"))
+            service_snapshot = component.get("service_snapshot") or {}
+            components.append({
+                "name": (
+                    service_snapshot.get("service_name_snapshot")
+                    or component.get("service_name")
+                    or "Componente"
+                ),
+                "description": descriptions.get(component_id, ""),
+            })
+
+    parts = [item.service_name or ""]
+
+    if components:
+        parts.append("Servicios incluidos:")
+        for index, component in enumerate(components, 1):
+            parts.append(f"{index}. {component['name']}")
+            if component["description"]:
+                parts.append(str(component["description"]))
+
+    if item.description and item.description.strip() != (item.service_name or "").strip():
+        parts.append(item.description)
+
+    if item.quotation_legend:
+        parts.append(item.quotation_legend)
+
+    return "\n".join(str(part).strip() for part in parts if str(part).strip()) or "Servicio"
+
+
 def _sync_invoice_items_from_quotation(invoice: Invoice, quotation: Quotation) -> None:
     existing_by_quotation_item_id = {
         item.quotation_item_id: item
@@ -332,6 +385,15 @@ def _sync_invoice_items_from_quotation(invoice: Invoice, quotation: Quotation) -
         existing = existing_by_quotation_item_id.get(quotation_item.id)
 
         if existing is not None:
+            previous = (existing.description or "").strip()
+            legacy = {
+                "",
+                "Servicio",
+                (quotation_item.service_name or "").strip(),
+                (quotation_item.description or "").strip(),
+            }
+            if previous in legacy:
+                existing.description = _quotation_invoice_description(quotation_item)
             existing.quantity = quotation_item.quantity
             existing.unit_price = quotation_item.unit_price
             existing.service_type = quotation_item.service_name
@@ -341,11 +403,7 @@ def _sync_invoice_items_from_quotation(invoice: Invoice, quotation: Quotation) -
         synchronized_items.append(
             InvoiceItem(
                 quotation_item_id=quotation_item.id,
-                description=(
-                    quotation_item.service_name
-                    or quotation_item.description
-                    or "Servicio"
-                ),
+                description=_quotation_invoice_description(quotation_item),
                 quantity=quotation_item.quantity,
                 unit=quotation_item.unit,
                 sat_unit=quotation_item.sat_unit,

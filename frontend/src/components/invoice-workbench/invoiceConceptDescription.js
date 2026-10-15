@@ -6,10 +6,12 @@ export function resolveInvoiceConceptDescription(
   if (persisted) return persisted;
 
   const serviceName = String(quotationItem?.service_name || '').trim();
-  if (serviceName) return serviceName;
-
   const description = String(quotationItem?.description || '').trim();
-  if (description) return description;
+  const legend = String(quotationItem?.quotation_legend || '').trim();
 
-  return 'Servicio';
+  return [
+    serviceName,
+    description && description !== serviceName ? description : '',
+    legend,
+  ].filter(Boolean).join('\\n') || 'Servicio';
 }

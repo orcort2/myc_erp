@@ -11,7 +11,7 @@ test('usa el nombre del servicio en un concepto nuevo', () => {
       service_name: 'Calibración de manómetro',
       description: 'Tiempo de entrega de 3 a 5 dias habiles',
     }),
-    'Calibración de manómetro'
+    'Calibración de manómetro\\nTiempo de entrega de 3 a 5 dias habiles'
   );
 });
 
