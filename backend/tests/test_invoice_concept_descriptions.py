@@ -45,8 +45,8 @@ def test_new_invoice_uses_service_names_instead_of_delivery_terms():
     _sync_invoice_items_from_quotation(invoice, quotation)
 
     assert [item.description for item in invoice.items] == [
-        "Calibración de manómetro",
-        "Calibración de termómetro",
+        "Calibración de manómetro\nTiempo de entrega de 3 a 5 dias habiles",
+        "Calibración de termómetro\nTiempo de entrega de 3 a 5 dias habiles",
     ]
 
 
@@ -89,7 +89,7 @@ def test_resync_adds_new_item_without_overwriting_existing_description():
 
     assert [item.description for item in invoice.items] == [
         "Calibración de báscula analítica",
-        "Calibración de termómetro",
+        "Calibración de termómetro\nEntrega 5 días",
     ]
 
 
