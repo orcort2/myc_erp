@@ -1,3 +1,4 @@
+import { resolveInvoiceConceptDescription } from './invoiceConceptDescription.js';
 import { listSatCatalogRecords } from '../../services/api.js';
 
 const INVOICE_DEFAULT_CODES = {
@@ -96,6 +97,7 @@ export async function buildInvoiceWorkbenchDraft(quotation, client, invoice = nu
         resolveCatalogRecord('tax_objects', item.tax_object, cache),
       ]);
       return [item.id, {
+        description: resolveInvoiceConceptDescription(item, persisted),
         productService: productService || defaultProductService,
         unit: unit || defaultUnit,
         taxObject: taxObject || defaultTaxObject,

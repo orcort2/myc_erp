@@ -49,10 +49,10 @@ function quotationItemsToInvoiceItems(quotation, draft) {
 
       return {
         quotation_item_id: item.id,
-        description:
-          item.description ||
+        description: String(fiscal.description || '').trim() ||
           item.service_name ||
-          'Servicio de calibración',
+          item.description ||
+          'Servicio',
         quantity: Number(item.quantity || 1),
         unit: item.unit || 'Servicio',
         sat_unit: fiscal.unit?.code || item.sat_unit || 'E48',

@@ -66,6 +66,21 @@ export default function InvoiceConceptsSection({
                   </div>
                 </header>
 
+                <div className="invoice-concept-card__fiscal-description">
+                  <label htmlFor={`invoice-description-${item.id}`}>
+                    Descripción fiscal del concepto
+                  </label>
+                  <textarea
+                    id={`invoice-description-${item.id}`}
+                    rows={2}
+                    value={itemDraft.description ?? item.service_name ?? ''}
+                    onChange={(event) =>
+                      onChange(item.id, 'description', event.target.value)
+                    }
+                    aria-label={`Descripción fiscal de partida ${index + 1}`}
+                  />
+                </div>
+
                 <div className="invoice-concept-card__commercial">
                   <span>
                     <small>Cantidad</small>

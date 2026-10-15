@@ -317,24 +317,49 @@ def _recalculate_invoice(invoice: Invoice) -> None:
 
 
 def _sync_invoice_items_from_quotation(invoice: Invoice, quotation: Quotation) -> None:
-    invoice.items = [
-        InvoiceItem(
-            quotation_item_id=item.id,
-            description=item.description or item.service_name,
-            quantity=item.quantity,
-            unit=item.unit,
-            sat_unit=item.sat_unit,
-            sat_key=item.sat_key,
-            unit_price=item.unit_price,
-            discount_total=Decimal("0.00"),
-            tax_rate=item.tax_rate,
-            notes=item.quotation_legend,
-            service_type=item.service_name,
-            source_type="quotation",
+    existing_by_quotation_item_id = {
+        item.quotation_item_id: item
+        for item in invoice.items
+        if item.quotation_item_id is not None
+    }
+
+    synchronized_items = []
+
+    for quotation_item in quotation.items:
+        if not quotation_item.is_active:
+            continue
+
+        existing = existing_by_quotation_item_id.get(quotation_item.id)
+
+        if existing is not None:
+            existing.quantity = quotation_item.quantity
+            existing.unit_price = quotation_item.unit_price
+            existing.service_type = quotation_item.service_name
+            synchronized_items.append(existing)
+            continue
+
+        synchronized_items.append(
+            InvoiceItem(
+                quotation_item_id=quotation_item.id,
+                description=(
+                    quotation_item.service_name
+                    or quotation_item.description
+                    or "Servicio"
+                ),
+                quantity=quotation_item.quantity,
+                unit=quotation_item.unit,
+                sat_unit=quotation_item.sat_unit,
+                sat_key=quotation_item.sat_key,
+                unit_price=quotation_item.unit_price,
+                discount_total=Decimal("0.00"),
+                tax_rate=quotation_item.tax_rate,
+                notes=quotation_item.quotation_legend,
+                service_type=quotation_item.service_name,
+                source_type="quotation",
+            )
         )
-        for item in quotation.items
-        if item.is_active
-    ]
+
+    invoice.items = synchronized_items
     _recalculate_invoice(invoice)
 
 
