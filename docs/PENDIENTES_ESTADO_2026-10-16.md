@@ -10,7 +10,7 @@
 
 | Tema | Estado al corte | Próxima acción verificable |
 | --- | --- | --- |
-| Correo institucional ERP y recuperación de contraseña | **Pendiente principal** | Revisar configuración efectiva del relay/SMTP, envío real desde cotizaciones/facturas, plantillas, trazabilidad de entregas y flujo completo de restablecimiento de contraseña. No inferir cierre por la existencia de endpoints o pruebas. |
+| Correo institucional ERP y recuperación de contraseña | **EMAIL-1/entrega real confirmadas; recuperación pendiente principal** | SMTP productivo y entrega a bandejas confirmados el 2026-10-13: Windows MYC → WireGuard → Vultr/Postfix (10.77.0.1:25) → Google Workspace Relay (smtp-relay.gmail.com:587, TLS). `EMAIL_ENABLED=true`, `MYCBackend` reiniciado/Running. Falta validar el ciclo completo de `forgot-password` → correo → enlace → `reset-password` → acceso nuevo y revocación de sesiones. No repetir auditoría SMTP sin fallo nuevo. |
 | Auditoría y cierre funcional de facturación/pagos | **Pendiente principal / por verificar** | Revisar casos P0, estados CFDI y pagos, consistencia cotización → ETS → factura, y condiciones de cierre. Validar con datos reales antes de tocar BD. |
 | Pendiente principal identificado como punto 6 en recuento del 2026-10-06 | **Por identificar y verificar** | Recuperar el enunciado original antes de implementar; el recuento indica expresamente «verificar antes de continuar», pero no describe aquí el tema. |
 | Pendiente principal identificado como punto 9 en recuento del 2026-10-06 | **Por identificar** | Recuperar el enunciado original y criterios de aceptación; no inventar alcance. |
@@ -26,7 +26,7 @@
 | Descripciones de facturas históricas/borradores | **Por verificar** | Se realizaron intervenciones SQL sobre borradores concretos en una sesión anterior; no consta aquí validación definitiva de `COMMIT`, respuesta API ni visualización final. No repetir SQL sin consulta previa. |
 | Despliegue de PR #23 y #24 al ERP público | **No verificado** | Comprobar versión/commit efectivamente servido por producción antes de atribuirle el nuevo comportamiento. |
 
-**Evidencia reciente:** build frontend Vite correcto, 1,767 módulos; pruebas focales de descripción fiscal 3/3. Esto no sustituye pruebas de envío SMTP ni QA de producción.
+**Aclaración operativa (2026-10-16):** el usuario confirma recepción real en bandejas y solicita dejar SMTP/entrega como resueltos. El pendiente principal de correo queda limitado a validar recuperación de contraseña.\n\n**Evidencia reciente:** build frontend Vite correcto, 1,767 módulos; pruebas focales de descripción fiscal 3/3. Esto no sustituye pruebas de envío SMTP ni QA de producción.
 
 ## LAB, MYC Mobile y operación documental
 
