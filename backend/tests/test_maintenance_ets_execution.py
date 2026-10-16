@@ -1138,15 +1138,27 @@ def test_material_used_and_required_are_separate_and_report_has_no_internal_cost
         in captured["html"]
     )
 
-    assert (
-        "900"
-        not in captured["html"]
-    )
+    # Los costos internos no deben exponerse en el reporte al cliente.
+    # No buscar cifras aisladas: pueden aparecer en fechas u otros datos.
+    from html.parser import HTMLParser
 
-    assert (
-        "80"
-        not in captured["html"]
-    )
+    class ReportTextExtractor(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.parts = []
+
+        def handle_data(self, data):
+            self.parts.append(data)
+
+    extractor = ReportTextExtractor()
+    extractor.feed(captured["html"])
+    report_text = " ".join(extractor.parts)
+
+    assert "internal_unit_cost" not in captured["html"]
+    assert "$900" not in report_text
+    assert "$80" not in report_text
+    assert "900.00" not in report_text
+    assert "80.00" not in report_text
 
     assert (
         "maintenance/before-1.jpg"

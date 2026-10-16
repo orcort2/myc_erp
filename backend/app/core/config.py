@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     database_url: str = Field(
         default="postgresql+psycopg://localhost:5432/erp_myc"
     )
+    realtime_postgres_enabled: bool = False
     secret_key: str = "development-only-change-me"
     access_token_expire_minutes: int = 60 * 8
     refresh_token_expire_minutes: int = 60 * 24 * 30

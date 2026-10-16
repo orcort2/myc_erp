@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.models.user import User
-from app.realtime.events import publish_to_users
+from app.realtime.events import publish_communication_to_users
 from app.schemas.communication import (
     CommunicationConversationCreate,
     CommunicationConversationDetail,
@@ -99,16 +99,17 @@ def post_conversation(
     if initial_message is not None:
         user_ids = {participant.id for participant in conversation.participants}
         background_tasks.add_task(
-            publish_to_users,
+            publish_communication_to_users,
             user_ids,
             "message.created",
             _message_read(initial_message).model_dump(mode="json"),
+            conversation_id=conversation.id,
         )
         background_tasks.add_task(
             deliver_communication_notifications, notification_ids
         )
         background_tasks.add_task(
-            publish_to_users,
+            publish_communication_to_users,
             user_ids - {current_user.id},
             "notification.created",
             {
@@ -118,6 +119,7 @@ def post_conversation(
                 "conversation_id": conversation.id,
                 "message_id": initial_message.id,
             },
+            conversation_id=conversation.id,
         )
     detail = get_conversation_detail(db, conversation.id, current_user.id)
     if detail is None:
@@ -205,16 +207,17 @@ def post_message(
     message_read = _message_read(message)
     if created:
         background_tasks.add_task(
-            publish_to_users,
+            publish_communication_to_users,
             participant_ids,
             "message.created",
             message_read.model_dump(mode="json"),
+            conversation_id=conversation_id,
         )
         background_tasks.add_task(
             deliver_communication_notifications, notification_ids
         )
         background_tasks.add_task(
-            publish_to_users,
+            publish_communication_to_users,
             participant_ids - {current_user.id},
             "notification.created",
             {
@@ -224,6 +227,7 @@ def post_message(
                 "conversation_id": conversation_id,
                 "message_id": message.id,
             },
+            conversation_id=conversation_id,
         )
     return message_read
 
@@ -243,9 +247,10 @@ def post_receipts(
         db, conversation_id, current_user.id, payload
     )
     background_tasks.add_task(
-        publish_to_users,
+        publish_communication_to_users,
         participant_ids,
         "message.read" if payload.state == "read" else "message.delivered",
         receipt.model_dump(mode="json"),
+        conversation_id=conversation_id,
     )
     return receipt

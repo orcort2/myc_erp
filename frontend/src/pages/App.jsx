@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 
 import AppLayout from '../components/AppLayout.jsx';
+import { startRealtime, stopRealtime } from '../realtime/client.js';
 import AccessDenied from '../components/AccessDenied.jsx';
 import BrandLockup from '../components/BrandLockup.jsx';
 import { modules } from '../constants/navigation.js';
@@ -114,6 +115,19 @@ export function App() {
     const timer = window.setInterval(() => setNow(new Date()), 60000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!user || isClientPortalUser(user)) {
+      stopRealtime();
+      return undefined;
+    }
+
+    startRealtime();
+
+    return () => {
+      stopRealtime();
+    };
+  }, [user]);
 
   function handleLogout() {
     if (isClientPortalUser(user)) {

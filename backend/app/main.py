@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
+from app.realtime.postgres_runtime import PostgresRealtimeRuntime
 from app.services.facturama.client import FacturamaClient
 from app.services.office_converter import diagnose_office_converter
 from app.routers import (
@@ -87,8 +88,16 @@ async def lifespan(app: FastAPI):
         )
     else:
         office_logger.warning("LibreOffice no disponible: %s", office_diagnostic.error)
-    yield
-    await app.state.facturama_client.aclose()
+    realtime_runtime = PostgresRealtimeRuntime()
+
+    if settings.realtime_postgres_enabled:
+        await realtime_runtime.start()
+
+    try:
+        yield
+    finally:
+        await realtime_runtime.stop()
+        await app.state.facturama_client.aclose()
 
 
 app = FastAPI(

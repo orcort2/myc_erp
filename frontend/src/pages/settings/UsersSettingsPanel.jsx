@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { createUser, listPortalInvitations, listPortalLinkRequests, listPortalMemberships, listPortalRegistrations, listRoles, listUserActivity, listUsers, updateUser } from '../../services/api.js';
 import PortalAccessSettingsPanel from './PortalAccessSettingsPanel.jsx';
 import UserModal from './UserModal.jsx';
+import { useLiveRefresh } from '../../realtime/useLiveRefresh.js';
 
 const EMPTY_FORM = { username: '', full_name: '', email: '', password: '', role_names: [], is_active: true, phone: '', job_title: '', area: '', language: 'es-MX', timezone: 'America/Mexico_City', must_change_password: false };
 const FILTERS = [
@@ -27,14 +28,65 @@ export default function UsersSettingsPanel() {
   const [modal, setModal] = useState(null); const [form, setForm] = useState(EMPTY_FORM); const [activity, setActivity] = useState([]);
   const [loading, setLoading] = useState(true); const [submitting, setSubmitting] = useState(false); const [error, setError] = useState(''); const [notice, setNotice] = useState('');
 
+  const loadVersionRef = useRef(0);
+
   async function load() {
-    setLoading(true); setError('');
+    const version = ++loadVersionRef.current;
+
+    setLoading(true);
+    setError('');
+
     try {
-      const [users, roles, registrations, memberships, invitations, requests] = await Promise.all([listUsers(), listRoles(), listPortalRegistrations(), listPortalMemberships(), listPortalInvitations(), listPortalLinkRequests()]);
+      const [users, roles, registrations, memberships, invitations, requests] = await Promise.all([
+        listUsers(),
+        listRoles(),
+        listPortalRegistrations(),
+        listPortalMemberships(),
+        listPortalInvitations(),
+        listPortalLinkRequests(),
+      ]);
+
+      if (version !== loadVersionRef.current) return;
+
       setData({ users, roles, registrations, memberships, invitations, requests });
-    } catch (requestError) { setError(requestError.message); } finally { setLoading(false); }
+    } catch (requestError) {
+      if (version === loadVersionRef.current) {
+        setError(requestError.message);
+      }
+    } finally {
+      if (version === loadVersionRef.current) {
+        setLoading(false);
+      }
+    }
   }
   useEffect(() => { load(); }, []);
+
+  const pendingLiveRefreshRef = useRef(false);
+
+  useLiveRefresh(
+    () => {
+      if (modal || submitting) {
+        pendingLiveRefreshRef.current = true;
+        return;
+      }
+
+      pendingLiveRefreshRef.current = false;
+      return load();
+    },
+    {
+      resources: ['users', 'roles', 'portal_users', 'portal_access'],
+      intervalMs: 30000,
+    },
+  );
+
+  useEffect(() => {
+    if (modal || submitting || !pendingLiveRefreshRef.current) {
+      return;
+    }
+
+    pendingLiveRefreshRef.current = false;
+    void load();
+  }, [modal, submitting]);
 
   const rows = useMemo(() => [
     ...data.users.map((user) => ({ ...user, userId: user.id, accountType: 'internal', roles: user.roles?.map((role) => role.name) ?? [] })),

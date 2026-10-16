@@ -103,6 +103,29 @@ async def _handle_command(
         conversation_id = int(data.get("conversation_id"))
     except (TypeError, ValueError):
         conversation_id = 0
+    if event == "conversation.unsubscribe":
+        if conversation_id <= 0:
+            await realtime_hub.send(
+                connection,
+                build_realtime_envelope(
+                    "realtime.error",
+                    {"code": "conversation_forbidden"},
+                ),
+            )
+            return
+
+        await realtime_hub.leave(
+            connection, conversation_room(conversation_id)
+        )
+        await realtime_hub.send(
+            connection,
+            build_realtime_envelope(
+                "conversation.unsubscribed",
+                {"conversation_id": conversation_id},
+            ),
+        )
+        return
+
     with session_factory() as db:
         allowed = conversation_id > 0 and _can_access_conversation(
             db, conversation_id=conversation_id, identity=identity
@@ -124,15 +147,6 @@ async def _handle_command(
         )
         return
     room = conversation_room(conversation_id)
-    if event == "conversation.unsubscribe":
-        await realtime_hub.leave(connection, room)
-        await realtime_hub.send(
-            connection,
-            build_realtime_envelope(
-                "conversation.unsubscribed", {"conversation_id": conversation_id}
-            ),
-        )
-        return
     if event in {"typing.started", "typing.stopped"}:
         if room not in connection.rooms:
             await realtime_hub.send(
@@ -178,7 +192,11 @@ async def realtime_websocket(
         return
 
     await websocket.accept(subprotocol=REALTIME_PROTOCOL)
-    connection = await realtime_hub.connect(websocket, identity_user_id)
+    connection = await realtime_hub.connect(
+        websocket,
+        identity_user_id,
+        identity=identity,
+    )
     logger.info(
         "Realtime connection accepted user_id=%s connection_id=%s",
         identity_user_id,

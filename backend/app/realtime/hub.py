@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from fastapi import WebSocket
 
+from app.realtime.authentication import RealtimeIdentity
 from app.realtime.contracts import RealtimeEnvelope
 
 
@@ -22,6 +23,7 @@ def conversation_room(conversation_id: int) -> str:
 class RealtimeConnection:
     websocket: WebSocket
     user_id: int
+    identity: RealtimeIdentity | None = None
     id: str = field(default_factory=lambda: str(uuid4()))
     rooms: set[str] = field(default_factory=set)
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -31,7 +33,13 @@ class RealtimeHub(ABC):
     """Puerto de transporte; Comunicaciones no conoce la implementación física."""
 
     @abstractmethod
-    async def connect(self, websocket: WebSocket, user_id: int) -> RealtimeConnection:
+    async def connect(
+        self,
+        websocket: WebSocket,
+        user_id: int,
+        *,
+        identity: RealtimeIdentity | None = None,
+    ) -> RealtimeConnection:
         raise NotImplementedError
 
     @abstractmethod
@@ -70,8 +78,21 @@ class InMemoryRealtimeHub(RealtimeHub):
         self._rooms: dict[str, set[str]] = {}
         self._lock = asyncio.Lock()
 
-    async def connect(self, websocket: WebSocket, user_id: int) -> RealtimeConnection:
-        connection = RealtimeConnection(websocket=websocket, user_id=user_id)
+    async def connect(
+        self,
+        websocket: WebSocket,
+        user_id: int,
+        *,
+        identity: RealtimeIdentity | None = None,
+    ) -> RealtimeConnection:
+        if identity is not None and identity.user_id != user_id:
+            raise ValueError("La identidad no corresponde al usuario")
+
+        connection = RealtimeConnection(
+            websocket=websocket,
+            user_id=user_id,
+            identity=identity,
+        )
         async with self._lock:
             self._connections[connection.id] = connection
             self._add_to_room(connection, user_room(user_id))
@@ -116,6 +137,111 @@ class InMemoryRealtimeHub(RealtimeHub):
         stale: list[RealtimeConnection] = []
         for connection in recipients:
             try:
+                if room.startswith("conversation:"):
+                    from app.realtime.delivery_authorization import (
+                        can_deliver_conversation,
+                    )
+                    conversation_id = int(room.split(":", 1)[1])
+
+                    try:
+                        authorized = await asyncio.to_thread(
+                            can_deliver_conversation,
+                            connection,
+                            conversation_id,
+                        )
+                    except Exception:
+                        import logging
+
+                        logging.getLogger(__name__).exception(
+                            "Realtime conversation authorization failed "
+                            "user_id=%s conversation_id=%s",
+                            connection.user_id,
+                            conversation_id,
+                        )
+                        continue
+
+                    if not authorized:
+                        await self.leave(connection, room)
+                        continue
+
+                if (
+                    room.startswith("user:")
+                    and envelope.get("event") != "resource.changed"
+                    and isinstance(envelope.get("data"), dict)
+                    and "conversation_id" in envelope["data"]
+                ):
+                    from app.realtime.delivery_authorization import (
+                        can_deliver_conversation,
+                    )
+
+                    try:
+                        conversation_id = int(
+                            envelope["data"]["conversation_id"]
+                        )
+                        authorized = await asyncio.to_thread(
+                            can_deliver_conversation,
+                            connection,
+                            conversation_id,
+                        )
+                    except (TypeError, ValueError):
+                        authorized = False
+                    except Exception:
+                        import logging
+
+                        logging.getLogger(__name__).exception(
+                            "Realtime delivery authorization failed "
+                            "user_id=%s",
+                            connection.user_id,
+                        )
+                        authorized = False
+
+                    if not authorized:
+                        continue
+
+                if (
+                    room.startswith("user:")
+                    and envelope.get("event") == "resource.changed"
+                ):
+                    from app.realtime.delivery_authorization import (
+                        can_deliver_internal_resource,
+                    )
+
+                    resources = (
+                        envelope.get("data", {}).get("resources")
+                        if isinstance(envelope.get("data"), dict)
+                        else None
+                    )
+
+                    if (
+                        not isinstance(resources, list)
+                        or not resources
+                        or any(not isinstance(resource, str) for resource in resources)
+                    ):
+                        continue
+
+                    try:
+                        authorized = await asyncio.to_thread(
+                            lambda: all(
+                                can_deliver_internal_resource(
+                                    connection,
+                                    resource,
+                                )
+                                for resource in resources
+                            )
+                        )
+                    except Exception:
+                        import logging
+
+                        logging.getLogger(__name__).exception(
+                            "Realtime resource authorization failed "
+                            "user_id=%s",
+                            connection.user_id,
+                        )
+                        continue
+
+                    if not authorized:
+                        continue
+
                 await self.send(connection, envelope)
                 delivered += 1
             except Exception:
@@ -133,6 +259,10 @@ class InMemoryRealtimeHub(RealtimeHub):
     def _add_to_room(self, connection: RealtimeConnection, room: str) -> None:
         self._rooms.setdefault(room, set()).add(connection.id)
         connection.rooms.add(room)
+
+    async def active_connections(self) -> tuple[RealtimeConnection, ...]:
+        async with self._lock:
+            return tuple(self._connections.values())
 
     async def connection_count(self) -> int:
         """Métrica local útil para pruebas y diagnóstico del proceso."""

@@ -131,7 +131,20 @@ def resolve_portal_token(db: Session, token: str, *, token_type: str = "access")
     if user is None or user.account_type != PortalAccountType.CLIENT_PORTAL.value or user.status != UserAccountStatus.ACTIVE.value or not user.is_active:
         raise _unauthorized("Cuenta del portal no disponible")
     membership = resolve_active_membership(db, user_id, membership_id)
-    return PortalSecurityContext(user, membership, membership.client, resolve_permissions(db, membership.id))
+    permissions = resolve_permissions(db, membership.id)
+
+    if "portal.read" not in permissions:
+        raise HTTPException(
+            status_code=403,
+            detail="La membresía no autoriza acceso al portal",
+        )
+
+    return PortalSecurityContext(
+        user,
+        membership,
+        membership.client,
+        permissions,
+    )
 
 
 def get_portal_context(token: str = Depends(portal_oauth2_scheme), db: Session = Depends(get_db)) -> PortalSecurityContext:

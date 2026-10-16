@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.security import decode_token
 from app.services.auth import resolve_access_token_user
 from app.core.mobile.security import resolve_mobile_token
+from app.core.portal.security import resolve_portal_token
 
 
 REALTIME_PROTOCOL = "myc.realtime.v1"
@@ -62,6 +63,13 @@ def authenticate_websocket(
             actor_type = context.actor_type
             client_id = context.client_id
             membership_id = context.membership_id
+            permissions = context.permissions
+        elif auth_context == "client_portal":
+            context = resolve_portal_token(db, token)
+            user = context.user
+            actor_type = "client"
+            client_id = context.membership.client_id
+            membership_id = context.membership.id
             permissions = context.permissions
         else:
             raise ValueError("Contexto realtime no soportado")
