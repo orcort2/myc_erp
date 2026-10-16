@@ -7,6 +7,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -247,10 +248,18 @@ export default function LoginScreen() {
               </Pressable>
 
               <Pressable
-                accessibilityHint="La recuperación de contraseña todavía no está disponible"
-                accessibilityRole="button"
-                accessibilityState={{ disabled: true }}
-                disabled
+                accessibilityHint="Abre la recuperación de contraseña del ERP MYC"
+                accessibilityRole="link"
+                onPress={() => {
+                  Linking.openURL(
+                    'https://erp.mycmetrology.com.mx/forgot-password'
+                  ).catch(() => {
+                    Alert.alert(
+                      'No se pudo abrir la recuperación',
+                      'Intenta nuevamente o visita el ERP MYC desde tu navegador.'
+                    );
+                  });
+                }}
                 style={styles.forgotPassword}
               >
                 <Text style={styles.forgotPasswordText}>¿Olvidaste tu contraseña?</Text>
