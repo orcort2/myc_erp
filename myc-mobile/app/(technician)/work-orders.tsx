@@ -1730,7 +1730,6 @@ export default function WorkOrdersScreen() {
           />
         )}
       </View>
-      {canRequestWorkOrderGroups && groupRequests.length > 0 && <View style={styles.filters}><Text style={styles.filterLabel}>Mis solicitudes de grupo</Text>{groupRequests.map((item) => <Pressable key={item.id} onPress={() => setSelectedGroupRequest(item)}><Text style={styles.status}>#{item.id} · {item.quantity} OT · {item.status}{item.folios.length ? ` · folios ${item.folios.join(', ')}` : ' · sin folios'}</Text></Pressable>)}</View>}
       {showsInitialSpinner(listLoad) ? <ActivityIndicator style={styles.loader} /> : (
         <View style={styles.flex}>
         <ScrollView contentContainerStyle={styles.list} refreshControl={<RefreshControl refreshing={listLoad.pullRefreshing} onRefresh={() => refreshActive(true, 'pull')} />}>
