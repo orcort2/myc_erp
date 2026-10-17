@@ -3155,7 +3155,17 @@ function QuotationsPage({ user = null }) {
           initialTo={emailModal.initialTo ?? null}
           key={`${selectedQuotation.id}-${(emailModal.initialTo ?? []).join('|')}`}
           onClose={() => setEmailModal(null)}
-          onSent={() => setEmailHistoryKey((current) => current + 1)}
+          onSent={async (outcome) => {
+            setEmailHistoryKey((current) => current + 1);
+            if (!outcome.sent) return;
+            try {
+              const updated = await getQuotation(selectedQuotation.id);
+              setSelectedQuotation(updated);
+              await loadQuotationData({ silent: true });
+            } catch (requestError) {
+              setError(requestError.message);
+            }
+          }}
           quotationId={selectedQuotation.id}
         />
       ) : null}

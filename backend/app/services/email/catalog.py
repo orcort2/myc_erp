@@ -93,6 +93,49 @@ TEMPLATE_DEFINITIONS: dict[str, TemplateDefinition] = {
             ),
         ),
         TemplateDefinition(
+            key="quotation_signing_otp",
+            name="Mesa de Firmado MYC: código de verificación",
+            variables=(
+                TemplateVariable("quotation_folio"),
+                TemplateVariable("otp_code", secret=True),
+                TemplateVariable("expires_in"),
+            ),
+            subject="Código de verificación para cotización {quotation_folio}",
+            body=(
+                "Tu código para verificar la cotización {quotation_folio} es: {otp_code}\n\n"
+                "El código vence en {expires_in} minutos y solo puede utilizarse una vez.\n"
+                "Si no solicitaste esta verificación, ignora el mensaje.\n\n"
+                + _SIGNATURE
+            ),
+        ),
+        TemplateDefinition(
+            key="quotation_send_signing",
+            name="Cotización con aceptación electrónica",
+            variables=(
+                TemplateVariable("contact_name"),
+                TemplateVariable("client_name"),
+                TemplateVariable("quotation_folio"),
+                TemplateVariable("advisor_name"),
+                TemplateVariable("total"),
+                TemplateVariable("valid_until"),
+                TemplateVariable("signing_url", kind="url", secret=True),
+            ),
+            subject="Cotización {quotation_folio} - Metrología y Servicios MYC",
+            body=(
+                "Estimado(a) {contact_name},\n\n"
+                "Adjuntamos la cotización {quotation_folio} para "
+                "{client_name} por un total de {total}, "
+                "vigente hasta {valid_until}.\n\n"
+                "Para revisar y aceptar electrónicamente esta versión, "
+                "ingresa al siguiente enlace personal:\n"
+                "{signing_url}\n\n"
+                "La vigencia del enlace comienza cuando se confirma "
+                "el envío del correo y dura 15 días.\n\n"
+                "{advisor_name}\n"
+                "Metrología y Servicios MYC"
+            ),
+        ),
+        TemplateDefinition(
             key="quotation_send",
             name="Envío de cotización",
             variables=tuple(

@@ -9,6 +9,8 @@ from app.models.catalog_item import CatalogItem
 from app.models.client import Client, ClientContact
 from app.models.linked_company import LinkedCompany
 from app.models.quotation import Quotation, QuotationItem, QuotationSnapshot
+from app.models.quotation_acceptance import QuotationAcceptance
+from app.services.quotation_signing_authority import invalidate_document_links
 from app.models.service_execution import (
     ServiceStage,
     ServiceUnit,
@@ -1370,6 +1372,7 @@ def update_quotation(
     db.expire(quotation, ["contact"])
 
     if updates:
+        invalidate_document_links(db, quotation_id=quotation.id)
         _write_snapshot(
             db,
             quotation,
@@ -1529,6 +1532,8 @@ def restore_quotation_snapshot(
 
     db.flush()
 
+    invalidate_document_links(db, quotation_id=quotation.id)
+
     _write_snapshot(
         db,
         quotation,
@@ -1608,6 +1613,8 @@ def add_quotation_item(
     )
 
     db.flush()
+
+    invalidate_document_links(db, quotation_id=quotation.id)
 
     _write_snapshot(
         db,
@@ -1719,6 +1726,8 @@ def update_quotation_item(
     )
 
     db.flush()
+
+    invalidate_document_links(db, quotation_id=quotation.id)
 
     _write_snapshot(
         db,
@@ -1832,6 +1841,8 @@ def deactivate_quotation_item(
 
     db.flush()
 
+    invalidate_document_links(db, quotation_id=quotation.id)
+
     _write_snapshot(
         db,
         quotation,
@@ -1934,6 +1945,9 @@ def change_quotation_status(
         quotation.status
     )
 
+    if new_status in {"accepted", "rejected", "expired", "cancelled"}:
+        invalidate_document_links(db, quotation_id=quotation.id)
+
     quotation.status = (
         new_status
     )
@@ -2017,6 +2031,71 @@ def change_quotation_status(
         quotation.id,
     )
 
+
+def reopen_accepted_quotation(
+    db: Session,
+    quotation_id: int,
+    *,
+    user_id: int | None = None,
+) -> Quotation:
+    """Explicitly return an accepted quotation to drafting.
+
+    This does not mutate or cancel any existing service order. A new customer
+    acceptance is required after reopening. Electronic acceptance evidence
+    invalidation must be wired before enabling customer e-signatures.
+    """
+    quotation = db.scalar(
+        select(Quotation)
+        .where(Quotation.id == quotation_id, Quotation.is_active.is_(True))
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if quotation is None:
+        raise HTTPException(status_code=404, detail="Cotizacion no encontrada")
+    if quotation.status != "accepted":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Solo una cotizacion aceptada puede regresar a proceso",
+        )
+
+    active_acceptances = list(db.scalars(
+        select(QuotationAcceptance)
+        .where(
+            QuotationAcceptance.quotation_id == quotation.id,
+            QuotationAcceptance.invalidated_at.is_(None),
+        )
+        .with_for_update()
+    ).all())
+    invalidated_at = datetime.now(timezone.utc)
+    for acceptance in active_acceptances:
+        acceptance.invalidated_at = invalidated_at
+        acceptance.invalidated_by_id = user_id
+        acceptance.invalidation_reason = "quotation_reopened"
+    invalidate_document_links(db, quotation_id=quotation.id)
+    quotation.status = "draft"
+    write_audit_log(
+        db,
+        action="quotation.reopened",
+        entity="quotations",
+        entity_id=quotation.id,
+        user_id=user_id,
+        previous_values={"status": "accepted"},
+        new_values={"status": "draft", "requires_new_acceptance": True, "invalidated_acceptance_ids": [a.id for a in active_acceptances]},
+    )
+    publish_event(
+        db,
+        entity_type="quotation",
+        entity_id=quotation.id,
+        event_code="quotation.status_changed",
+        idempotency_key=f"quotation:{quotation.id}:reopened:{datetime.now(timezone.utc).isoformat()}",
+        body="Cotizacion regresada a proceso; requiere nueva aceptacion.",
+        actor_id=user_id,
+        metadata={"previous_status": "accepted", "status": "draft"},
+    )
+    db.commit()
+    return get_quotation(db, quotation.id)
+
+
 def deactivate_quotation(
     db: Session,
     quotation_id: int,
@@ -2027,6 +2106,8 @@ def deactivate_quotation(
         db,
         quotation_id,
     )
+
+    invalidate_document_links(db, quotation_id=quotation.id)
 
     quotation.is_active = False
 

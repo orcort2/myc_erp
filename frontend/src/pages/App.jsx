@@ -18,6 +18,7 @@ import DocumentLibraryPage from './DocumentLibraryPage.jsx';
 import EquipmentPage from './EquipmentPage.jsx';
 import FlowTestPage from './FlowTestPage.jsx';
 import LoginPage from './LoginPage.jsx';
+import QuotationSigningPage from './QuotationSigningPage.jsx';
 import ForgotPasswordPage from './ForgotPasswordPage.jsx';
 import ResetPasswordPage from './ResetPasswordPage.jsx';
 import ModulePage from './ModulePage.jsx';
@@ -63,7 +64,7 @@ export function App() {
     async function checkSession() {
       const portalPath = path.startsWith('/portal');
       const publicPortalPath = path === '/portal/login' || path === '/portal/registro' || path === '/portal/verificar-correo' || path.startsWith('/portal/invitacion/');
-      if (publicPortalPath || isPasswordRecoveryPath(path)) {
+      if (publicPortalPath || path === '/quotation-signing' || isPasswordRecoveryPath(path)) {
         if (isMounted) setIsCheckingSession(false);
         return;
       }
@@ -145,6 +146,10 @@ export function App() {
         <span>Cargando MYC SYSTEM</span>
       </main>
     );
+  }
+
+  if (path === '/quotation-signing') {
+    return <QuotationSigningPage />;
   }
 
   if (path === '/login') {

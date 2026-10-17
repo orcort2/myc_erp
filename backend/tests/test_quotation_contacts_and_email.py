@@ -267,12 +267,65 @@ def test_send_attaches_the_official_pdf_and_traces_the_delivery(world):
     assert audit.new_values["quotation_folio"] == "COT-2026-0001" and "body" not in str(audit.new_values)
 
 
-def test_email_never_changes_the_quotation_status(world):
+def test_successful_smtp_advances_draft_and_resend_does_not_duplicate_transition(world):
     w = world
-    assert send(w).json()["sent"] is True
+    first = send(w)
+    assert first.status_code == 200 and first.json()["sent"] is True
+    assert w.db.get(Quotation, w.quotation.id, populate_existing=True).status == "sent"
+    second = send(w)
+    assert second.status_code == 200 and second.json()["sent"] is True
+    assert second.json()["delivery_id"] != first.json()["delivery_id"]
+    assert w.db.get(Quotation, w.quotation.id, populate_existing=True).status == "sent"
+    transitions = list(w.db.scalars(select(AuditLog).where(AuditLog.action == "quotation.sent")))
+    assert len(transitions) == 1
+    assert transitions[0].new_values["delivery_id"] == first.json()["delivery_id"]
+
+
+def test_smtp_failure_does_not_advance_draft(world):
+    w = world
+    FakeSMTP.fail_with = TimeoutError("down")
+    failed = send(w)
+    assert failed.status_code == 200 and failed.json()["sent"] is False
+    assert w.db.get(Quotation, w.quotation.id, populate_existing=True).status == "draft"
+    assert w.db.scalar(select(AuditLog).where(AuditLog.action == "quotation.sent")) is None
+
+
+def test_terminal_quotation_rejects_email_before_smtp(world):
+    w = world
+    quotation = w.db.get(Quotation, w.quotation.id)
+    quotation.status = "accepted"
+    w.db.commit()
+    response = send(w)
+    assert response.status_code == 409
+    assert w.db.get(Quotation, w.quotation.id, populate_existing=True).status == "accepted"
+    assert w.db.scalars(select(EmailDelivery)).all() == []
+
+
+
+def test_reconciliation_recovers_persisted_smtp_delivery_without_resending(world):
+    w = world
+    sent = send(w)
+    assert sent.json()["sent"] is True
+    sent_count = len(FakeSMTP.instances[-1].sent)
+    quotation = w.db.get(Quotation, w.quotation.id)
+    quotation.status = "draft"  # simulate a lost commercial status commit
+    w.db.commit()
+    assert quotation_email.reconcile_quotation_email_status(w.db, quotation.id) is True
+    assert w.db.get(Quotation, quotation.id, populate_existing=True).status == "sent"
+    assert quotation_email.reconcile_quotation_email_status(w.db, quotation.id) is False
+    assert len(FakeSMTP.instances[-1].sent) == sent_count
+
+
+def test_reconciliation_ignores_failed_delivery_and_terminal_status(world):
+    w = world
     FakeSMTP.fail_with = TimeoutError("down")
     assert send(w).json()["sent"] is False
-    assert w.db.get(Quotation, w.quotation.id, populate_existing=True).status == "draft"
+    assert quotation_email.reconcile_quotation_email_status(w.db, w.quotation.id) is False
+    quotation = w.db.get(Quotation, w.quotation.id)
+    quotation.status = "accepted"
+    w.db.commit()
+    assert quotation_email.reconcile_quotation_email_status(w.db, quotation.id) is False
+    assert w.db.get(Quotation, quotation.id, populate_existing=True).status == "accepted"
 
 
 def test_smtp_failure_is_traced_and_resend_creates_a_new_delivery(world):
@@ -328,3 +381,90 @@ def test_quotation_contact_migration_is_the_single_head():
     assert script.get_revision("c3e6a9b2d4f8").down_revision == "b2d5f8a1c3e7"
     column = Quotation.__table__.c.contact_id
     assert column.nullable and next(iter(column.foreign_keys)).ondelete == "SET NULL"
+
+
+def test_standalone_reconciliation_worker_recovers_only_smtp_accepted(world):
+    from app.services.quotation_email_reconciliation import reconcile_batch
+
+    w = world
+    outcome = send(w)
+    assert outcome.json()["sent"] is True
+    quotation = w.db.get(Quotation, w.quotation.id)
+    quotation.status = "draft"  # crash after SMTP acceptance, before commercial commit
+    w.db.commit()
+    factory = lambda: Session(bind=w.db.get_bind(), expire_on_commit=False)
+    assert reconcile_batch(factory, batch_size=1) == (1, 0)
+    w.db.expire_all()
+    assert w.db.get(Quotation, quotation.id).status == "sent"
+    assert reconcile_batch(factory, batch_size=1) == (0, 0)
+    assert len(FakeSMTP.instances) == 1  # one SMTP transport invocation, not tuple length
+
+
+def test_standalone_reconciliation_worker_does_not_recover_failed_smtp(world):
+    from app.services.quotation_email_reconciliation import reconcile_batch
+
+    w = world
+    FakeSMTP.fail_with = TimeoutError("down")
+    assert send(w).json()["sent"] is False
+    factory = lambda: Session(bind=w.db.get_bind(), expire_on_commit=False)
+    assert reconcile_batch(factory, batch_size=1) == (0, 0)
+    w.db.expire_all()
+    assert w.db.get(Quotation, w.quotation.id).status == "draft"
+
+
+def test_reconciliation_worker_isolates_failed_quotation_and_retries_next_cycle(world, monkeypatch):
+    from app.services import quotation_email_reconciliation as worker
+
+    w = world
+    assert send(w).json()["sent"] is True
+    first_id = w.quotation.id
+    first = w.db.get(Quotation, first_id)
+    first.status = "draft"
+    w.db.commit()
+
+    second = Quotation(
+        folio="COT-2026-0002",
+        client_id=w.client.id,
+        advisor_id=w.users["Comercial"].id,
+        status="draft",
+        issued_on=date(2026, 9, 1),
+        valid_until=date(2026, 10, 1),
+    )
+    w.db.add(second)
+    w.db.flush()
+    second_id = second.id
+    delivery = w.db.scalar(
+        select(EmailDelivery).where(
+            EmailDelivery.related_entity_type == "quotation",
+            EmailDelivery.related_entity_id == first_id,
+            EmailDelivery.status == "sent",
+        )
+    )
+    w.db.add(EmailDelivery(
+        template_key=delivery.template_key,
+        related_entity_type="quotation",
+        related_entity_id=second_id,
+        subject=delivery.subject,
+        body_text_snapshot=delivery.body_text_snapshot,
+        body_html_snapshot=delivery.body_html_snapshot,
+        status="sent",
+        sent_at=datetime.now(timezone.utc),
+    ))
+    w.db.commit()
+
+    original = worker.reconcile_quotation_email_status
+    def fail_first(db, quotation_id):
+        if quotation_id == first_id:
+            raise RuntimeError("temporary database interruption")
+        return original(db, quotation_id)
+
+    monkeypatch.setattr(worker, "reconcile_quotation_email_status", fail_first)
+    factory = lambda: Session(bind=w.db.get_bind(), expire_on_commit=False)
+    assert worker.reconcile_batch(factory, batch_size=1) == (1, 1)
+    w.db.expire_all()
+    assert w.db.get(Quotation, first_id).status == "draft"
+    assert w.db.get(Quotation, second_id).status == "sent"
+
+    monkeypatch.setattr(worker, "reconcile_quotation_email_status", original)
+    assert worker.reconcile_batch(factory, batch_size=1) == (1, 0)
+    assert worker.reconcile_batch(factory, batch_size=1) == (0, 0)

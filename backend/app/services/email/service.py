@@ -167,6 +167,7 @@ def send_email(
     requested_by_id: int | None = None,
     settings: Settings | None = None,
     transport: SmtpTransport | None = None,
+    staged_signing_link_id: int | None = None,
 ) -> EmailResult:
     settings = settings or get_settings()
     transport = transport or SmtpTransport(settings)
@@ -202,7 +203,32 @@ def send_email(
         requested_by_id=requested_by_id,
     )
     db.add(delivery)
-    db.commit()  # the intent is durable before any network I/O
+    db.flush()
+    if staged_signing_link_id is not None:
+        from app.models.quotation_signing_document import QuotationSigningDocument, QuotationSigningLink
+        link = db.scalar(
+            select(QuotationSigningLink)
+            .where(QuotationSigningLink.id == staged_signing_link_id)
+            .with_for_update()
+        )
+        document = db.get(QuotationSigningDocument, link.document_id) if link else None
+        if (
+            template_key != "quotation_send_signing"
+            or related_entity_type != "quotation"
+            or link is None
+            or document is None
+            or document.quotation_id != related_entity_id
+            or link.revoked_at is not None
+            or link.activated_at is not None
+            or link.delivery_id is not None
+            or len(to_list) != 1
+            or cc_list or bcc_list
+            or link.recipient_email.lower() != to_list[0].lower()
+        ):
+            db.rollback()
+            raise EmailTemplateError("El enlace de firmado no corresponde a esta entrega.")
+        link.delivery_id = delivery.id
+    db.commit()  # persist delivery/link association before network I/O
     message = OutgoingMessage(real.subject, real.body_text, real.body_html, to_list, cc_list, bcc_list, tuple(attachments))
     return _finish(db, delivery, transport=transport, settings=settings, message=message, actor_id=requested_by_id)
 
