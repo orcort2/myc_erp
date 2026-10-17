@@ -357,6 +357,7 @@ def activate_document_link(db: Session, *, link_id: int, delivery_id: int):
         or delivery.related_entity_type != "quotation"
         or delivery.related_entity_id != document.quotation_id
         or delivery.template_key != "quotation_send_signing"
+        or link.delivery_id != delivery_id
         or link.recipient_email.lower() not in {
             address.lower() for address in (delivery.to_json or [])
         }
