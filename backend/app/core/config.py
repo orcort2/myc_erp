@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     smtp_host: str = ""
     smtp_port: int = Field(default=587, gt=0, le=65535)
     smtp_use_starttls: bool = True
+    smtp_ca_file: str = ""
     smtp_username: str = ""
     smtp_password: SecretStr = SecretStr("")
     email_from_address: str = ""

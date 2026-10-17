@@ -113,7 +113,12 @@ class SmtpTransport:
             try:
                 server.ehlo()
                 if settings.smtp_use_starttls:
-                    server.starttls(context=ssl.create_default_context())
+                    context = ssl.create_default_context()
+                    if settings.smtp_ca_file.strip():
+                        context.load_verify_locations(
+                            cafile=settings.smtp_ca_file.strip()
+                        )
+                    server.starttls(context=context)
                     server.ehlo()
                 if settings.smtp_username and password:
                     server.login(settings.smtp_username, password)

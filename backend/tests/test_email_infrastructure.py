@@ -129,7 +129,7 @@ def test_renderer_redacts_secret_variables_for_snapshots():
 def test_default_templates_are_idempotent_and_never_overwrite_edits(db):
     ensure_default_templates(db); ensure_default_templates(db)
     keys = set(db.scalars(select(EmailTemplate.template_key)).all())
-    assert keys == {"portal_email_verification", "portal_invitation", "password_reset", "quotation_send", "invoice_draft_send", "invoice_send",}
+    assert keys == set(TEMPLATE_DEFINITIONS)
     update_template(db, "quotation_send", actor_id=1, subject_template="Nueva {quotation_folio}")
     ensure_default_templates(db)
     assert db.scalar(select(EmailTemplate).where(EmailTemplate.template_key == "quotation_send")).subject_template == "Nueva {quotation_folio}"
@@ -206,6 +206,60 @@ def test_transport_errors_are_normalized_without_secrets():
     with pytest.raises(Exception):
         transport(make_settings()).send(message())
 
+
+
+def test_transport_loads_custom_ca_file(monkeypatch):
+    import ssl
+    from unittest.mock import Mock
+
+    context = Mock(spec=ssl.SSLContext)
+    create_context = Mock(return_value=context)
+    monkeypatch.setattr(ssl, "create_default_context", create_context)
+
+    transport(make_settings(smtp_ca_file="/certs/relay.pem")).send(message())
+
+    create_context.assert_called_once_with()
+    context.load_verify_locations.assert_called_once_with(
+        cafile="/certs/relay.pem"
+    )
+    assert "starttls" in FakeSMTP.instances[0].calls
+
+
+def test_transport_without_custom_ca_uses_system_trust(monkeypatch):
+    import ssl
+    from unittest.mock import Mock
+
+    context = Mock(spec=ssl.SSLContext)
+    create_context = Mock(return_value=context)
+    monkeypatch.setattr(ssl, "create_default_context", create_context)
+
+    transport(make_settings(smtp_ca_file="")).send(message())
+
+    create_context.assert_called_once_with()
+    context.load_verify_locations.assert_not_called()
+
+
+def test_transport_rejects_invalid_ca_file(monkeypatch):
+    import ssl
+    from unittest.mock import Mock
+
+    context = Mock(spec=ssl.SSLContext)
+    context.load_verify_locations.side_effect = FileNotFoundError(
+        "CA file not found"
+    )
+    monkeypatch.setattr(
+        ssl, "create_default_context", Mock(return_value=context)
+    )
+
+    from app.services.email.errors import EmailTransportError
+
+    with pytest.raises(EmailTransportError, match="FileNotFoundError"):
+        transport(make_settings(smtp_ca_file="/missing/relay.pem")).send(
+            message()
+        )
+
+    assert FakeSMTP.instances[0].sent is None
+    assert FakeSMTP.instances[0].calls == ["ehlo", "quit"]
 
 # --- D/E. delivery ---------------------------------------------------------
 CTX = {"recipient_name": "Ana", "verification_url": SECRET_URL}
