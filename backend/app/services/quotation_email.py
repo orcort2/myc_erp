@@ -148,8 +148,6 @@ def send_quotation_email(
         raise HTTPException(status_code=503, detail="Configure PUBLIC_APP_BASE_URL.")
     if len(chosen_to) != 1 or chosen_cc:
         raise HTTPException(status_code=422, detail="El firmado requiere un destinatario y ningún CC.")
-    if quotation.contact is None or (quotation.contact.email or "").strip().lower() != chosen_to[0].lower():
-        raise HTTPException(status_code=422, detail="El destinatario debe ser el contacto autorizado.")
     context = build_context(quotation, chosen_to[0], suggestions)
     pdf, filename = generate_quotation_pdf(db, quotation_id)
     latest = db.scalar(

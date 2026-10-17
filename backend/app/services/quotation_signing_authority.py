@@ -26,6 +26,11 @@ def _now():
     return datetime.now(timezone.utc)
 
 
+def _as_utc(value: datetime) -> datetime:
+    """Normalize SQLite naive UTC datetimes and PostgreSQL aware datetimes."""
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
 def _deny():
     raise HTTPException(
         status_code=404,
@@ -183,14 +188,6 @@ def create_document_link(
     ):
         _deny()
 
-    contact = quotation.contact
-    if (
-        contact is None
-        or contact.client_id != quotation.client_id
-        or not contact.email
-        or contact.email.strip().lower() != recipient_email.strip().lower()
-    ):
-        _deny()
 
     token = issue_signing_link(
         quotation_id=document.quotation_id,
@@ -245,7 +242,7 @@ def authorize_document_link(
         link is None
         or link.revoked_at is not None
         or link.activated_at is None
-        or link.expires_at <= _now()
+        or _as_utc(link.expires_at) <= _now()
     ):
         _deny()
 
@@ -286,14 +283,6 @@ def authorize_document_link(
     ):
         _deny()
 
-    contact = quotation.contact
-    if (
-        contact is None
-        or contact.client_id != quotation.client_id
-        or not contact.email
-        or contact.email.strip().lower() != link.recipient_email.lower()
-    ):
-        _deny()
 
     return document, link
 
@@ -370,7 +359,7 @@ def activate_document_link(db: Session, *, link_id: int, delivery_id: int):
     activated_at = delivery.sent_at
     if activated_at.tzinfo is None:
         activated_at = activated_at.replace(tzinfo=timezone.utc)
-    if activated_at > link.expires_at - timedelta(days=15):
+    if activated_at > _as_utc(link.expires_at) - timedelta(days=15):
         _deny()
     link.activated_at = activated_at
     link.expires_at = activated_at + timedelta(days=15)

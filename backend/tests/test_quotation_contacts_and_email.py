@@ -279,6 +279,47 @@ def test_send_attaches_the_official_pdf_and_traces_the_delivery(world):
     assert audit.new_values["quotation_folio"] == "COT-2026-0001" and "body" not in str(audit.new_values)
 
 
+def test_send_to_selected_recipient_other_than_quotation_contact(world):
+    from app.models.quotation_signing_document import QuotationSigningLink
+    from app.services.quotation_signing_authority import authorize_document_link
+    from app.services.quotation_signing_links import verify_signing_link
+    from urllib.parse import parse_qs, urlsplit
+
+    w = world
+    assert w.quotation.contact_id == w.ana.id
+    response = send(w, to=["luis.perez@xyz.com"])
+    assert response.status_code == 200, response.text
+    assert response.json()["sent"] is True
+    delivery_id = response.json()["delivery_id"]
+    delivery = w.db.get(EmailDelivery, delivery_id)
+    assert delivery.to_json == ["luis.perez@xyz.com"]
+    assert delivery.cc_json == []
+    link = w.db.scalar(
+        select(QuotationSigningLink).where(
+            QuotationSigningLink.delivery_id == delivery_id
+        )
+    )
+    assert link is not None
+    assert link.recipient_email == "luis.perez@xyz.com"
+    assert link.activated_at is not None
+    assert w.quotation.contact_id == w.ana.id
+
+    message = FakeSMTP.instances[-1].sent[0]
+    email_text = message.get_body(preferencelist=("plain",)).get_content()
+    import re
+    token_url = re.search(r"https://[^\s<>]+/quotation-signing#token=[^\s<>]+", email_text)
+    assert token_url is not None
+    token = parse_qs(urlsplit(token_url.group(0)).fragment)["token"][0]
+    from app.core.config import Settings
+    settings = make_settings(
+        public_app_base_url="https://erp.mycmetrology.com.mx",
+        secret_key="test-signing-secret-with-sufficient-randomness-12345",
+    )
+    document, authorized_link = authorize_document_link(w.db, token, settings=settings)
+    assert authorized_link.id == link.id
+    assert document.quotation_id == w.quotation.id
+
+
 def test_successful_smtp_advances_draft_and_resend_does_not_duplicate_transition(world):
     w = world
     first = send(w)
