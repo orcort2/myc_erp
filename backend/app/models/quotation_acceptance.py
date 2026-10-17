@@ -1,7 +1,7 @@
 """Immutable quotation acceptance evidence with explicit operational invalidation."""
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, LargeBinary, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, JSON, LargeBinary, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -15,7 +15,7 @@ class QuotationAcceptance(IntegerPkMixin, TimestampMixin, Base):
             "uq_quotation_acceptances_current",
             "quotation_id",
             unique=True,
-            postgresql_where=__import__("sqlalchemy").text("invalidated_at IS NULL"),
+            postgresql_where=text("invalidated_at IS NULL"),
             sqlite_where=__import__("sqlalchemy").text("invalidated_at IS NULL"),
         ),
     )
