@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.models.quotation import Quotation, QuotationSnapshot
 from app.models.quotation_signing_challenge import QuotationSigningChallenge
+from app.services.quotation_signing_authority import authorize_document_link
 from app.services.audit_logs import write_audit_log
 from app.services.email import send_email
 from app.services.email.errors import EmailError
@@ -119,6 +120,7 @@ def request_signing_code(
     *,
     settings: Settings | None = None,
     transport=None,
+    signing_token: str | None = None,
 ) -> dict:
     """Persist challenge before SMTP; return metadata, never the OTP."""
     settings = settings or get_settings()
@@ -127,6 +129,14 @@ def request_signing_code(
     quotation = _quotation(db, quotation_id)
     snapshot = _snapshot(db, quotation.id)
     recipient = _recipient(quotation)
+    link_id = None
+    if signing_token is not None:
+        document, link = authorize_document_link(db, signing_token, settings=settings)
+        if (document.quotation_id != quotation.id
+            or document.snapshot_id != snapshot.id
+            or link.recipient_email.lower() != recipient.lower()):
+            raise HTTPException(status_code=404, detail="Enlace de firmado no disponible")
+        link_id = link.id
     now = _now()
 
     previous = list(
@@ -162,6 +172,7 @@ def request_signing_code(
     challenge = QuotationSigningChallenge(
         quotation_id=quotation.id,
         snapshot_id=snapshot.id,
+        signing_link_id=link_id,
         recipient_email=recipient,
         code_hash=code_digest(
             code,
@@ -251,6 +262,7 @@ def verify_signing_code(
     code: str,
     *,
     settings: Settings | None = None,
+    signing_token: str | None = None,
 ) -> bool:
     """Verify once under a quotation row lock; never consume acceptance."""
     settings = settings or get_settings()
@@ -268,6 +280,15 @@ def verify_signing_code(
         )
         .with_for_update()
     )
+
+    if signing_token is not None:
+        document, link = authorize_document_link(db, signing_token, settings=settings)
+        if (challenge is None
+            or challenge.signing_link_id != link.id
+            or document.quotation_id != quotation.id
+            or document.snapshot_id != snapshot.id
+            or link.recipient_email.lower() != recipient.lower()):
+            raise HTTPException(status_code=409, detail="Código no asociado al enlace vigente")
 
     now = _now()
 
