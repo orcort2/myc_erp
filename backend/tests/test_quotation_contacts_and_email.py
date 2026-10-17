@@ -381,3 +381,32 @@ def test_quotation_contact_migration_is_the_single_head():
     assert script.get_revision("c3e6a9b2d4f8").down_revision == "b2d5f8a1c3e7"
     column = Quotation.__table__.c.contact_id
     assert column.nullable and next(iter(column.foreign_keys)).ondelete == "SET NULL"
+
+
+def test_standalone_reconciliation_worker_recovers_only_smtp_accepted(world):
+    from app.services.quotation_email_reconciliation import reconcile_batch
+
+    w = world
+    outcome = send(w)
+    assert outcome.json()["sent"] is True
+    quotation = w.db.get(Quotation, w.quotation.id)
+    quotation.status = "draft"  # crash after SMTP acceptance, before commercial commit
+    w.db.commit()
+    factory = lambda: Session(bind=w.db.get_bind(), expire_on_commit=False)
+    assert reconcile_batch(factory, batch_size=1) == (1, 0)
+    w.db.expire_all()
+    assert w.db.get(Quotation, quotation.id).status == "sent"
+    assert reconcile_batch(factory, batch_size=1) == (0, 0)
+    assert len(FakeSMTP.instances[-1].sent) == 1
+
+
+def test_standalone_reconciliation_worker_does_not_recover_failed_smtp(world):
+    from app.services.quotation_email_reconciliation import reconcile_batch
+
+    w = world
+    FakeSMTP.fail_with = TimeoutError("down")
+    assert send(w).json()["sent"] is False
+    factory = lambda: Session(bind=w.db.get_bind(), expire_on_commit=False)
+    assert reconcile_batch(factory, batch_size=1) == (0, 0)
+    w.db.expire_all()
+    assert w.db.get(Quotation, w.quotation.id).status == "draft"
