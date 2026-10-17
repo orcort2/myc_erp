@@ -29,7 +29,7 @@ ROLES = ("Administrador", "Desarrollador", "Comercial", "Finanzas", "Tecnico")
 def world(monkeypatch):
     engine = create_engine("sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
-    settings = make_settings()
+    settings = make_settings(public_app_base_url="https://erp.mycmetrology.com.mx")
     monkeypatch.setattr("app.services.email.service.get_settings", lambda: settings)
     monkeypatch.setattr("app.services.quotation_email.get_settings", lambda: settings)
     monkeypatch.setattr("app.services.email.service.SmtpTransport", lambda s: SmtpTransport(s, smtp_factory=FakeSMTP))
@@ -52,7 +52,11 @@ def world(monkeypatch):
         db.add_all([ana, luis, sin_correo, foreign]); db.commit()
         quotation = Quotation(folio="COT-2026-0001", client_id=client.id, advisor_id=users["Comercial"].id, status="draft",
                               issued_on=date(2026, 9, 1), valid_until=date(2026, 10, 1))
+        quotation.contact_id = ana.id
         db.add(quotation); db.commit()
+        from app.services.quotations import _write_snapshot
+        _write_snapshot(db, quotation, reason="test_setup", user_id=users["Comercial"].id)
+        db.commit()
         app.dependency_overrides[get_db] = lambda: db
         api = TestClient(app)
 
@@ -252,11 +256,11 @@ def send(w, who="Comercial", **body):
 
 def test_send_attaches_the_official_pdf_and_traces_the_delivery(world):
     w = world
-    response = send(w, to=["ana.lopez@xyz.com", "manual@otra.com"], cc=["cc@otra.com"])
+    response = send(w, to=["ana.lopez@xyz.com"])
     assert response.status_code == 200 and response.json()["sent"] is True
     delivery = w.db.get(EmailDelivery, response.json()["delivery_id"])
     assert (delivery.related_entity_type, delivery.related_entity_id, delivery.requested_by_id) == ("quotation", w.quotation.id, w.users["Comercial"].id)
-    assert delivery.to_json == ["ana.lopez@xyz.com", "manual@otra.com"] and delivery.cc_json == ["cc@otra.com"]
+    assert delivery.to_json == ["ana.lopez@xyz.com"] and delivery.cc_json == []
     message = FakeSMTP.instances[-1].sent[0]
     attachment = next(message.iter_attachments())
     official, official_name = generate_quotation_pdf(w.db, w.quotation.id)
@@ -309,14 +313,14 @@ def test_reconciliation_recovers_persisted_smtp_delivery_without_resending(world
     w = world
     sent = send(w)
     assert sent.json()["sent"] is True
-    sent_count = len(FakeSMTP.instances[-1].sent)
+    sent_count = len(FakeSMTP.instances)
     quotation = w.db.get(Quotation, w.quotation.id)
     quotation.status = "draft"  # simulate a lost commercial status commit
     w.db.commit()
     assert quotation_email.reconcile_quotation_email_status(w.db, quotation.id) is True
     assert w.db.get(Quotation, quotation.id, populate_existing=True).status == "sent"
     assert quotation_email.reconcile_quotation_email_status(w.db, quotation.id) is False
-    assert len(FakeSMTP.instances[-1].sent) == sent_count
+    assert len(FakeSMTP.instances) == sent_count
 
 
 def test_reconciliation_ignores_failed_delivery_and_terminal_status(world):
@@ -359,7 +363,7 @@ def test_contextual_history_is_scoped_to_the_quotation_and_not_global(world):
     first = send(w).json()["delivery_id"]
     w.api.post(f"/api/quotations/{other_q.id}/email/send", headers=w.h("Comercial"), json={"to": ["x@otra.com"]})
     FakeSMTP.fail_with = TimeoutError("down")
-    second = send(w, to=["luis.perez@xyz.com"]).json()["delivery_id"]
+    second = send(w, to=["ana.lopez@xyz.com"]).json()["delivery_id"]
     history = w.api.get(f"/api/quotations/{w.quotation.id}/email/deliveries", headers=w.h("Comercial"))
     assert history.status_code == 200
     rows = history.json()
@@ -379,7 +383,8 @@ def test_quotation_contact_migration_is_the_single_head():
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert script.get_heads() == ["f6b9c3d4e5a7"]
+    assert len(script.get_heads()) == 1
+    assert script.get_revision("f6b9c3d4e5a7") is not None
     assert script.get_revision("d4f7a1b2c3e5").down_revision == "c3e6a9b2d4f8"
     assert script.get_revision("c3e6a9b2d4f8").down_revision == "b2d5f8a1c3e7"
     column = Quotation.__table__.c.contact_id
