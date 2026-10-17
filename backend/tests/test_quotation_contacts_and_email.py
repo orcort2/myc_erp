@@ -410,3 +410,61 @@ def test_standalone_reconciliation_worker_does_not_recover_failed_smtp(world):
     assert reconcile_batch(factory, batch_size=1) == (0, 0)
     w.db.expire_all()
     assert w.db.get(Quotation, w.quotation.id).status == "draft"
+
+
+def test_reconciliation_worker_isolates_failed_quotation_and_retries_next_cycle(world, monkeypatch):
+    from app.services import quotation_email_reconciliation as worker
+
+    w = world
+    assert send(w).json()["sent"] is True
+    first_id = w.quotation.id
+    first = w.db.get(Quotation, first_id)
+    first.status = "draft"
+    w.db.commit()
+
+    second = Quotation(
+        folio="COT-2026-0002",
+        client_id=w.client.id,
+        advisor_id=w.users["Comercial"].id,
+        status="draft",
+        issued_on=date(2026, 9, 1),
+        valid_until=date(2026, 10, 1),
+    )
+    w.db.add(second)
+    w.db.flush()
+    second_id = second.id
+    delivery = w.db.scalar(
+        select(EmailDelivery).where(
+            EmailDelivery.related_entity_type == "quotation",
+            EmailDelivery.related_entity_id == first_id,
+            EmailDelivery.status == "sent",
+        )
+    )
+    w.db.add(EmailDelivery(
+        template_key=delivery.template_key,
+        related_entity_type="quotation",
+        related_entity_id=second_id,
+        subject=delivery.subject,
+        body_text_snapshot=delivery.body_text_snapshot,
+        body_html_snapshot=delivery.body_html_snapshot,
+        status="sent",
+        sent_at=datetime.now(timezone.utc),
+    ))
+    w.db.commit()
+
+    original = worker.reconcile_quotation_email_status
+    def fail_first(db, quotation_id):
+        if quotation_id == first_id:
+            raise RuntimeError("temporary database interruption")
+        return original(db, quotation_id)
+
+    monkeypatch.setattr(worker, "reconcile_quotation_email_status", fail_first)
+    factory = lambda: Session(bind=w.db.get_bind(), expire_on_commit=False)
+    assert worker.reconcile_batch(factory, batch_size=1) == (1, 1)
+    w.db.expire_all()
+    assert w.db.get(Quotation, first_id).status == "draft"
+    assert w.db.get(Quotation, second_id).status == "sent"
+
+    monkeypatch.setattr(worker, "reconcile_quotation_email_status", original)
+    assert worker.reconcile_batch(factory, batch_size=1) == (1, 0)
+    assert worker.reconcile_batch(factory, batch_size=1) == (0, 0)
