@@ -13,6 +13,10 @@ class QuotationSigningChallenge(IntegerPkMixin, TimestampMixin, Base):
 
     quotation_id: Mapped[int] = mapped_column(ForeignKey("quotations.id", ondelete="RESTRICT"), index=True)
     snapshot_id: Mapped[int] = mapped_column(ForeignKey("quotation_snapshots.id", ondelete="RESTRICT"))
+    signing_link_id: Mapped[int | None] = mapped_column(
+        ForeignKey("quotation_signing_links.id", ondelete="RESTRICT"),
+        nullable=True, index=True,
+    )
     recipient_email: Mapped[str] = mapped_column(String(254), nullable=False)
     code_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     nonce: Mapped[str] = mapped_column(String(64), nullable=False)
