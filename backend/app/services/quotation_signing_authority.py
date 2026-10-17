@@ -197,6 +197,7 @@ def create_document_link(
         pdf_sha256=document.pdf_sha256,
         secret_key=settings.secret_key,
         lifetime_seconds=(30 * 24 * 60 * 60 if staged else lifetime_seconds),
+        staged=staged,
     )
     claims = verify_signing_link(token, secret_key=settings.secret_key)
 
