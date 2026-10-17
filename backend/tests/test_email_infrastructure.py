@@ -502,11 +502,24 @@ PROD = dict(environment="production", secret_key="Zq8!vN3#rT6@wK1$yB9%xC4^mD7&hF
 
 @pytest.mark.parametrize("overrides", [
     {"smtp_host": ""}, {"smtp_host": "   "}, {"email_from_address": ""}, {"email_from_address": "  "},
-    {"email_from_address": "not-an-address"}, {"smtp_use_starttls": False},
+    {"email_from_address": "not-an-address"},
 ])
 def test_production_with_email_enabled_rejects_incomplete_smtp_config(overrides):
     with pytest.raises(ValueError):
         make_settings(**PROD, **overrides)
+
+
+def test_production_allows_smtp_without_starttls():
+    settings = make_settings(
+        **PROD,
+        smtp_host="10.77.0.1",
+        smtp_port=25,
+        smtp_use_starttls=False,
+        public_app_base_url="https://erp.example.test",
+    )
+    assert settings.smtp_use_starttls is False
+    transport(settings).send(message())
+    assert FakeSMTP.instances[0].calls == ["ehlo", "quit"]
 
 
 def test_google_relay_by_ip_without_credentials_is_valid_in_production():
