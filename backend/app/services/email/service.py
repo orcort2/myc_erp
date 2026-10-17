@@ -51,7 +51,8 @@ def _utcnow() -> datetime:
 
 
 def preview_email(
-    db: Session, *, template_key: str, context: dict[str, object], settings: Settings | None = None
+    db: Session, *, template_key: str, context: dict[str, object], settings: Settings | None = None,
+    redact_secrets: bool = False,
 ) -> RenderedEmail:
     """Render exactly what ``send_email`` would deliver (secrets included).
 
@@ -82,6 +83,7 @@ def preview_email(
         body_template=template.body_template,
         context=context,
         organization_name=settings.email_from_name,
+        redact_secrets=redact_secrets,
     )
 
 
