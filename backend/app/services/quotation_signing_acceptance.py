@@ -127,6 +127,11 @@ def accept_signed_quotation(
     # Never commit here: evidence, OTP consumption and ETS must be atomic.
     from app.schemas.service_order import ServiceOrderCreate
     from app.services.service_orders import create_service_order
+    if quotation.advisor_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail="La cotización necesita un asesor asignado para generar la ETS",
+        )
     create_service_order(
         db,
         ServiceOrderCreate(
