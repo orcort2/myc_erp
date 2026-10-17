@@ -307,7 +307,7 @@ def test_send_to_selected_recipient_other_than_quotation_contact(world):
     message = FakeSMTP.instances[-1].sent[0]
     email_text = message.get_body(preferencelist=("plain",)).get_content()
     import re
-    token_url = re.search(r"https://[^\\s<>]+/quotation-signing#token=[^\\s<>]+", email_text)
+    token_url = re.search(r"https://[^\s<>]+/quotation-signing#token=[^\s<>]+", email_text)
     assert token_url is not None
     token = parse_qs(urlsplit(token_url.group(0)).fragment)["token"][0]
     from app.core.config import Settings
