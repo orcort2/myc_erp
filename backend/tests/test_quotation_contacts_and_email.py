@@ -267,12 +267,38 @@ def test_send_attaches_the_official_pdf_and_traces_the_delivery(world):
     assert audit.new_values["quotation_folio"] == "COT-2026-0001" and "body" not in str(audit.new_values)
 
 
-def test_email_never_changes_the_quotation_status(world):
+def test_successful_smtp_advances_draft_and_resend_does_not_duplicate_transition(world):
     w = world
-    assert send(w).json()["sent"] is True
+    first = send(w)
+    assert first.status_code == 200 and first.json()["sent"] is True
+    assert w.db.get(Quotation, w.quotation.id, populate_existing=True).status == "sent"
+    second = send(w)
+    assert second.status_code == 200 and second.json()["sent"] is True
+    assert second.json()["delivery_id"] != first.json()["delivery_id"]
+    assert w.db.get(Quotation, w.quotation.id, populate_existing=True).status == "sent"
+    transitions = list(w.db.scalars(select(AuditLog).where(AuditLog.action == "quotation.sent")))
+    assert len(transitions) == 1
+    assert transitions[0].new_values["delivery_id"] == first.json()["delivery_id"]
+
+
+def test_smtp_failure_does_not_advance_draft(world):
+    w = world
     FakeSMTP.fail_with = TimeoutError("down")
-    assert send(w).json()["sent"] is False
+    failed = send(w)
+    assert failed.status_code == 200 and failed.json()["sent"] is False
     assert w.db.get(Quotation, w.quotation.id, populate_existing=True).status == "draft"
+    assert w.db.scalar(select(AuditLog).where(AuditLog.action == "quotation.sent")) is None
+
+
+def test_terminal_quotation_rejects_email_before_smtp(world):
+    w = world
+    quotation = w.db.get(Quotation, w.quotation.id)
+    quotation.status = "accepted"
+    w.db.commit()
+    response = send(w)
+    assert response.status_code == 409
+    assert w.db.get(Quotation, w.quotation.id, populate_existing=True).status == "accepted"
+    assert w.db.scalars(select(EmailDelivery)).all() == []
 
 
 def test_smtp_failure_is_traced_and_resend_creates_a_new_delivery(world):
