@@ -3,7 +3,7 @@
 The client may only choose recipients. Subject, body, template context and the
 PDF attachment are always built here from the authorized quotation, so what
 the staff previews is exactly what is sent (same renderer, same PDF generator).
-Sending an email never changes ``quotation.status``.
+An SMTP-accepted email advances a draft quotation to sent; failed attempts do not.
 """
 
 from hashlib import sha256
@@ -28,7 +28,8 @@ from app.services.email import EmailAttachment, preview_email, send_email
 from app.services.email.errors import EmailError
 from app.services.email.transport import normalize_addresses
 from app.services.quotation_pdfs import _format_date, _format_money, generate_quotation_pdf
-from app.services.quotations import get_quotation
+from app.services.quotations import ALLOWED_TRANSITIONS, get_quotation
+from app.services.activity import publish_event
 
 TEMPLATE_KEY = "quotation_send"
 ENTITY_TYPE = "quotation"
@@ -131,6 +132,9 @@ def send_quotation_email(
     settings: Settings | None = None, transport=None,
 ) -> QuotationEmailSendResult:
     quotation = get_quotation(db, quotation_id)
+    # Reject terminal quotations before triggering irreversible SMTP I/O.
+    if quotation.status not in {"draft", "sent", "waiting"}:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="La cotización no admite envío por correo en su estado actual")
     chosen_to, chosen_cc, suggestions = _resolve_recipients(quotation, to, cc)
     context = build_context(quotation, chosen_to[0], suggestions)
     pdf, filename = generate_quotation_pdf(db, quotation_id)  # the official PDF, nothing else
@@ -151,6 +155,33 @@ def send_quotation_email(
         )
     except EmailError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=exc.message) from exc
+    # EmailService commits delivery records independently. Re-read under a lock
+    # after SMTP acceptance; never overwrite a concurrent commercial transition.
+    if result.sent:
+        current = db.scalar(
+            select(Quotation).where(Quotation.id == quotation_pk, Quotation.is_active.is_(True)).with_for_update()
+        )
+        if current is not None and current.status == "draft" and "sent" in ALLOWED_TRANSITIONS["draft"]:
+            current.status = "sent"
+            write_audit_log(
+                db,
+                action="quotation.sent",
+                entity="quotations",
+                entity_id=quotation_pk,
+                user_id=actor.id,
+                previous_values={"status": "draft"},
+                new_values={"status": "sent", "delivery_id": result.delivery_id, "source": "smtp"},
+            )
+            publish_event(
+                db,
+                entity_type="quotation",
+                entity_id=quotation_pk,
+                event_code="quotation.status_changed",
+                idempotency_key=f"quotation:{quotation_pk}:status:sent",
+                body="Estado actualizado de draft a sent.",
+                actor_id=actor.id,
+                metadata={"previous_status": "draft", "status": "sent"},
+            )
     write_audit_log(
         db,
         action="quotation.email.sent" if result.sent else "quotation.email.failed",
