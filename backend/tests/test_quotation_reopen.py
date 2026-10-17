@@ -1,5 +1,6 @@
 """Regression tests for explicit reopening of accepted quotations."""
-from datetime import date
+from datetime import date, datetime, timezone
+from hashlib import sha256
 
 import pytest
 from fastapi import HTTPException
@@ -11,7 +12,8 @@ import app.models  # noqa: F401
 from app.core.db import Base
 from app.models.audit_log import AuditLog
 from app.models.client import Client
-from app.models.quotation import Quotation
+from app.models.quotation import Quotation, QuotationSnapshot
+from app.models.quotation_acceptance import QuotationAcceptance
 from app.services.quotations import reopen_accepted_quotation
 
 
@@ -65,3 +67,41 @@ def test_reopen_rejects_nonaccepted_without_mutation(db):
         reopen_accepted_quotation(db, quotation.id)
     assert exc.value.status_code == 409
     assert db.get(Quotation, quotation.id).status == "sent"
+
+
+def test_reopen_invalidates_acceptance_but_preserves_evidence(db):
+    client = Client(legal_name="Cliente firmado", commercial_name="Firmado")
+    db.add(client)
+    db.flush()
+    quotation = Quotation(folio="MYC-TEST-REOPEN-3", client_id=client.id, status="accepted")
+    db.add(quotation)
+    db.flush()
+    snapshot = QuotationSnapshot(
+        quotation_id=quotation.id, snapshot_number=1, snapshot_data={"total": "100.00"}
+    )
+    db.add(snapshot)
+    db.flush()
+    pdf = b"%PDF-1.4 test frozen quotation"
+    now = datetime.now(timezone.utc)
+    acceptance = QuotationAcceptance(
+        quotation_id=quotation.id,
+        snapshot_id=snapshot.id,
+        pdf_sha256=sha256(pdf).hexdigest(),
+        pdf_bytes=pdf,
+        signer_name="Cliente Autorizado",
+        signer_email="firmante@example.test",
+        consent_text="Acepto la cotizacion",
+        evidence={"method": "otp_email"},
+        verified_at=now,
+        accepted_at=now,
+    )
+    db.add(acceptance)
+    db.commit()
+
+    reopened = reopen_accepted_quotation(db, quotation.id)
+    assert reopened.status == "draft"
+    db.refresh(acceptance)
+    assert acceptance.invalidated_at is not None
+    assert acceptance.invalidation_reason == "quotation_reopened"
+    assert acceptance.pdf_bytes == pdf
+    assert acceptance.pdf_sha256 == sha256(pdf).hexdigest()
