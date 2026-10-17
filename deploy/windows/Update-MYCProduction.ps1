@@ -52,6 +52,34 @@ $PublicFrontendHealth = 'https://erp.mycmetrology.com.mx/'
 
 $ExpectedPublicApiHost = 'api-erp.mycmetrology.com.mx'
 
+function Assert-BackendProductionConfiguration {
+    if (-not (Test-Path (Join-Path $BackendPath '.env'))) {
+        throw 'Falta backend/.env de produccion. No se actualizara el ERP.'
+    }
+
+    # Import Settings from the same backend directory used by MYCBackend.
+    # Never print SECRET_KEY, DATABASE_URL, or SMTP credentials.
+    $Check = @'
+from app.core.config import get_settings
+
+s = get_settings()
+if s.environment.strip().lower() not in ("production", "prod"):
+    raise SystemExit("ENVIRONMENT debe ser production.")
+if s.uses_development_secret:
+    raise SystemExit("SECRET_KEY de desarrollo no permitida.")
+if not s.quotation_signing_enabled:
+    raise SystemExit("Mesa de Firmado MYC deshabilitada.")
+if s.email_enabled and not s.smtp_use_starttls:
+    raise SystemExit("SMTP_USE_STARTTLS debe estar habilitado.")
+print("Configuracion backend production: OK")
+'@
+
+    Invoke-External `
+        -Executable $Python `
+        -Arguments @('-c', $Check) `
+        -WorkingDirectory $BackendPath
+}
+
 function Write-Step {
     param(
         [Parameter(Mandatory = $true)]
@@ -913,6 +941,8 @@ try {
         )
     }
 
+    Assert-BackendProductionConfiguration
+
     Set-Location $ProjectPath
 
     $Branch = (
@@ -1029,6 +1059,9 @@ try {
     ).Trim()
 
     Write-Host "HEAD nuevo: $NewHead"
+
+    # Revalidate with the newly pulled backend code before migrations.
+    Assert-BackendProductionConfiguration
 
     $ChangedFiles = @()
 
