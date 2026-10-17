@@ -336,3 +336,49 @@ def test_consumed_code_is_rejected():
         verify(db, record, "123456")
 
     assert error.value.status_code == 409
+
+def test_link_bound_code_requires_signing_token():
+    db = MagicMock()
+    record = challenge()
+    record.signing_link_id = 81
+
+    with (
+        patch.object(service, "_quotation", return_value=quotation()),
+        patch.object(service, "_snapshot", return_value=snapshot()),
+    ):
+        with pytest.raises(HTTPException) as error:
+            service.verify_signing_code(
+                db, 11, 33, "123456", settings=settings()
+            )
+
+    assert error.value.status_code == 409
+    assert record.verified_at is None
+    assert record.attempts == 0
+    db.commit.assert_not_called()
+
+
+def test_link_bound_code_rejects_another_link():
+    db = MagicMock()
+    record = challenge()
+    record.signing_link_id = 81
+    document = SimpleNamespace(quotation_id=11, snapshot_id=22)
+    other_link = SimpleNamespace(id=82, recipient_email="cliente@example.com")
+
+    with (
+        patch.object(service, "_quotation", return_value=quotation()),
+        patch.object(service, "_snapshot", return_value=snapshot()),
+        patch.object(
+            service, "authorize_document_link",
+            return_value=(document, other_link),
+        ),
+    ):
+        with pytest.raises(HTTPException) as error:
+            service.verify_signing_code(
+                db, 11, 33, "123456",
+                settings=settings(), signing_token="other-valid-token",
+            )
+
+    assert error.value.status_code == 409
+    assert record.verified_at is None
+    assert record.attempts == 0
+    db.commit.assert_not_called()
