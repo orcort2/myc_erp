@@ -68,6 +68,11 @@ PUBLIC_OPERATIONS = {
 }
 
 SIGNED_PUBLIC_OPERATIONS = {
+    ("POST", "/api/public/quotation-signing/document"),
+    ("POST", "/api/public/quotation-signing/pdf"),
+    ("POST", "/api/public/quotation-signing/otp/request"),
+    ("POST", "/api/public/quotation-signing/otp/verify"),
+    ("POST", "/api/public/quotation-signing/accept"),
     ("GET", "/verify/{authentication_code}"),
 }
 
