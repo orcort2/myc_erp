@@ -111,8 +111,12 @@ def preview_quotation_email(
     quotation = get_quotation(db, quotation_id)
     chosen_to, chosen_cc, suggestions = _resolve_recipients(quotation, to, cc)
     context = build_context(quotation, chosen_to[0], suggestions)
-    context["signing_url"] = "(El enlace personal se generará al enviar)"
-    rendered = preview_email(db, template_key=TEMPLATE_KEY, context=context, settings=settings or get_settings())
+    # Preview never issues a signing token; renderer masks this secret URL.
+    context["signing_url"] = "https://example.invalid/quotation-signing"
+    rendered = preview_email(
+        db, template_key=TEMPLATE_KEY, context=context,
+        settings=settings or get_settings(), redact_secrets=True,
+    )
     pdf, filename = generate_quotation_pdf(db, quotation_id)
     selected = {address.lower() for address in chosen_to}
     for item in suggestions:
