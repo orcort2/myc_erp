@@ -26,6 +26,11 @@ def _now():
     return datetime.now(timezone.utc)
 
 
+def _as_utc(value: datetime) -> datetime:
+    """Normalize SQLite naive UTC datetimes and PostgreSQL aware datetimes."""
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
 def _deny():
     raise HTTPException(
         status_code=404,
@@ -237,7 +242,7 @@ def authorize_document_link(
         link is None
         or link.revoked_at is not None
         or link.activated_at is None
-        or link.expires_at <= _now()
+        or _as_utc(link.expires_at) <= _now()
     ):
         _deny()
 
