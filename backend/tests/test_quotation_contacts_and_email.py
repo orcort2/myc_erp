@@ -1,5 +1,5 @@
 """EMAIL-3: ClientContact management, Quotation.contact_id and contextual quotation email."""
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from hashlib import sha256
 
 import pytest
@@ -54,7 +54,7 @@ def world(monkeypatch):
         foreign = ClientContact(client_id=other.id, name="Persona Ajena", email="ajena@otro.com")
         db.add_all([ana, luis, sin_correo, foreign]); db.commit()
         quotation = Quotation(folio="COT-2026-0001", client_id=client.id, advisor_id=users["Comercial"].id, status="draft",
-                              issued_on=date(2026, 9, 1), valid_until=date(2026, 10, 1))
+                              issued_on=date(2026, 9, 1), valid_until=date.today() + timedelta(days=30))
         quotation.contact_id = ana.id
         db.add(quotation); db.commit()
         from app.services.quotations import _write_snapshot
@@ -211,7 +211,7 @@ def test_preview_builds_everything_in_the_backend(world):
     sources = [(r["email"], r["source"], r["selected"]) for r in body["available_recipients"]]
     assert sources == [("luis.perez@xyz.com", "quotation_contact", True), ("ana.lopez@xyz.com", "client_contact", False), ("compras@xyz.com", "client_email", False)]
     assert "Luis Pérez" in body["body_text"] and "Grupo XYZ" in body["body_text"] and "COT-2026-0001" in body["body_text"]
-    assert "01/10/2026" in body["body_text"] and "Comercial MYC" in body["body_text"] and "None" not in body["body_text"]
+    assert w.quotation.valid_until.strftime("%d/%m/%Y") in body["body_text"] and "Comercial MYC" in body["body_text"] and "None" not in body["body_text"]
     assert "COT-2026-0001" in body["subject"] and "<html" in body["body_html"].lower()
     assert "[enlace protegido]" in body["body_text"]
     assert "https://example.invalid" not in body["body_text"]
