@@ -74,10 +74,17 @@ if s.email_enabled and not s.smtp_use_starttls:
 print("Configuracion backend production: OK")
 '@
 
-    Invoke-External `
-        -Executable $Python `
-        -Arguments @('-c', $Check) `
-        -WorkingDirectory $BackendPath
+    $PreviousLocation = Get-Location
+    try {
+        Set-Location $BackendPath
+        $Check | & $Python -
+        if ($LASTEXITCODE -ne 0) {
+            throw 'La validacion de configuracion de produccion fallo.'
+        }
+    }
+    finally {
+        Set-Location $PreviousLocation
+    }
 }
 
 function Write-Step {
