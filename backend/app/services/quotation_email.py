@@ -238,7 +238,7 @@ def reconcile_quotation_email_status(db: Session, quotation_id: int, *, actor_id
             EmailDelivery.status == "sent",
             EmailDelivery.sent_at.is_not(None),
         )
-        .order_by(EmailDelivery.sent_at.asc(), EmailDelivery.id.asc())
+        .order_by(EmailDelivery.sent_at.desc(), EmailDelivery.id.desc())
         .limit(1)
     )
     if delivery is None:
