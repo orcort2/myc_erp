@@ -135,7 +135,7 @@ def send_email_for_quotation(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("quotations.email.send")),
 ) -> QuotationEmailSendResult:
-    """Emails the official PDF. Unlike ``/send`` this never changes the quotation status."""
+    """Email the official PDF; SMTP acceptance advances a draft to sent."""
     return send_quotation_email(db, quotation_id, to=payload.to or [], cc=payload.cc, actor=current_user)
 
 
