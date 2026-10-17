@@ -441,29 +441,22 @@ def test_reconciliation_worker_isolates_failed_quotation_and_retries_next_cycle(
         advisor_id=w.users["Comercial"].id,
         status="draft",
         issued_on=date(2026, 9, 1),
-        valid_until=date(2026, 10, 1),
+        valid_until=date.today() + timedelta(days=30),
+        contact_id=w.ana.id,
     )
     w.db.add(second)
     w.db.flush()
     second_id = second.id
-    delivery = w.db.scalar(
-        select(EmailDelivery).where(
-            EmailDelivery.related_entity_type == "quotation",
-            EmailDelivery.related_entity_id == first_id,
-            EmailDelivery.status == "sent",
-        )
-    )
-    w.db.add(EmailDelivery(
-        template_key=delivery.template_key,
-        related_entity_type="quotation",
-        related_entity_id=second_id,
-        subject=delivery.subject,
-        body_text_snapshot=delivery.body_text_snapshot,
-        body_html_snapshot=delivery.body_html_snapshot,
-        status="sent",
-        sent_at=datetime.now(timezone.utc),
-    ))
+    # A persisted SMTP delivery must have its own authorized signing link.
+    # A copied delivery row alone is no longer eligible for reconciliation.
+    from app.services.quotations import _write_snapshot
+    _write_snapshot(w.db, second, reason="test_setup", user_id=w.users["Comercial"].id)
     w.db.commit()
+    w.quotation = second
+    assert send(w).json()["sent"] is True
+    second.status = "draft"
+    w.db.commit()
+    w.quotation = first
 
     original = worker.reconcile_quotation_email_status
     def fail_first(db, quotation_id):
