@@ -301,6 +301,33 @@ def test_terminal_quotation_rejects_email_before_smtp(world):
     assert w.db.scalars(select(EmailDelivery)).all() == []
 
 
+
+def test_reconciliation_recovers_persisted_smtp_delivery_without_resending(world):
+    w = world
+    sent = send(w)
+    assert sent.json()["sent"] is True
+    sent_count = len(FakeSMTP.instances[-1].sent)
+    quotation = w.db.get(Quotation, w.quotation.id)
+    quotation.status = "draft"  # simulate a lost commercial status commit
+    w.db.commit()
+    assert quotation_email.reconcile_quotation_email_status(w.db, quotation.id) is True
+    assert w.db.get(Quotation, quotation.id, populate_existing=True).status == "sent"
+    assert quotation_email.reconcile_quotation_email_status(w.db, quotation.id) is False
+    assert len(FakeSMTP.instances[-1].sent) == sent_count
+
+
+def test_reconciliation_ignores_failed_delivery_and_terminal_status(world):
+    w = world
+    FakeSMTP.fail_with = TimeoutError("down")
+    assert send(w).json()["sent"] is False
+    assert quotation_email.reconcile_quotation_email_status(w.db, w.quotation.id) is False
+    quotation = w.db.get(Quotation, w.quotation.id)
+    quotation.status = "accepted"
+    w.db.commit()
+    assert quotation_email.reconcile_quotation_email_status(w.db, quotation.id) is False
+    assert w.db.get(Quotation, quotation.id, populate_existing=True).status == "accepted"
+
+
 def test_smtp_failure_is_traced_and_resend_creates_a_new_delivery(world):
     w = world
     FakeSMTP.fail_with = TimeoutError("down")
