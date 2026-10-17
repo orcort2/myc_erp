@@ -59,3 +59,7 @@ class QuotationSigningLink(IntegerPkMixin, TimestampMixin, Base):
     revoked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivery_id: Mapped[int | None] = mapped_column(
+        ForeignKey("email_deliveries.id", ondelete="RESTRICT"), nullable=True, index=True,
+    )
