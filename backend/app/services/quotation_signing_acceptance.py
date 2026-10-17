@@ -17,7 +17,6 @@ from app.services.quotation_signing_authority import (
     authorize_document_link,
     invalidate_document_links,
 )
-from app.services.quotation_signing_snapshot import snapshot_digest
 from app.services.audit_logs import write_audit_log
 
 
@@ -51,8 +50,7 @@ def accept_signed_quotation(
     if not 2 <= len(name) <= 180:
         raise HTTPException(status_code=422, detail="Nombre del firmante inválido")
 
-    # The quotation lock serializes acceptance against concurrent commercial edits.
-    # A cryptographically valid link is still subject to all DB authorization checks.
+    # Verify signature first, then serialize all writes under the quotation lock.
     document, link = authorize_document_link(db, signing_token, settings=settings)
     quotation = db.scalar(
         select(Quotation)
@@ -98,6 +96,7 @@ def accept_signed_quotation(
     if existing is not None:
         raise HTTPException(status_code=409, detail="La cotización ya fue aceptada")
 
+    previous_status = quotation.status
     acceptance = QuotationAcceptance(
         quotation_id=quotation.id,
         snapshot_id=document.snapshot_id,
@@ -124,6 +123,21 @@ def accept_signed_quotation(
     challenge.consumed_at = now
     quotation.status = "accepted"
     db.flush()
+    # Reuse the existing ETS orchestration, which is idempotent by quotation.
+    # Never commit here: evidence, OTP consumption and ETS must be atomic.
+    from app.schemas.service_order import ServiceOrderCreate
+    from app.services.service_orders import create_service_order
+    create_service_order(
+        db,
+        ServiceOrderCreate(
+            client_id=quotation.client_id,
+            quotation_id=quotation.id,
+            advisor_id=quotation.advisor_id,
+            notes=f"ETS generado al aprobar {quotation.folio}",
+        ),
+        user_id=quotation.advisor_id,
+        commit=False,
+    )
     invalidate_document_links(db, quotation_id=quotation.id)
     write_audit_log(
         db,
@@ -131,7 +145,7 @@ def accept_signed_quotation(
         entity="quotations",
         entity_id=quotation.id,
         user_id=None,
-        previous_values={"status": "sent_or_waiting"},
+        previous_values={"status": previous_status},
         new_values={
             "acceptance_id": acceptance.id,
             "snapshot_id": acceptance.snapshot_id,
