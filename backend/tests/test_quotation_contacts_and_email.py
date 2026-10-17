@@ -218,6 +218,8 @@ def test_preview_builds_everything_in_the_backend(world):
 
 def test_default_selection_falls_back_to_first_contact_then_client_email(world):
     w = world
+    w.quotation.contact_id = None
+    w.db.commit()
     assert preview(w).json()["to"] == ["ana.lopez@xyz.com"]  # no quotation contact: first active contact with email
     for contact in w.client.contacts:
         contact.is_active = False
