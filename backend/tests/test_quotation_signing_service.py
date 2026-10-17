@@ -66,6 +66,7 @@ def challenge(
         id=33,
         quotation_id=11,
         snapshot_id=snapshot_id,
+        signing_link_id=None,
         recipient_email="cliente@example.com",
         code_hash=code_digest(
             code,
