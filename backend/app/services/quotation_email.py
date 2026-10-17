@@ -229,7 +229,7 @@ def reconcile_quotation_email_status(db: Session, quotation_id: int, *, actor_id
     )
     if quotation is None or quotation.status not in {"draft", "sent", "waiting"}:
         return False
-    delivery = db.scalar(
+    deliveries = db.scalars(
         select(EmailDelivery)
         .where(
             EmailDelivery.related_entity_type == ENTITY_TYPE,
@@ -238,23 +238,29 @@ def reconcile_quotation_email_status(db: Session, quotation_id: int, *, actor_id
             EmailDelivery.status == "sent",
             EmailDelivery.sent_at.is_not(None),
         )
-        .order_by(EmailDelivery.sent_at.desc(), EmailDelivery.id.desc())
-        .limit(1)
-    )
-    if delivery is None:
+        .order_by(EmailDelivery.sent_at.asc(), EmailDelivery.id.asc())
+    ).all()
+    first_delivery = None
+    for delivery in deliveries:
+        links = db.scalars(
+            select(QuotationSigningLink)
+            .where(
+                QuotationSigningLink.delivery_id == delivery.id,
+                QuotationSigningLink.revoked_at.is_(None),
+            )
+            .with_for_update()
+        ).all()
+        for link in links:
+            if link.activated_at is None:
+                activate_document_link(db, link_id=link.id, delivery_id=delivery.id)
+            if first_delivery is None:
+                first_delivery = delivery
+    if first_delivery is None:
         return False
-    links = list(db.scalars(
-        select(QuotationSigningLink)
-        .where(QuotationSigningLink.delivery_id == delivery.id)
-        .with_for_update()
-    ).all())
-    if not links:
-        return False
-    for link in links:
-        activate_document_link(db, link_id=link.id, delivery_id=delivery.id)
     if quotation.status != "draft":
         db.commit()
         return False
+    delivery = first_delivery
     quotation.status = "sent"
     write_audit_log(
         db,
