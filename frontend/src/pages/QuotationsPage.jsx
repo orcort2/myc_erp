@@ -1,3 +1,4 @@
+import { useLiveRefresh } from '../realtime/useLiveRefresh.js';
 import { openQuotationPdfWindow } from '../utils/quotationPdfWindow';
 import { Download, FileText, Save, Upload } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -480,6 +481,11 @@ function totalToSpanishText(value) {
   return `${formatMoney(amount)} MXN`;
 }
 function QuotationsPage({ user = null }) {
+  useLiveRefresh(
+    () => loadQuotationData({ silent: true }),
+    { resources: ['quotations', 'clients'], intervalMs: 0 }
+  );
+
   const [salesTab, setSalesTab] = useState('quotations');
   const [quotationDetailTab, setQuotationDetailTab] = useState('info');
   const [quotations, setQuotations] = useState([]);
@@ -592,9 +598,11 @@ function QuotationsPage({ user = null }) {
   );
 
 
-  async function loadQuotationData() {
-    setError('');
-    setIsLoading(true);
+  async function loadQuotationData({ silent = false } = {}) {
+    if (!silent) {
+      setError('');
+      setIsLoading(true);
+    }
     try {
       const [quotationResult, clientResult, catalogResult, templateResult, linkedCompaniesResult] = await Promise.allSettled([
         listQuotations(),
@@ -621,20 +629,21 @@ function QuotationsPage({ user = null }) {
       setCatalogItems(
         Array.isArray(catalogApiItems) ? catalogApiItems.map(mapCatalogItemFromApi) : []
       );
-      setTemplateForm(
+      if (!silent) setTemplateForm(
         templateResult.status === 'fulfilled'
           ? mapTemplateFromApi(templateResult.value)
           : defaultQuotationTemplate
       );
-      try {
+      if (!silent) try {
         setCurrentUser(await getCurrentUser());
       } catch {
         setCurrentUser(null);
       }
     } catch (requestError) {
-      setError(requestError.message);
+      if (!silent) setError(requestError.message);
+      else console.error('Realtime cotizaciones:', requestError);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }
 

@@ -1,3 +1,4 @@
+import { useLiveRefresh } from '../realtime/useLiveRefresh.js';
 import { ChevronDown, ChevronRight, ClipboardList, Save, X } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import mycLogo from '../assets/myc-logo.png';
@@ -204,6 +205,11 @@ function isMacCaptureAuxiliary(filename = '') {
 }
 
 function ServiceOrdersPage({ user = null }) {
+  useLiveRefresh(
+    () => loadServiceOrderData({ silent: true }),
+    { resources: ['service_orders', 'lab_work_orders', 'quotations', 'clients'], intervalMs: 0 }
+  );
+
   const [serviceOrders, setServiceOrders] = useState([]);
   const [clients, setClients] = useState([]);
   const [quotations, setQuotations] = useState([]);
@@ -1565,9 +1571,11 @@ function closeTechnicalSubEts() {
     });
   }, [serviceOrders, equipment, fieldSheets, certificates, orderFilter]);
 
-  async function loadServiceOrderData() {
-    setError('');
-    setIsLoading(true);
+  async function loadServiceOrderData({ silent = false } = {}) {
+    if (!silent) {
+      setError('');
+      setIsLoading(true);
+    }
     try {
       const [
         ordersResult,
@@ -1596,7 +1604,7 @@ function closeTechnicalSubEts() {
       ]);
       const nextOrders = Array.isArray(ordersResult) ? ordersResult : [];
       setServiceOrders(nextOrders);
-      if (selectedOrder?.id) {
+      if (!silent && selectedOrder?.id) {
         const freshOrder = nextOrders.find((order) => order.id === selectedOrder.id);
         if (freshOrder) {
           setSelectedOrder(freshOrder);
@@ -1613,9 +1621,10 @@ function closeTechnicalSubEts() {
       setCertificateMasters(Array.isArray(certificateMastersResult) ? certificateMastersResult : []);
       setUsers(Array.isArray(usersResult) ? usersResult : []);
     } catch (requestError) {
-      setError(requestError.message);
+      if (!silent) setError(requestError.message);
+      else console.error('Realtime ETS:', requestError);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }
 

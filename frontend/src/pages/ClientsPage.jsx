@@ -1,3 +1,4 @@
+import { useLiveRefresh } from '../realtime/useLiveRefresh.js';
 import { Building2, Download, FileSpreadsheet, Paperclip, Upload } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -78,6 +79,11 @@ function getMissingClientFields(client) {
 }
 
 function ClientsPage({ user = null }) {
+  useLiveRefresh(
+    () => loadClients({ silent: true }),
+    { resources: ['clients'], intervalMs: 0 }
+  );
+
   const [clients, setClients] = useState([]);
   const [satCatalogs, setSatCatalogs] = useState([]);
   const [selectedClientIds, setSelectedClientIds] = useState([]);
@@ -115,16 +121,34 @@ function ClientsPage({ user = null }) {
   const taxConstancyInputRef = useRef(null);
   const selectAllRef = useRef(null);
 
-  async function loadClients() {
-    setError('');
-    setIsLoading(true);
+  const clientsLoadVersionRef = useRef(0);
+
+  async function loadClients({ silent = false } = {}) {
+    const version = ++clientsLoadVersionRef.current;
+
+    if (!silent) {
+      setError('');
+      setIsLoading(true);
+    }
+
     try {
       const items = await listClients({ includeInactive: true });
+
+      if (version !== clientsLoadVersionRef.current) return;
+
       setClients(Array.isArray(items) ? items : []);
     } catch (requestError) {
-      setError(requestError.message);
+      if (version !== clientsLoadVersionRef.current) return;
+
+      if (!silent) {
+        setError(requestError.message);
+      } else {
+        console.error('No se pudo sincronizar clientes:', requestError);
+      }
     } finally {
-      setIsLoading(false);
+      if (!silent) {
+        setIsLoading(false);
+      }
     }
   }
 
@@ -230,7 +254,15 @@ function ClientsPage({ user = null }) {
   }
 
   function updateForm(field, value) {
-    setForm((current) => ({ ...current, [field]: value }));
+    setForm((current) => {
+      if (field === 'rfc' || field === 'fiscalRfc') {
+        return { ...current, rfc: value, fiscalRfc: value };
+      }
+      if (field === 'legalName' || field === 'fiscalLegalName') {
+        return { ...current, legalName: value, fiscalLegalName: value };
+      }
+      return { ...current, [field]: value };
+    });
     setValidationErrors((current) => {
       if (!current[field]) return current;
       const next = { ...current };

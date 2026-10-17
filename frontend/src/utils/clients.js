@@ -62,7 +62,7 @@ export function toClientPayload(form, { includeContacts = true } = {}) {
     form.clientType === 'persona_fisica'
       ? [form.firstName.trim(), form.firstLastName.trim(), form.secondLastName.trim()].filter(Boolean).join(' ')
       : form.legalName.trim() || form.fiscalLegalName.trim() || form.commercialName.trim();
-  const rfc = form.fiscalRfc.trim() || form.rfc.trim();
+  const rfc = form.rfc.trim();
   const contactName = form.contactName.trim();
   const payload = {
     client_type: form.clientType,
