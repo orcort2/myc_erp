@@ -281,6 +281,8 @@ def verify_signing_code(
         .with_for_update()
     )
 
+    if signing_token is None and challenge is not None and challenge.signing_link_id is not None:
+        raise HTTPException(status_code=409, detail="Se requiere el enlace de firmado")
     if signing_token is not None:
         document, link = authorize_document_link(db, signing_token, settings=settings)
         if (challenge is None
