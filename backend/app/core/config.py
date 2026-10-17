@@ -94,9 +94,9 @@ class Settings(BaseSettings):
     # Precedence: PUBLIC_APP_BASE_URL, then the legacy PORTAL_PUBLIC_BASE_URL.
     public_app_base_url: str = ""
     portal_public_base_url: str = ""
-    # Quotation electronic signing is opt-in. Production remains closed until
-    # the customer OTP flow, version checks and end-to-end tests are ready.
-    quotation_signing_enabled: bool = False
+    # Electronic quotation signing is part of the deployed product by default.
+    # A deployment may explicitly disable it during incident response.
+    quotation_signing_enabled: bool = True
     quotation_signing_otp_expire_minutes: int = Field(default=10, ge=1, le=30)
     quotation_signing_otp_max_attempts: int = Field(default=5, ge=1, le=10)
     quotation_signing_otp_cooldown_seconds: int = Field(default=60, ge=30)
