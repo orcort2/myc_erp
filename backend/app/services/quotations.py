@@ -9,6 +9,7 @@ from app.models.catalog_item import CatalogItem
 from app.models.client import Client, ClientContact
 from app.models.linked_company import LinkedCompany
 from app.models.quotation import Quotation, QuotationItem, QuotationSnapshot
+from app.models.quotation_acceptance import QuotationAcceptance
 from app.models.service_execution import (
     ServiceStage,
     ServiceUnit,
@@ -2044,6 +2045,19 @@ def reopen_accepted_quotation(
             detail="Solo una cotizacion aceptada puede regresar a proceso",
         )
 
+    active_acceptances = list(db.scalars(
+        select(QuotationAcceptance)
+        .where(
+            QuotationAcceptance.quotation_id == quotation.id,
+            QuotationAcceptance.invalidated_at.is_(None),
+        )
+        .with_for_update()
+    ).all())
+    invalidated_at = datetime.now(timezone.utc)
+    for acceptance in active_acceptances:
+        acceptance.invalidated_at = invalidated_at
+        acceptance.invalidated_by_id = user_id
+        acceptance.invalidation_reason = "quotation_reopened"
     quotation.status = "draft"
     write_audit_log(
         db,
@@ -2052,7 +2066,7 @@ def reopen_accepted_quotation(
         entity_id=quotation.id,
         user_id=user_id,
         previous_values={"status": "accepted"},
-        new_values={"status": "draft", "requires_new_acceptance": True},
+        new_values={"status": "draft", "requires_new_acceptance": True, "invalidated_acceptance_ids": [a.id for a in active_acceptances]},
     )
     publish_event(
         db,
