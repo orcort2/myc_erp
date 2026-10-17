@@ -29,7 +29,10 @@ ROLES = ("Administrador", "Desarrollador", "Comercial", "Finanzas", "Tecnico")
 def world(monkeypatch):
     engine = create_engine("sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
-    settings = make_settings(public_app_base_url="https://erp.mycmetrology.com.mx")
+    settings = make_settings(
+        public_app_base_url="https://erp.mycmetrology.com.mx",
+        secret_key="test-signing-secret-with-sufficient-randomness-12345",
+    )
     monkeypatch.setattr("app.services.email.service.get_settings", lambda: settings)
     monkeypatch.setattr("app.services.quotation_email.get_settings", lambda: settings)
     monkeypatch.setattr("app.services.email.service.SmtpTransport", lambda s: SmtpTransport(s, smtp_factory=FakeSMTP))
