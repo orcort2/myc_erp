@@ -14,7 +14,9 @@ from dataclasses import dataclass
 
 DOMAIN = b"myc:quotation-signing-link:v1:"
 MAX_TOKEN_LENGTH = 2048
-MAX_LIFETIME_SECONDS = 15 * 24 * 60 * 60
+MAX_LIFETIME_SECONDS = 30 * 24 * 60 * 60
+# The signed token has a 30-day hard ceiling; the database grants only
+# 15 days after SMTP activation (which must occur within 15 days of issue).
 
 
 class SigningLinkError(ValueError):
