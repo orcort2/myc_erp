@@ -125,8 +125,6 @@ class Settings(BaseSettings):
             # Config-level sanity only; full address validation lives in the SMTP transport.
             if not from_address or "@" not in from_address or any(c in from_address for c in " \r\n\t"):
                 raise ValueError("EMAIL_FROM_ADDRESS es obligatorio y debe ser una dirección válida en producción con EMAIL_ENABLED=true.")
-            if not self.smtp_use_starttls:
-                raise ValueError("SMTP_USE_STARTTLS es obligatorio en producción.")
             if not self.effective_public_base_url.lower().startswith("https://"):
                 raise ValueError(
                     "PUBLIC_APP_BASE_URL (o PORTAL_PUBLIC_BASE_URL) debe ser una URL https válida en producción con EMAIL_ENABLED=true."
