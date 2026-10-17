@@ -1,6 +1,6 @@
 import { useLiveRefresh } from '../realtime/useLiveRefresh.js';
 import { openQuotationPdfWindow } from '../utils/quotationPdfWindow';
-import { Download, FileText, Save, Upload } from 'lucide-react';
+import { Download, FileText, Save, Search, Upload, X } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import mycLogo from '../assets/myc-logo.png';
 
@@ -1963,16 +1963,33 @@ function QuotationsPage({ user = null }) {
           ) : null}
         </div>
 
-        <div style={{ marginBottom: '1rem' }}>
-          <input
-            type="search"
-            className="form-input"
-            aria-label="Buscar cotizaciones"
-            placeholder="Buscar por folio, cliente, asesor o estado..."
-            value={quotationSearch}
-            onChange={(event) => setQuotationSearch(event.target.value)}
-            style={{ width: '100%', maxWidth: '520px' }}
-          />
+        <div className="catalog-filters clients-filters">
+          <label>
+            Buscar cotizaciones
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', position: 'relative' }}>
+              <Search size={18} aria-hidden="true" style={{ flexShrink: 0 }} />
+              <input
+                type="search"
+                aria-label="Buscar cotizaciones"
+                placeholder="Folio, cliente, asesor o estado"
+                value={quotationSearch}
+                onChange={(event) => setQuotationSearch(event.target.value)}
+                style={{ minWidth: 0, flex: 1 }}
+              />
+              {quotationSearch ? (
+                <button
+                  type="button"
+                  className="table-button"
+                  aria-label="Limpiar búsqueda de cotizaciones"
+                  title="Limpiar búsqueda"
+                  onClick={() => setQuotationSearch('')}
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0.5rem', flexShrink: 0 }}
+                >
+                  <X size={16} aria-hidden="true" />
+                </button>
+              ) : null}
+            </span>
+          </label>
         </div>
 
         <div className="clients-table quotations-table" aria-busy={isLoading}>
