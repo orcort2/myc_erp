@@ -32,6 +32,7 @@ from app.services.quotations import (
     list_quotation_snapshots,
     list_quotations,
     restore_quotation_snapshot,
+    reopen_accepted_quotation,
     update_quotation,
     update_quotation_item,
 )
@@ -233,6 +234,16 @@ def accept_quotation(
     current_user: User = Depends(get_current_user),
 ) -> QuotationRead:
     return change_quotation_status(db, quotation_id, "accepted", payload, user_id=current_user.id)
+
+
+@router.post("/{quotation_id}/reopen", response_model=QuotationRead)
+def reopen_quotation(
+    quotation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("quotations.update")),
+) -> QuotationRead:
+    """Explicit administrative reopening; existing ETS remain unchanged."""
+    return reopen_accepted_quotation(db, quotation_id, user_id=current_user.id)
 
 
 @router.post("/{quotation_id}/reject", response_model=QuotationRead)
