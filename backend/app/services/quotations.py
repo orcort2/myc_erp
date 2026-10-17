@@ -10,6 +10,7 @@ from app.models.client import Client, ClientContact
 from app.models.linked_company import LinkedCompany
 from app.models.quotation import Quotation, QuotationItem, QuotationSnapshot
 from app.models.quotation_acceptance import QuotationAcceptance
+from app.services.quotation_signing_authority import invalidate_document_links
 from app.models.service_execution import (
     ServiceStage,
     ServiceUnit,
@@ -1371,6 +1372,7 @@ def update_quotation(
     db.expire(quotation, ["contact"])
 
     if updates:
+        invalidate_document_links(db, quotation_id=quotation.id)
         _write_snapshot(
             db,
             quotation,
@@ -1530,6 +1532,8 @@ def restore_quotation_snapshot(
 
     db.flush()
 
+    invalidate_document_links(db, quotation_id=quotation.id)
+
     _write_snapshot(
         db,
         quotation,
@@ -1609,6 +1613,8 @@ def add_quotation_item(
     )
 
     db.flush()
+
+    invalidate_document_links(db, quotation_id=quotation.id)
 
     _write_snapshot(
         db,
@@ -1720,6 +1726,8 @@ def update_quotation_item(
     )
 
     db.flush()
+
+    invalidate_document_links(db, quotation_id=quotation.id)
 
     _write_snapshot(
         db,
@@ -1833,6 +1841,8 @@ def deactivate_quotation_item(
 
     db.flush()
 
+    invalidate_document_links(db, quotation_id=quotation.id)
+
     _write_snapshot(
         db,
         quotation,
@@ -1934,6 +1944,9 @@ def change_quotation_status(
     previous_status = (
         quotation.status
     )
+
+    if new_status in {"accepted", "rejected", "expired", "cancelled"}:
+        invalidate_document_links(db, quotation_id=quotation.id)
 
     quotation.status = (
         new_status
@@ -2058,6 +2071,7 @@ def reopen_accepted_quotation(
         acceptance.invalidated_at = invalidated_at
         acceptance.invalidated_by_id = user_id
         acceptance.invalidation_reason = "quotation_reopened"
+    invalidate_document_links(db, quotation_id=quotation.id)
     quotation.status = "draft"
     write_audit_log(
         db,
@@ -2092,6 +2106,8 @@ def deactivate_quotation(
         db,
         quotation_id,
     )
+
+    invalidate_document_links(db, quotation_id=quotation.id)
 
     quotation.is_active = False
 
