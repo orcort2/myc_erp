@@ -66,6 +66,7 @@ def freeze_document(
     pdf_bytes: bytes,
     filename: str,
     settings: Settings | None = None,
+    staged: bool = False,
 ):
     """Persist the exact PDF bytes, refusing silent replacement."""
     settings = settings or get_settings()
@@ -80,7 +81,7 @@ def freeze_document(
         .with_for_update()
     )
 
-    if quotation is None or quotation.status not in {"sent", "waiting"}:
+    if quotation is None or quotation.status not in ({"draft", "sent", "waiting"} if staged else {"sent", "waiting"}):
         _deny()
 
     latest = _latest_snapshot(db, quotation_id)
@@ -171,7 +172,7 @@ def create_document_link(
 
     if (
         quotation is None
-        or quotation.status not in {"sent", "waiting"}
+        or quotation.status not in ({"draft", "sent", "waiting"} if staged else {"sent", "waiting"})
         or latest is None
         or latest.id != document.snapshot_id
         or snapshot_digest(latest.snapshot_data) != document.snapshot_sha256
@@ -355,7 +356,7 @@ def activate_document_link(db: Session, *, link_id: int, delivery_id: int):
         or delivery.status != "sent" or delivery.sent_at is None
         or delivery.related_entity_type != "quotation"
         or delivery.related_entity_id != document.quotation_id
-        or delivery.template_key != "quotation_send"
+        or delivery.template_key != "quotation_send_signing"
         or link.recipient_email.lower() not in {
             address.lower() for address in (delivery.to_json or [])
         }
