@@ -93,6 +93,22 @@ TEMPLATE_DEFINITIONS: dict[str, TemplateDefinition] = {
             ),
         ),
         TemplateDefinition(
+            key="quotation_signing_otp",
+            name="Mesa de Firmado MYC: código de verificación",
+            variables=(
+                TemplateVariable("quotation_folio"),
+                TemplateVariable("otp_code", secret=True),
+                TemplateVariable("expires_in"),
+            ),
+            subject="Código de verificación para cotización {quotation_folio}",
+            body=(
+                "Tu código para verificar la cotización {quotation_folio} es: {otp_code}\n\n"
+                "El código vence en {expires_in} minutos y solo puede utilizarse una vez.\n"
+                "Si no solicitaste esta verificación, ignora el mensaje.\n\n"
+                + _SIGNATURE
+            ),
+        ),
+        TemplateDefinition(
             key="quotation_send",
             name="Envío de cotización",
             variables=tuple(
