@@ -397,7 +397,7 @@ def test_standalone_reconciliation_worker_recovers_only_smtp_accepted(world):
     w.db.expire_all()
     assert w.db.get(Quotation, quotation.id).status == "sent"
     assert reconcile_batch(factory, batch_size=1) == (0, 0)
-    assert len(FakeSMTP.instances[-1].sent) == 1
+    assert len(FakeSMTP.instances) == 1  # one SMTP transport invocation, not tuple length
 
 
 def test_standalone_reconciliation_worker_does_not_recover_failed_smtp(world):
