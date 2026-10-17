@@ -83,7 +83,8 @@ def freeze_document(
         _deny()
 
     latest = _latest_snapshot(db, quotation_id)
-    if latest is None or latest.id != snapshot_id:
+    if (latest is None or latest.id != snapshot_id
+        or latest.quotation_id != quotation_id):
         _deny()
 
     if not pdf_bytes or not pdf_bytes.startswith(b"%PDF-"):
@@ -146,6 +147,14 @@ def create_document_link(
         .with_for_update()
     )
     if document is None or document.invalidated_at is not None:
+        _deny()
+    snapshot = db.get(QuotationSnapshot, document.snapshot_id)
+    if (
+        snapshot is None
+        or snapshot.quotation_id != document.quotation_id
+        or snapshot_digest(snapshot.snapshot_data) != document.snapshot_sha256
+        or sha256(document.pdf_bytes).hexdigest() != document.pdf_sha256
+    ):
         _deny()
 
     quotation = db.scalar(
@@ -234,14 +243,20 @@ def authorize_document_link(
         _deny()
 
     document = db.get(QuotationSigningDocument, link.document_id)
+    snapshot = (
+        db.get(QuotationSnapshot, document.snapshot_id)
+        if document is not None else None
+    )
     if (
         document is None
         or document.invalidated_at is not None
+        or snapshot is None
+        or snapshot.quotation_id != document.quotation_id
         or document.quotation_id != claims.quotation_id
         or document.snapshot_id != claims.snapshot_id
         or document.pdf_sha256 != claims.pdf_sha256
         or document.snapshot_sha256 != snapshot_digest(
-            db.get(QuotationSnapshot, document.snapshot_id).snapshot_data
+            snapshot.snapshot_data
         )
         or sha256(document.pdf_bytes).hexdigest() != claims.pdf_sha256
     ):
