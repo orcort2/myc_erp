@@ -111,6 +111,7 @@ from app.models.portal_registration import PortalRegistration
 from app.models.email import EmailDelivery, EmailTemplate
 from app.models.password_reset_token import PasswordResetToken
 from app.models.quotation_acceptance import QuotationAcceptance
+from app.models.quotation_signing_challenge import QuotationSigningChallenge
 from app.models.quotation import (
     Quotation,
     QuotationItem,
@@ -271,6 +272,7 @@ __all__ = [
     "PasswordResetToken",
     "Quotation",
     "QuotationAcceptance",
+    "QuotationSigningChallenge",
     "QuotationItem",
     "QuotationItemDecision",
     "QuotationServiceChangeRequest",
