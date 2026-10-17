@@ -39,6 +39,7 @@ from app.routers import (
     operational_engines,
     pattern_selection,
     quotations,
+    quotation_signing_public,
     quotation_service_changes,
     reference_standards,
     reference_standard_certificates,
@@ -159,6 +160,7 @@ include_api_router(resolution_center.router, prefix="/api")
 include_api_router(resolution_public_api.router, prefix="/api")
 include_api_router(calibration_procedures.router, prefix="/api")
 include_api_router(quotations.router, prefix="/api")
+include_api_router(quotation_signing_public.router, prefix="/api")
 include_api_router(quotation_service_changes.router, prefix="/api")
 include_api_router(service_orders.router, prefix="/api")
 include_api_router(technical_profiles.router, prefix="/api")
