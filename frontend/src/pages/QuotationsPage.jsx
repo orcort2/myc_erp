@@ -489,6 +489,7 @@ function QuotationsPage({ user = null }) {
   const [salesTab, setSalesTab] = useState('quotations');
   const [quotationDetailTab, setQuotationDetailTab] = useState('info');
   const [quotations, setQuotations] = useState([]);
+  const [quotationSearch, setQuotationSearch] = useState('');
   const [currentUser, setCurrentUser] = useState(user);
   const [clients, setClients] = useState([]);
   const [detailForm, setDetailForm] = useState(emptyQuotationForm);
@@ -541,6 +542,24 @@ function QuotationsPage({ user = null }) {
     () => new Map(clients.map((client) => [client.id, client])),
     [clients]
   );
+
+  const filteredQuotations = useMemo(() => {
+    const search = normalizeKey(quotationSearch.trim());
+    if (!search) return quotations;
+    return quotations.filter((quotation) => {
+      const client = clientsById.get(quotation.client_id);
+      const searchable = [
+        quotation.folio,
+        getClientDisplayName(client),
+        quotation.advisor_name,
+        quotation.advisor_id,
+        quotationStatusLabels[quotation.status] ?? quotation.status,
+        quotation.issued_on,
+        quotation.valid_until,
+      ].join(' ');
+      return normalizeKey(searchable).includes(search);
+    });
+  }, [quotationSearch, quotations, clientsById]);
 
   const filteredClientPickerClients = useMemo(() => {
     const search = normalizeKey(clientPickerSearch);
@@ -1928,7 +1947,7 @@ function QuotationsPage({ user = null }) {
         <div className="section-heading">
           <div>
             <p>Listado de cotizaciones</p>
-            <h2>{isLoading ? 'Cargando...' : `${quotations.length} cotizaciones`}</h2>
+            <h2>{isLoading ? 'Cargando...' : quotationSearch.trim() ? `${filteredQuotations.length} de ${quotations.length} cotizaciones` : `${quotations.length} cotizaciones`}</h2>
           </div>
           {canCreateQuotations ? (
             <button
@@ -1944,6 +1963,18 @@ function QuotationsPage({ user = null }) {
           ) : null}
         </div>
 
+        <div style={{ marginBottom: '1rem' }}>
+          <input
+            type="search"
+            className="form-input"
+            aria-label="Buscar cotizaciones"
+            placeholder="Buscar por folio, cliente, asesor o estado..."
+            value={quotationSearch}
+            onChange={(event) => setQuotationSearch(event.target.value)}
+            style={{ width: '100%', maxWidth: '520px' }}
+          />
+        </div>
+
         <div className="clients-table quotations-table" aria-busy={isLoading}>
           <div className="clients-table__head">
             <span>Folio</span>
@@ -1957,8 +1988,8 @@ function QuotationsPage({ user = null }) {
 
           {isLoading ? (
             <div className="clients-empty">Cargando cotizaciones...</div>
-          ) : quotations.length ? (
-            quotations.map((quotation) => {
+          ) : filteredQuotations.length ? (
+            filteredQuotations.map((quotation) => {
               const client = clientsById.get(quotation.client_id);
               return (
                 <button
@@ -1982,7 +2013,7 @@ function QuotationsPage({ user = null }) {
               );
             })
           ) : (
-            <div className="clients-empty">Todavia no hay cotizaciones registradas.</div>
+            <div className="clients-empty">{quotations.length ? 'No se encontraron cotizaciones con esa búsqueda.' : 'Todavia no hay cotizaciones registradas.'}</div>
           )}
         </div>
       </section>
