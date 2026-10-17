@@ -183,14 +183,6 @@ def create_document_link(
     ):
         _deny()
 
-    contact = quotation.contact
-    if (
-        contact is None
-        or contact.client_id != quotation.client_id
-        or not contact.email
-        or contact.email.strip().lower() != recipient_email.strip().lower()
-    ):
-        _deny()
 
     token = issue_signing_link(
         quotation_id=document.quotation_id,
@@ -286,14 +278,6 @@ def authorize_document_link(
     ):
         _deny()
 
-    contact = quotation.contact
-    if (
-        contact is None
-        or contact.client_id != quotation.client_id
-        or not contact.email
-        or contact.email.strip().lower() != link.recipient_email.lower()
-    ):
-        _deny()
 
     return document, link
 
