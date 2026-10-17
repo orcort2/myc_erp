@@ -112,6 +112,7 @@ from app.models.email import EmailDelivery, EmailTemplate
 from app.models.password_reset_token import PasswordResetToken
 from app.models.quotation_acceptance import QuotationAcceptance
 from app.models.quotation_signing_challenge import QuotationSigningChallenge
+from app.models.quotation_signing_document import QuotationSigningDocument, QuotationSigningLink
 from app.models.quotation import (
     Quotation,
     QuotationItem,
