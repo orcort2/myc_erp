@@ -359,7 +359,7 @@ def activate_document_link(db: Session, *, link_id: int, delivery_id: int):
     activated_at = delivery.sent_at
     if activated_at.tzinfo is None:
         activated_at = activated_at.replace(tzinfo=timezone.utc)
-    if activated_at > link.expires_at - timedelta(days=15):
+    if activated_at > _as_utc(link.expires_at) - timedelta(days=15):
         _deny()
     link.activated_at = activated_at
     link.expires_at = activated_at + timedelta(days=15)
