@@ -14,9 +14,8 @@ from dataclasses import dataclass
 
 DOMAIN = b"myc:quotation-signing-link:v1:"
 MAX_TOKEN_LENGTH = 2048
-MAX_LIFETIME_SECONDS = 30 * 24 * 60 * 60
-# The signed token has a 30-day hard ceiling; the database grants only
-# 15 days after SMTP activation (which must occur within 15 days of issue).
+MAX_LIFETIME_SECONDS = 15 * 24 * 60 * 60
+MAX_STAGED_LIFETIME_SECONDS = 30 * 24 * 60 * 60
 
 
 class SigningLinkError(ValueError):
@@ -81,6 +80,7 @@ def issue_signing_link(
     secret_key: str,
     lifetime_seconds: int = MAX_LIFETIME_SECONDS,
     now: int | None = None,
+    staged: bool = False,
 ) -> str:
     """Issue a signed, expiring, version-bound capability."""
     if quotation_id <= 0 or snapshot_id <= 0:
@@ -89,7 +89,8 @@ def issue_signing_link(
     _validate_hash(pdf_sha256)
     key = _secret(secret_key)
 
-    if not 1 <= lifetime_seconds <= MAX_LIFETIME_SECONDS:
+    limit = MAX_STAGED_LIFETIME_SECONDS if staged else MAX_LIFETIME_SECONDS
+    if not 1 <= lifetime_seconds <= limit:
         raise ValueError("Invalid signing link lifetime")
 
     issued_at = int(time.time()) if now is None else int(now)
@@ -184,7 +185,7 @@ def verify_signing_link(
     if payload["exp"] <= current:
         raise SigningLinkError("Signing link expired")
 
-    if payload["exp"] > current + MAX_LIFETIME_SECONDS:
+    if payload["exp"] > current + MAX_STAGED_LIFETIME_SECONDS:
         raise SigningLinkError("Signing link lifetime exceeds policy")
 
     return SigningLinkClaims(
