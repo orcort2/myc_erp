@@ -200,12 +200,15 @@ def test_preview_builds_everything_in_the_backend(world):
     response = preview(w)
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["template_key"] == "quotation_send" and body["to"] == ["luis.perez@xyz.com"] and body["cc"] == []
+    assert body["template_key"] == "quotation_send_signing" and body["to"] == ["luis.perez@xyz.com"] and body["cc"] == []
     sources = [(r["email"], r["source"], r["selected"]) for r in body["available_recipients"]]
     assert sources == [("luis.perez@xyz.com", "quotation_contact", True), ("ana.lopez@xyz.com", "client_contact", False), ("compras@xyz.com", "client_email", False)]
     assert "Luis Pérez" in body["body_text"] and "Grupo XYZ" in body["body_text"] and "COT-2026-0001" in body["body_text"]
     assert "01/10/2026" in body["body_text"] and "Comercial MYC" in body["body_text"] and "None" not in body["body_text"]
     assert "COT-2026-0001" in body["subject"] and "<html" in body["body_html"].lower()
+    assert "[enlace protegido]" in body["body_text"]
+    assert "https://example.invalid" not in body["body_text"]
+    assert "https://example.invalid" not in body["body_html"]
     assert body["attachments"][0]["filename"].startswith("Cotizacion_COT-2026-0001") and body["attachments"][0]["content_type"] == "application/pdf"
 
 
