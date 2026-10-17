@@ -1,6 +1,7 @@
 """Persistent authorization for frozen quotation signing documents."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from app.models.email import EmailDelivery
 from hashlib import sha256
 
 from fastapi import HTTPException
@@ -136,6 +137,7 @@ def create_document_link(
     recipient_email: str,
     settings: Settings | None = None,
     lifetime_seconds: int = 15 * 24 * 60 * 60,
+    staged: bool = False,
 ):
     """Create a revocable link. Caller must be an authorized internal actor."""
     settings = settings or get_settings()
@@ -194,7 +196,7 @@ def create_document_link(
         snapshot_id=document.snapshot_id,
         pdf_sha256=document.pdf_sha256,
         secret_key=settings.secret_key,
-        lifetime_seconds=lifetime_seconds,
+        lifetime_seconds=(30 * 24 * 60 * 60 if staged else lifetime_seconds),
     )
     claims = verify_signing_link(token, secret_key=settings.secret_key)
 
@@ -202,9 +204,11 @@ def create_document_link(
         document_id=document.id,
         token_id_hash=sha256(claims.token_id.encode()).hexdigest(),
         recipient_email=recipient_email.strip().lower(),
-        expires_at=datetime.fromtimestamp(
-            claims.expires_at, timezone.utc
+        expires_at=(
+            datetime.fromtimestamp(claims.expires_at, timezone.utc)
+            if staged else _now() + timedelta(seconds=lifetime_seconds)
         ),
+        activated_at=None if staged else _now(),
     )
     db.add(link)
     db.flush()
@@ -238,6 +242,7 @@ def authorize_document_link(
     if (
         link is None
         or link.revoked_at is not None
+        or link.activated_at is None
         or link.expires_at <= _now()
     ):
         _deny()
@@ -324,3 +329,48 @@ def invalidate_document_links(
         for link in links:
             link.revoked_at = now
     return len(documents)
+
+
+def activate_document_link(db: Session, *, link_id: int, delivery_id: int):
+    """Activate only after this specific SMTP delivery was accepted.
+
+    Must be called under the quotation row lock and committed with status sent.
+    """
+    link = db.scalar(
+        select(QuotationSigningLink)
+        .where(QuotationSigningLink.id == link_id)
+        .with_for_update()
+    )
+    delivery = db.scalar(
+        select(EmailDelivery)
+        .where(EmailDelivery.id == delivery_id)
+        .with_for_update()
+    )
+    if link is None or link.revoked_at is not None or delivery is None:
+        _deny()
+    document = db.get(QuotationSigningDocument, link.document_id)
+    if (
+        document is None or document.invalidated_at is not None
+        or delivery.status != "sent" or delivery.sent_at is None
+        or delivery.related_entity_type != "quotation"
+        or delivery.related_entity_id != document.quotation_id
+        or delivery.template_key != "quotation_send"
+        or link.recipient_email.lower() not in {
+            address.lower() for address in (delivery.to_json or [])
+        }
+    ):
+        _deny()
+    if link.activated_at is not None:
+        if link.delivery_id != delivery_id:
+            _deny()
+        return link
+    activated_at = delivery.sent_at
+    if activated_at.tzinfo is None:
+        activated_at = activated_at.replace(tzinfo=timezone.utc)
+    if activated_at > link.expires_at - timedelta(days=15):
+        _deny()
+    link.activated_at = activated_at
+    link.expires_at = activated_at + timedelta(days=15)
+    link.delivery_id = delivery_id
+    db.flush()
+    return link
