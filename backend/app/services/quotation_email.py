@@ -28,7 +28,7 @@ from app.services.email import EmailAttachment, preview_email, send_email
 from app.services.email.errors import EmailError
 from app.services.email.transport import normalize_addresses
 from app.services.quotation_pdfs import _format_date, _format_money, generate_quotation_pdf
-from app.services.quotations import ALLOWED_TRANSITIONS, get_quotation
+from app.services.quotations import get_quotation
 from app.services.activity import publish_event
 
 TEMPLATE_KEY = "quotation_send"
@@ -155,33 +155,10 @@ def send_quotation_email(
         )
     except EmailError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=exc.message) from exc
-    # EmailService commits delivery records independently. Re-read under a lock
-    # after SMTP acceptance; never overwrite a concurrent commercial transition.
+    # Reconcile against the persisted SMTP delivery rather than trusting only
+    # this request's in-memory result. Safe to invoke again after a crash.
     if result.sent:
-        current = db.scalar(
-            select(Quotation).where(Quotation.id == quotation_pk, Quotation.is_active.is_(True)).with_for_update()
-        )
-        if current is not None and current.status == "draft" and "sent" in ALLOWED_TRANSITIONS["draft"]:
-            current.status = "sent"
-            write_audit_log(
-                db,
-                action="quotation.sent",
-                entity="quotations",
-                entity_id=quotation_pk,
-                user_id=actor.id,
-                previous_values={"status": "draft"},
-                new_values={"status": "sent", "delivery_id": result.delivery_id, "source": "smtp"},
-            )
-            publish_event(
-                db,
-                entity_type="quotation",
-                entity_id=quotation_pk,
-                event_code="quotation.status_changed",
-                idempotency_key=f"quotation:{quotation_pk}:status:sent",
-                body="Estado actualizado de draft a sent.",
-                actor_id=actor.id,
-                metadata={"previous_status": "draft", "status": "sent"},
-            )
+        reconcile_quotation_email_status(db, quotation_pk, actor_id=actor.id)
     write_audit_log(
         db,
         action="quotation.email.sent" if result.sent else "quotation.email.failed",
@@ -199,6 +176,60 @@ def send_quotation_email(
     return QuotationEmailSendResult(
         delivery_id=result.delivery_id, status=result.status, sent=result.sent, reason=result.reason
     )
+
+
+
+def reconcile_quotation_email_status(db: Session, quotation_id: int, *, actor_id: int | None = None) -> bool:
+    """Recover draft -> sent from a durable SMTP-accepted quotation delivery.
+
+    Never resends mail. The quotation row lock serializes concurrent status
+    transitions on PostgreSQL; terminal and already-progressed states are left
+    untouched. Returns True only when a transition was committed.
+    """
+    quotation = db.scalar(
+        select(Quotation)
+        .where(Quotation.id == quotation_id, Quotation.is_active.is_(True))
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if quotation is None or quotation.status != "draft":
+        return False
+    delivery = db.scalar(
+        select(EmailDelivery)
+        .where(
+            EmailDelivery.related_entity_type == ENTITY_TYPE,
+            EmailDelivery.related_entity_id == quotation_id,
+            EmailDelivery.template_key == TEMPLATE_KEY,
+            EmailDelivery.status == "sent",
+            EmailDelivery.sent_at.is_not(None),
+        )
+        .order_by(EmailDelivery.sent_at.asc(), EmailDelivery.id.asc())
+        .limit(1)
+    )
+    if delivery is None:
+        return False
+    quotation.status = "sent"
+    write_audit_log(
+        db,
+        action="quotation.sent",
+        entity="quotations",
+        entity_id=quotation_id,
+        user_id=actor_id or delivery.requested_by_id,
+        previous_values={"status": "draft"},
+        new_values={"status": "sent", "delivery_id": delivery.id, "source": "smtp_reconciliation"},
+    )
+    publish_event(
+        db,
+        entity_type="quotation",
+        entity_id=quotation_id,
+        event_code="quotation.status_changed",
+        idempotency_key=f"quotation:{quotation_id}:status:sent",
+        body="Estado actualizado de draft a sent.",
+        actor_id=actor_id or delivery.requested_by_id,
+        metadata={"previous_status": "draft", "status": "sent"},
+    )
+    db.commit()
+    return True
 
 
 def list_quotation_email_deliveries(db: Session, quotation_id: int) -> list[QuotationEmailDeliveryRead]:
