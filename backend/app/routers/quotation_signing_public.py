@@ -12,6 +12,7 @@ from app.core.db import get_db
 from app.services.quotation_signing_authority import authorize_document_link
 from app.services.quotation_signing import request_signing_code, verify_signing_code
 from app.services.quotation_signing_acceptance import accept_signed_quotation, CONSENT_TEXT
+from app.services.push_notifications import commit_and_dispatch_notifications
 
 
 router = APIRouter(prefix="/public/quotation-signing", tags=["quotation-signing-public"])
@@ -89,8 +90,9 @@ def accept_quotation(payload: AcceptanceRequest, db: Session = Depends(get_db)):
             signer_name=payload.signer_name,
             consent=payload.consent,
         )
-        db.commit()
+        commit_and_dispatch_notifications(db)
     except Exception:
+        db.info.pop("push_notification_ids", None)
         db.rollback()
         raise
     return {
