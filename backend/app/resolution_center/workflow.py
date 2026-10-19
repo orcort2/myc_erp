@@ -431,7 +431,7 @@ class ResolutionCenterWorkflowService:
             context_snapshot_id=root.current_context_snapshot_id,
             version=1,
             schema_version="1.0",
-            status="ready",
+            status="draft",
             summary=presentation.plan_summary,
             rationale=strategy.rationale,
             expected_impact={"changes": list(presentation.expected_impacts)},
@@ -478,6 +478,9 @@ class ResolutionCenterWorkflowService:
                     step_hash=canonical_sha256(snapshot),
                 )
             )
+        self._session.flush()
+        plan_row.status = "ready"
+        self._session.flush()
         root.current_strategy_selection_id = strategy_row.id
         root.current_plan_id = plan_row.id
         self._session.flush()
