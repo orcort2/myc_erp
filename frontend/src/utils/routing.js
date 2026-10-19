@@ -1,6 +1,6 @@
 export function getCurrentPath() {
   const pathname = window.location.pathname === '/' ? '/dashboard' : window.location.pathname;
-  return `${pathname}${window.location.hash}`;
+  return pathname;
 }
 
 export function navigate(path) {
