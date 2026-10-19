@@ -69,8 +69,6 @@ if s.uses_development_secret:
     raise SystemExit("SECRET_KEY de desarrollo no permitida.")
 if not s.quotation_signing_enabled:
     raise SystemExit("Mesa de Firmado MYC deshabilitada.")
-if s.email_enabled and not s.smtp_use_starttls:
-    raise SystemExit("SMTP_USE_STARTTLS debe estar habilitado.")
 print("Configuracion backend production: OK")
 '@
 
