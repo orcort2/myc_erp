@@ -8,21 +8,27 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from fastapi import HTTPException
+from sqlalchemy import DateTime, Date, Numeric
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.quotation import Quotation, QuotationSnapshot
+from app.models.user import User
 from app.models.quotation_acceptance import QuotationAcceptance
 from app.models.quotation_service_change import QuotationServiceChangeRequest
 from app.models.sale_execution import SaleOrderItem, SaleUnitState
 from app.models.service_execution import ServiceStage, ServiceUnit
 from app.models.service_order import ServiceOrder, ServiceOrderItem, ServiceWorkOrder
 from app.models.service_order_archive import ARCHIVE_SCHEMA_VERSION, ServiceOrderArchive
+from app.services.activity import publish_event
+from app.services.audit_logs import write_audit_log
+from app.services.auth import user_has_permission
 
 
 def _json_value(value):
@@ -187,6 +193,8 @@ def archive_summary(archive: ServiceOrderArchive) -> dict:
         "integrity_hash": archive.integrity_hash,
         "integrity_ok": verify_archive_integrity(archive),
         "restored_at": archive.restored_at,
+        "restored_by_id": archive.restored_by_id,
+        "restoration_reason": archive.restoration_reason,
     }
 
 
@@ -207,16 +215,20 @@ def get_archive(db: Session, archive_id: int) -> ServiceOrderArchive:
 
 
 def restoration_conflicts(db: Session, archive: ServiceOrderArchive) -> list[str]:
-    """Informa por qué NO sería seguro recuperar; nunca restaura por sí mismo."""
+    """Por qué NO es seguro restaurar. Lista vacía = restaurable."""
     conflicts: list[str] = []
     if not verify_archive_integrity(archive):
         conflicts.append("El hash de integridad del archivo no coincide.")
+    if archive.schema_version != ARCHIVE_SCHEMA_VERSION:
+        conflicts.append("La versión de esquema del archivo no es compatible.")
     if archive.restored_at is not None:
         conflicts.append("El archivo ya fue marcado como recuperado.")
     if db.scalar(
         select(ServiceOrder.id).where(ServiceOrder.folio == archive.service_order_folio)
     ):
         conflicts.append(f"Ya existe una ETS con el folio {archive.service_order_folio}.")
+    if db.scalar(select(ServiceOrder.id).where(ServiceOrder.id == archive.original_service_order_id)):
+        conflicts.append("El identificador original de la ETS ya está en uso.")
     if db.scalar(
         select(ServiceOrder.id).where(
             ServiceOrder.quotation_id == archive.quotation_id,
@@ -227,4 +239,167 @@ def restoration_conflicts(db: Session, archive: ServiceOrderArchive) -> list[str
     quotation = db.get(Quotation, archive.quotation_id)
     if quotation is None or quotation.status != "in_revision":
         conflicts.append("La cotización ya no está en revisión; su versión comercial cambió.")
+    else:
+        latest_id = db.scalar(
+            select(QuotationSnapshot.id)
+            .where(QuotationSnapshot.quotation_id == quotation.id)
+            .order_by(QuotationSnapshot.snapshot_number.desc())
+            .limit(1)
+        )
+        if latest_id != archive.accepted_snapshot_id:
+            conflicts.append(
+                "La cotización tiene versiones comerciales posteriores a la aceptada; "
+                "la ETS archivada ya no corresponde."
+            )
+    current = db.scalar(
+        select(QuotationAcceptance.id).where(
+            QuotationAcceptance.quotation_id == archive.quotation_id,
+            QuotationAcceptance.invalidated_at.is_(None),
+        )
+    )
+    if current is not None:
+        conflicts.append("La cotización ya tiene una aceptación vigente.")
     return conflicts
+
+
+# Inserción respetando dependencias entre tablas archivadas.
+_RESTORE_ORDER = (
+    ("service_order", ServiceOrder),
+    ("items", ServiceOrderItem),
+    ("work_orders", ServiceWorkOrder),
+    ("service_units", ServiceUnit),
+    ("service_stages", ServiceStage),
+    ("sale_order_items", SaleOrderItem),
+    ("sale_unit_states", SaleUnitState),
+)
+
+
+def _deserialize_row(model, data: dict):
+    values = {}
+    for column in sa_inspect(model).mapper.column_attrs:
+        if column.key not in data:
+            continue
+        value = data[column.key]
+        column_type = column.columns[0].type
+        if isinstance(value, dict) and set(value) == {"sha256", "bytes"}:
+            raise HTTPException(
+                status_code=409,
+                detail="El archivo contiene binarios que no se almacenan; no puede restaurarse.",
+            )
+        if isinstance(value, str):
+            if isinstance(column_type, DateTime):
+                value = datetime.fromisoformat(value)
+            elif isinstance(column_type, Date):
+                value = date.fromisoformat(value)
+            elif isinstance(column_type, Numeric):
+                value = Decimal(value)
+        values[column.key] = value
+    return model(**values)
+
+
+def restore_service_order(
+    db: Session, archive_id: int, user: User, reason: str
+) -> dict:
+    """Restauración administrativa explícita: deshace un desbloqueo sin cambios posteriores.
+
+    Una sola transacción: bloquea archivo y cotización, exige cero conflictos,
+    reinserta la ETS con su id y folio originales, reactiva la aceptación que el
+    desbloqueo invalidó y devuelve la cotización a ``accepted``.
+    """
+    for permission in (
+        "quotations.exceptions.inspect",
+        "quotations.exceptions.apply_unlock",
+        "quotations.exceptions.rebuild_empty_service_order",
+    ):
+        if not user_has_permission(user, permission):
+            raise HTTPException(status_code=403, detail=f"Falta el permiso {permission}")
+    reason = (reason or "").strip()
+    if len(reason) < 3:
+        raise HTTPException(status_code=422, detail="Indica el motivo de la restauración")
+    archive = db.scalar(
+        select(ServiceOrderArchive)
+        .where(ServiceOrderArchive.id == archive_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if archive is None:
+        raise HTTPException(status_code=404, detail="Archivo de ETS no encontrado")
+    quotation = db.scalar(
+        select(Quotation)
+        .where(Quotation.id == archive.quotation_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    conflicts = restoration_conflicts(db, archive)
+    if conflicts:
+        raise HTTPException(status_code=409, detail={"message": "No se puede restaurar", "conflicts": conflicts})
+
+    moment = datetime.now(timezone.utc)
+    data = archive.archive_data
+    try:
+        for key, model in _RESTORE_ORDER:
+            payload = data[key] if key == "service_order" else data.get(key, [])
+            for row in ([payload] if key == "service_order" else payload):
+                db.add(_deserialize_row(model, row))
+            db.flush()
+        reinstated = []
+        if archive.acceptance_id is not None:
+            acceptance = db.scalar(
+                select(QuotationAcceptance)
+                .where(QuotationAcceptance.id == archive.acceptance_id)
+                .with_for_update()
+            )
+            if acceptance is not None:
+                acceptance.invalidated_at = None
+                acceptance.invalidated_by_id = None
+                acceptance.invalidation_reason = None
+                reinstated.append(acceptance.id)
+        quotation.status = "accepted"
+        archive.restored_at = moment
+        archive.restored_by_id = user.id
+        archive.restoration_reason = reason
+        db.flush()
+        publish_event(
+            db,
+            entity_type="quotation",
+            entity_id=quotation.id,
+            event_code="quotation.service_order_restored",
+            idempotency_key=f"archive:{archive.id}:restored",
+            body=(
+                f"La ETS {archive.service_order_folio} fue restaurada desde el archivo "
+                f"#{archive.id}; la cotización {quotation.folio} volvió a Aceptada."
+            ),
+            actor_id=user.id,
+            metadata={
+                "archive_id": archive.id,
+                "service_order_folio": archive.service_order_folio,
+                "reinstated_acceptance_ids": reinstated,
+                "reason": reason,
+            },
+        )
+        write_audit_log(
+            db,
+            action="quotation.service_order_restored",
+            entity="quotations",
+            entity_id=quotation.id,
+            user_id=user.id,
+            previous_values={"status": "in_revision"},
+            new_values={
+                "status": "accepted",
+                "archive_id": archive.id,
+                "service_order_folio": archive.service_order_folio,
+                "reinstated_acceptance_ids": reinstated,
+                "reason": reason,
+            },
+        )
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="No fue posible restaurar atómicamente la ETS; no se aplicó ningún cambio",
+        )
+    except Exception:
+        db.rollback()
+        raise
+    return archive_summary(archive)

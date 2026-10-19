@@ -19,6 +19,10 @@ class QuotationUnlockApply(BaseModel):
     expected_snapshot_number: int = Field(gt=0)
 
 
+class ServiceOrderRestore(BaseModel):
+    reason: str = Field(min_length=3, max_length=2000)
+
+
 class QuotationServiceChangeRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

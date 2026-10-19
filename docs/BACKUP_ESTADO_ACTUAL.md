@@ -21,7 +21,10 @@
   Comunicaciones» (conversación interna), historial de aceptaciones, logo oficial y folio en la
   confirmación de firmado.
 - Validaciones: `pytest tests` 2430 passed / 50 skipped; `vite build` OK; pruebas node nuevas pasan.
-  Pendiente: validación visual autenticada en navegador y PostgreSQL real de la migración.
+  Validada en navegador y en PostgreSQL (copia desechable). Restauración administrativa de ETS:
+  `POST /quotations/service-order-archives/{id}/restore` (migración con `restored_by_id`/
+  `restoration_reason`); concurrencia probada en PostgreSQL (`test_quotation_unlock_concurrency_pg.py`,
+  requiere `PG_CONCURRENCY_URL`). Rama actualizada con `origin/main` 864d09f.
 
 ## Modalidades iniciales de grupos LAB internos (2026-10-06, sin commit)
 

@@ -50,3 +50,7 @@ class ServiceOrderArchive(IntegerPkMixin, TimestampMixin, Base):
     )
     integrity_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     restored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    restored_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    restoration_reason: Mapped[str | None] = mapped_column(Text)

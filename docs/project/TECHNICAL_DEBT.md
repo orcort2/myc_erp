@@ -202,7 +202,7 @@ Una deuda se elimina sólo cuando la condición deja de existir y la validación
 - TD-070 (P2): Desarrollador puede cancelar/reabrir pero no posee `field_sheets.read`, por
   lo que no abre el detalle de hoja en la vista ERP; revisar la matriz de roles si se
   requiere, sin crear permisos nuevos en esta fase.
-- TD-071 (P2): la recuperación de una ETS archivada es sólo informativa (`restoration-check`); falta
-  el comando administrativo auditado que la restaure. Tres pruebas de frontend ya fallaban en `main`
+- TD-071 (P2): la restauración de ETS archivadas existe como API administrativa; falta su pantalla en
+  el ERP. Tres pruebas de frontend ya fallaban en `main`
   antes del 2026-10-19 (`notificationNavigation.test.js` aserción `work_order`, `clients.test.js`,
   CSS LAB); no se tocaron.

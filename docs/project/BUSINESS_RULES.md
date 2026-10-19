@@ -207,8 +207,13 @@ Una regla nueva debe registrar evidencia y fecha. Si sólo existe en Diseño fut
    `quotation_acceptance`/`MYCAC`, asignada en la misma transacción, único e inmutable; no cambia al
    desbloquear). La evidencia (PDF, huella, firmante, consentimiento) se consulta con
    `GET /quotations/{id}/acceptances[/{aid}/pdf]` autenticado, nunca con enlaces públicos revocados.
-6. El archivo de ETS no es una ETS activa. Su recuperación es administrativa; el sistema sólo informa
-   conflictos (`restoration-check`) y no restaura de forma automática.
+6. El archivo de ETS no es una ETS activa. La restauración es administrativa y explícita
+   (`POST /quotations/service-order-archives/{id}/restore`, con `inspect`+`apply_unlock`+
+   `rebuild_empty_service_order` y motivo): sólo deshace un desbloqueo sin versiones comerciales
+   posteriores, en una transacción; reinserta la ETS con su id y folio originales, reactiva la
+   aceptación que el desbloqueo invalidó, devuelve la cotización a `accepted` y es de un solo uso.
+   `restoration-check` informa los conflictos (hash, folio/id ocupados, ETS activa, estado, versión).
+   Nunca se restaura de forma automática o silenciosa.
 7. El validador de dependencias también bloquea por excepciones operativas de la ETS, partidas de
    cotización originadas en ella, solicitudes técnicas, tareas, ejecuciones de reparación y
    mantenimiento, y unidades de servicio ajenas a Venta.

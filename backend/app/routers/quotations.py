@@ -12,6 +12,7 @@ from app.schemas.quotation import (
     QuotationStatusChange,
     QuotationUpdate,
 )
+from app.schemas.quotation_service_change import ServiceOrderRestore
 from app.schemas.email import (
     QuotationEmailDeliveryRead,
     QuotationEmailPreview,
@@ -47,6 +48,7 @@ from app.services.service_order_archives import (
     get_archive,
     list_archives,
     restoration_conflicts,
+    restore_service_order,
 )
 from app.services.service_execution import decide_quotation_item
 from app.models.user import User
@@ -145,6 +147,17 @@ def get_service_order_archive_restoration_check(
     archive = get_archive(db, archive_id)
     conflicts = restoration_conflicts(db, archive)
     return {"archive_id": archive.id, "recoverable": not conflicts, "conflicts": conflicts}
+
+
+@router.post("/service-order-archives/{archive_id}/restore")
+def post_service_order_archive_restore(
+    archive_id: int,
+    payload: ServiceOrderRestore,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("quotations.exceptions.inspect")),
+) -> dict:
+    """Restauración administrativa explícita (permisos adicionales en el servicio)."""
+    return restore_service_order(db, archive_id, current_user, payload.reason)
 
 
 @router.get("/{quotation_id}/pdf")

@@ -24,8 +24,13 @@ from app.services.quotation_acceptance_history import get_acceptance_pdf, list_a
 from app.services.quotation_service_changes import apply_change
 from app.services.service_order_archives import (
     restoration_conflicts,
+    restore_service_order,
+    serialize_row,
     verify_archive_integrity,
 )
+from app.services.quotations import update_quotation
+from app.schemas.quotation import QuotationUpdate
+from app.models.audit_log import AuditLog
 from app.services.service_order_rebuilds import can_physically_rebuild_service_order
 
 # Fixtures compartidos con el flujo de desbloqueo existente.
@@ -238,3 +243,98 @@ def test_client_conversation_is_internal_reused_and_never_sent_externally(commun
     assert first.conversation_type == "client"
     assert {participant.account_type for participant in first.participants} == {"internal"}
     assert db.scalar(select(func.count(EmailDelivery.id))) == 0
+
+
+def _unlock(db, context):
+    acceptance = _acceptance(db, context)
+    authorized = _request_and_authorize(db, context)
+    before = serialize_row(context.order)
+    before_items = [serialize_row(i) for i in context.order.items]
+    _apply(db, context, authorized)
+    return acceptance, before, before_items
+
+
+def test_admin_restore_rebuilds_identical_ets_and_reinstates_acceptance(db, context):
+    acceptance, before, before_items = _unlock(db, context)
+    archive = db.scalar(select(ServiceOrderArchive))
+    result = restore_service_order(db, archive.id, context.administrator, "Se canceló la revisión")
+    assert result["restored_at"] is not None and result["restored_by_id"] == context.administrator.id
+    restored = db.get(ServiceOrder, before["id"])
+    assert serialize_row(restored) == before
+    assert [serialize_row(i) for i in restored.items] == before_items
+    assert len(restored.work_orders) == 1
+    assert db.get(Quotation, context.quotation.id).status == "accepted"
+    db.refresh(acceptance)
+    assert acceptance.invalidated_at is None and acceptance.confirmation_folio == "MYC-AC-2026-000001"
+    assert db.scalar(
+        select(func.count(AuditLog.id)).where(AuditLog.action == "quotation.service_order_restored")
+    ) == 1
+    codes = set(db.scalars(select(ActivityMessage.event_code)).all())
+    assert "quotation.service_order_restored" in codes
+
+
+def test_restore_is_single_use_and_refuses_after_new_version(db, context):
+    _unlock(db, context)
+    archive = db.scalar(select(ServiceOrderArchive))
+    update_quotation(
+        db, context.quotation.id, QuotationUpdate(notes="Nueva versión"), user_id=context.requester.id
+    )
+    with pytest.raises(HTTPException) as stale:
+        restore_service_order(db, archive.id, context.administrator, "Intento tardío")
+    assert stale.value.status_code == 409
+    assert any("posteriores" in c for c in stale.value.detail["conflicts"])
+    assert db.scalar(select(func.count(ServiceOrder.id))) == 0
+    assert db.get(Quotation, context.quotation.id).status == "in_revision"
+
+
+def test_restore_second_time_is_rejected(db, context):
+    _unlock(db, context)
+    archive = db.scalar(select(ServiceOrderArchive))
+    restore_service_order(db, archive.id, context.administrator, "Primera")
+    with pytest.raises(HTTPException) as again:
+        restore_service_order(db, archive.id, context.administrator, "Segunda")
+    assert again.value.status_code == 409
+    assert db.scalar(select(func.count(ServiceOrder.id))) == 1
+
+
+def test_restore_requires_permission_and_reason(db, context):
+    _unlock(db, context)
+    archive = db.scalar(select(ServiceOrderArchive))
+    with pytest.raises(HTTPException) as denied:
+        restore_service_order(db, archive.id, _plain_user(db), "Motivo válido")
+    assert denied.value.status_code == 403
+    with pytest.raises(HTTPException) as no_reason:
+        restore_service_order(db, archive.id, context.administrator, " ")
+    assert no_reason.value.status_code == 422
+
+
+def _plain_user(db):
+    from app.models.user import Role, User
+
+    role = Role(name="Tecnico", description="t")
+    db.add(role)
+    db.flush()
+    user = User(email="plain@example.test", full_name="Plain", hashed_password="x", role_id=role.id, roles=[role])
+    db.add(user)
+    db.commit()
+    return user
+
+
+def test_restore_rolls_back_when_a_row_cannot_be_inserted(db, context, monkeypatch):
+    _unlock(db, context)
+    archive = db.scalar(select(ServiceOrderArchive))
+    tampered = dict(archive.archive_data)
+    # Dato inválido pero con hash recalculado: debe fallar al insertar y revertir todo.
+    from app.services.service_order_archives import canonical_hash
+
+    tampered["items"] = [{**tampered["items"][0], "service_name": None}]
+    archive.archive_data = tampered
+    archive.integrity_hash = canonical_hash(tampered)
+    db.commit()
+    with pytest.raises(HTTPException) as failure:
+        restore_service_order(db, archive.id, context.administrator, "Debe revertirse")
+    assert failure.value.status_code == 409
+    db.rollback()
+    assert db.scalar(select(func.count(ServiceOrder.id))) == 0
+    assert db.get(Quotation, context.quotation.id).status == "in_revision"
+    assert db.get(ServiceOrderArchive, archive.id).restored_at is None

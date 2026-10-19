@@ -71,6 +71,8 @@ def upgrade():
         sa.Column("schema_version", sa.Integer(), nullable=False),
         sa.Column("integrity_hash", sa.String(length=64), nullable=False),
         sa.Column("restored_at", sa.DateTime(timezone=True)),
+        sa.Column("restored_by_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="SET NULL")),
+        sa.Column("restoration_reason", sa.Text()),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.UniqueConstraint("exception_request_id", name="uq_service_order_archives_exception"),
@@ -84,6 +86,7 @@ def upgrade():
         "exception_request_id",
         "exception_folio",
         "deleted_by_id",
+        "restored_by_id",
     ):
         op.create_index(f"ix_service_order_archives_{column}", "service_order_archives", [column])
 

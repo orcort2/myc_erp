@@ -30,7 +30,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | Recursos | 4 |
 | Configuración | 276 |
 | Documentación | 185 |
-| Pruebas | 167 |
+| Pruebas | 168 |
 
 ## Convenciones
 
@@ -1566,6 +1566,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | backend/tests/test_quotation_signing_public_access.py | backend/tests/test_quotation_signing_public_access.py | Prueba automatizada | Verifica el contrato operativo de test quotation signing public access y previene regresiones del flujo asociado. | Módulos backend bajo prueba y fixtures | pytest/unittest en CI y desarrollo | Medio | Estable |
 | backend/tests/test_quotation_signing_service.py | backend/tests/test_quotation_signing_service.py | Prueba automatizada | Verifica el contrato operativo de test quotation signing service y previene regresiones del flujo asociado. | Módulos backend bajo prueba y fixtures | pytest/unittest en CI y desarrollo | Medio | Estable |
 | backend/tests/test_quotation_signing_snapshot.py | backend/tests/test_quotation_signing_snapshot.py | Prueba automatizada | Verifica el contrato operativo de test quotation signing snapshot y previene regresiones del flujo asociado. | Módulos backend bajo prueba y fixtures | pytest/unittest en CI y desarrollo | Medio | Estable |
+| backend/tests/test_quotation_unlock_concurrency_pg.py | backend/tests/test_quotation_unlock_concurrency_pg.py | Prueba automatizada | Verifica el contrato operativo de test quotation unlock concurrency pg y previene regresiones del flujo asociado. | Módulos backend bajo prueba y fixtures | pytest/unittest en CI y desarrollo | Medio | Estable |
 | backend/tests/test_quotation_update_regression.py | backend/tests/test_quotation_update_regression.py | Prueba automatizada | Verifica el contrato operativo de test quotation update regression y previene regresiones del flujo asociado. | Módulos backend bajo prueba y fixtures | pytest/unittest en CI y desarrollo | Medio | Estable |
 | backend/tests/test_realtime_client_isolation.py | backend/tests/test_realtime_client_isolation.py | Prueba automatizada | Verifica el contrato operativo de test realtime client isolation y previene regresiones del flujo asociado. | Módulos backend bajo prueba y fixtures | pytest/unittest en CI y desarrollo | Medio | Estable |
 | backend/tests/test_realtime_communication_authority_trigger.py | backend/tests/test_realtime_communication_authority_trigger.py | Prueba automatizada | Verifica el contrato operativo de test realtime communication authority trigger y previene regresiones del flujo asociado. | Módulos backend bajo prueba y fixtures | pytest/unittest en CI y desarrollo | Medio | Estable |
