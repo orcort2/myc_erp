@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import './QuotationSigningPage.css';
 
 const API = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 const endpoint = (path) => API + '/public/quotation-signing/' + path;
@@ -15,6 +16,7 @@ export default function QuotationSigningPage() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
 
   async function post(path, payload = {}) {
     const response = await fetch(endpoint(path), {
@@ -53,44 +55,52 @@ export default function QuotationSigningPage() {
   }
 
   return (
-    <main style={{ maxWidth: 900, margin: '30px auto', padding: 24, fontFamily: 'system-ui, sans-serif' }}>
-      <h1>Mesa de Firmado MYC</h1>
-      <p>Revisa la cotización antes de confirmar tu aceptación.</p>
-      {error && <p role="alert" style={{ color: '#a11' }}>{error}</p>}
+    <main className="myc-signing">
+      <header className="myc-signing__header"><div className="myc-signing__logo">MYC<span>.</span></div><span>METROLOGÍA Y SERVICIOS</span><div className="myc-signing__secure">✓ Firma segura</div></header>
+      <div className="myc-signing__content">
+      <p className="myc-signing__eyebrow">PORTAL DE CLIENTES · FIRMA DIGITAL</p>
+      <h1>{result ? 'Gracias por confiar en MYC.' : 'Su cotización, lista para revisar.'}</h1>
+      <p className="myc-signing__lead">Revise su documento y complete la verificación para confirmar el servicio.</p>
+      {error && <p role="alert" className="myc-signing__error">{error}</p>}
       {result ? (
-        <section role="status"><h2>Cotización aceptada</h2><p>Confirmación #{result.acceptance_id}</p></section>
+        <section role="status" className="myc-signing__success"><div className="myc-signing__success-mark">MYC<span>.</span><b>✓</b></div><p className="myc-signing__eyebrow">ACEPTACIÓN REGISTRADA</p><h2>Su orden ha sido emitida.</h2><p>Gracias por confiar en Metrología y Servicios MYC. En breve, un asesor se pondrá en contacto con usted para coordinar la programación de su servicio.</p><div className="myc-signing__receipt">Confirmación #{result.acceptance_id}</div></section>
       ) : document ? (
         <>
-          <p>Documento: {document.filename}</p>
-          {pdfUrl && <iframe title="Cotización PDF" src={pdfUrl} style={{ width: '100%', height: 520, border: '1px solid #ddd' }} />}
-          {!challenge && <button disabled={busy} onClick={() => action(async () => {
+          <div className="myc-signing__grid"><section className="myc-signing__document"><div className="myc-signing__document-bar"><div><strong>{document.filename}</strong><small>Documento oficial · PDF</small></div><a href={pdfUrl} download={document.filename || "cotizacion-myc.pdf"} className="myc-signing__download" aria-label="Descargar documento PDF">↓ Descargar</a></div>
+          {pdfUrl && <iframe title="Cotización PDF" src={pdfUrl} className="myc-signing__pdf" />}
+          </section><section className="myc-signing__form-panel"><div className="myc-signing__lock">✧</div><p className="myc-signing__eyebrow">VERIFICACIÓN DE IDENTIDAD</p><h2>{verified ? "Confirme su aceptación" : challenge ? "Verifique su correo" : "Protegemos su aceptación"}</h2><p className="myc-signing__description">{verified ? "Indique el nombre de la persona autorizada." : challenge ? "Introduzca el código de seis dígitos enviado a su correo." : "Enviaremos un código de seguridad al correo asociado a esta cotización."}</p>
+          {!challenge && <button className={"myc-signing__primary myc-signing__otp-button" + (otpSent ? " is-sent" : "")} disabled={busy} onClick={() => action(async () => {
             const data = await (await post('otp/request')).json();
+            setOtpSent(true);
             setChallenge(data);
-          })}>Enviar código de verificación</button>}
-          {challenge && !verified && (
+          })}>{busy ? "Enviando código…" : otpSent ? "✓" : "Enviar código de verificación →"}</button>}
+          {challenge && !verified && (<div className="myc-signing__fade"><p className="myc-signing__sent">✓ Código enviado correctamente</p>
             <form onSubmit={(event) => { event.preventDefault(); action(async () => {
               await post('otp/verify', { challenge_id: challenge.challenge_id, code });
               setVerified(true);
             }); }}>
-              <label>Código de seis dígitos <input value={code} onChange={e => setCode(e.target.value)} inputMode="numeric" pattern="[0-9]{6}" required /></label>
-              <button disabled={busy}>Verificar código</button>
-            </form>
+              <label>Código de seis dígitos <input value={code} onChange={e => setCode(e.target.value.replace(/\\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="[0-9]{6}" placeholder="000000" required /></label>
+              <button className="myc-signing__primary" disabled={busy || code.length !== 6}>{busy ? "Verificando…" : "Verificar código →"}</button>
+            </form></div>
           )}
           {verified && (
-            <form onSubmit={(event) => { event.preventDefault(); action(async () => {
+            <form className="myc-signing__fade" onSubmit={(event) => { event.preventDefault(); action(async () => {
               const data = await (await post('accept', {
                 challenge_id: challenge.challenge_id, signer_name: name.trim(), consent,
               })).json();
               setResult(data);
             }); }}>
-              <label>Nombre completo <input value={name} onChange={e => setName(e.target.value)} minLength={2} maxLength={180} required /></label>
+              <label>Nombre completo <input placeholder="Nombre y apellidos" autoComplete="name" value={name} onChange={e => setName(e.target.value)} minLength={2} maxLength={180} required /></label>
               <p>{document.consent_text}</p>
               <label><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} required /> Acepto las condiciones indicadas</label>
-              <button disabled={busy || !consent || name.trim().length < 2}>Aceptar cotización</button>
+              <button className="myc-signing__primary" disabled={busy || !consent || name.trim().length < 2}>{busy ? "Registrando aceptación…" : "Aceptar cotización ✓"}</button>
             </form>
           )}
+          <p className="myc-signing__assurance">✓ Documento protegido y verificación por correo</p></section></div>
         </>
       ) : !error ? <p>Cargando documento…</p> : null}
+      <footer className="myc-signing__footer">Metrología y Servicios MYC · Atención profesional en cada medición</footer>
+      </div>
     </main>
   );
 }
