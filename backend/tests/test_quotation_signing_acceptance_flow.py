@@ -43,7 +43,7 @@ def _context():
 def test_acceptance_creates_ets_without_committing():
     db = MagicMock()
     quotation, document, link, challenge = _context()
-    db.scalar.side_effect = [quotation, challenge, None]
+    db.scalar.side_effect = [quotation, challenge, None, None]
     def flush():
         db.add.call_args.args[0].id = 40
     db.flush.side_effect = flush
@@ -57,6 +57,7 @@ def test_acceptance_creates_ets_without_committing():
             "app.services.quotation_signing_acceptance.invalidate_document_links"
         ) as invalidate,
         patch("app.services.quotation_signing_acceptance.write_audit_log") as audit,
+        patch("app.services.quotation_signing_acceptance.queue_notification_for_delivery") as enqueue,
     ):
         result = accept_signed_quotation(
             db, signing_token="test-token", challenge_id=30,
@@ -75,6 +76,11 @@ def test_acceptance_creates_ets_without_committing():
     assert create_ets.call_args.kwargs["user_id"] == 7
     invalidate.assert_called_once_with(db, quotation_id=18)
     audit.assert_called_once()
+    enqueue.assert_called_once()
+    notification = enqueue.call_args.args[1]
+    assert notification.recipient_user_id == 7
+    assert notification.notification_type == "quotation.accepted"
+    assert notification.event_key == "quotation:18:acceptance:40:advisor:7"
     db.commit.assert_not_called()
 
 
