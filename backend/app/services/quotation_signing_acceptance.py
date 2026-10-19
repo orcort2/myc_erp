@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
+from app.models.notification import Notification
 from app.models.quotation import Quotation
 from app.models.quotation_acceptance import QuotationAcceptance
 from app.models.quotation_signing_challenge import QuotationSigningChallenge
@@ -18,6 +19,7 @@ from app.services.quotation_signing_authority import (
     invalidate_document_links,
 )
 from app.services.audit_logs import write_audit_log
+from app.services.push_notifications import queue_notification_for_delivery
 
 
 CONSENT_TEXT = (
@@ -145,6 +147,33 @@ def accept_signed_quotation(
         user_id=quotation.advisor_id,
         commit=False,
     )
+    # Persist alongside acceptance and ETS; unique event key prevents duplicates.
+    event_key = f"quotation:{quotation.id}:acceptance:{acceptance.id}:advisor:{quotation.advisor_id}"
+    notification = db.scalar(select(Notification).where(Notification.event_key == event_key))
+    if notification is None:
+        notification = Notification(
+            recipient_user_id=quotation.advisor_id,
+            actor_user_id=None,
+            notification_type="quotation.accepted",
+            event_key=event_key,
+            title="Cotización aceptada por el cliente",
+            body=(
+                f"El cliente ha aceptado la cotización {quotation.folio}. "
+                "Contacta al cliente para coordinar la fecha de servicio."
+            ),
+            entity_type="quotation",
+            entity_id=quotation.id,
+            priority="normal",
+            metadata_json={
+                "quotation_id": quotation.id,
+                "acceptance_id": acceptance.id,
+                "quotation_folio": quotation.folio,
+                "frontend_path": "/quotations",
+            },
+        )
+        db.add(notification)
+        queue_notification_for_delivery(db, notification)
+
     invalidate_document_links(db, quotation_id=quotation.id)
     write_audit_log(
         db,
