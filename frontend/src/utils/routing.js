@@ -1,6 +1,10 @@
 export function getCurrentPath() {
   const pathname = window.location.pathname === '/' ? '/dashboard' : window.location.pathname;
-  return pathname;
+  if (pathname === '/quotation-signing') {
+    return pathname;
+  }
+
+  return `${pathname}${window.location.hash}`;
 }
 
 export function navigate(path) {
