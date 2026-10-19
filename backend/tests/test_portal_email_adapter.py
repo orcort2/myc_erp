@@ -81,6 +81,12 @@ def test_production_without_base_url_does_not_send_or_leak(portal_api, monkeypat
     assert development_outbox == [] and db.scalar(select(EmailDelivery)) is None
 
 
-def test_production_rejects_email_without_starttls():
-    with pytest.raises(ValueError, match="STARTTLS"):
-        make_settings(environment="production", secret_key="Zq8!vN3#rT6@wK1$yB9%xC4^mD7&hF2*", smtp_use_starttls=False)
+def test_production_email_requires_https_public_url():
+    with pytest.raises(ValueError, match="PUBLIC_APP_BASE_URL"):
+        make_settings(
+            environment="production",
+            secret_key="Zq8!vN3#rT6@wK1$yB9%xC4^mD7&hF2*",
+            smtp_use_starttls=False,
+            public_app_base_url="http://erp.example.test",
+            portal_public_base_url="",
+        )

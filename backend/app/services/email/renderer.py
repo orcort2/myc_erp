@@ -92,7 +92,26 @@ def render_email(
         elif variable.kind == "url":
             url = _safe_url(raw)
             text_values[name] = url
-            html_values[name] = f'<a href="{escape(url, quote=True)}">{escape(url)}</a>'
+            if definition.key == "quotation_send_signing" and name == "signing_url":
+                safe_href = escape(url, quote=True)
+                html_values[name] = (
+                    '<table role="presentation" cellpadding="0" cellspacing="0" '
+                    'style="margin:16px 0;">'
+                    '<tr><td bgcolor="#073f48" '
+                    'style="border-radius:6px;text-align:center;">'
+                    f'<a href="{safe_href}" '
+                    'style="display:inline-block;padding:14px 26px;'
+                    'background-color:#073f48;color:#ffffff;'
+                    'font-family:Arial,Helvetica,sans-serif;'
+                    'font-size:15px;font-weight:bold;'
+                    'text-decoration:none;border-radius:6px;">'
+                    'Ver cotización</a>'
+                    '</td></tr></table>'
+                )
+            else:
+                html_values[name] = (
+                    f'<a href="{escape(url, quote=True)}">{escape(url)}</a>'
+                )
         else:
             text_values[name] = raw
             html_values[name] = escape(raw)

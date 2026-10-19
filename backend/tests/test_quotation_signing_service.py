@@ -189,6 +189,7 @@ def test_request_respects_cooldown():
     with (
         patch.object(service, "_quotation", return_value=quotation()),
         patch.object(service, "_snapshot", return_value=snapshot()),
+        patch.object(service, "_now", return_value=NOW),
     ):
         with pytest.raises(HTTPException) as error:
             service.request_signing_code(

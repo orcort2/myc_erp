@@ -1352,6 +1352,14 @@ def update_quotation(
         if quotation.contact_id is not None:
             updates["contact_id"] = None
 
+    # A PATCH that repeats persisted values is not a commercial mutation.
+    # Preserve the frozen document and signing capabilities in that case.
+    updates = {
+        key: value
+        for key, value in updates.items()
+        if getattr(quotation, key) != value
+    }
+
     previous_values = {
         key: getattr(
             quotation,

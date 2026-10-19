@@ -35,7 +35,9 @@ def test_inventory_has_only_the_32_governed_compatibility_gaps():
     # (email.templates.read/manage, email.deliveries.read/retry,
     # email.transport.status): posteriores al catálogo institucional v1.0.
     # 41 = 40 + quotations.email.send (EMAIL-3, envío contextual de cotizaciones).
-    assert len(inventory - catalog_permissions) == 41
+    # 42 = 41 + invoices.email.send (EMAIL-111, correo contextual de facturas).
+    assert len(inventory - catalog_permissions) == 42
+    assert "invoices.email.send" in inventory - catalog_permissions
     assert {"work_orders.reopen", "lab_work_orders.cancel"} <= inventory - catalog_permissions
     assert inventory <= current
     assert "portal.view" not in inventory

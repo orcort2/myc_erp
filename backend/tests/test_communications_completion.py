@@ -290,6 +290,13 @@ def test_persisted_rest_message_is_received_realtime_without_refresh(
     conversation = _direct(db, users["sender"], users["recipient"])
     factory = sessionmaker(bind=db.get_bind(), expire_on_commit=False)
 
+    # Ambas revalidaciones deben utilizar la base temporal del test.
+    monkeypatch.setattr("app.core.db.SessionLocal", factory)
+    monkeypatch.setattr(
+        "app.realtime.delivery_authorization.SessionLocal",
+        factory,
+    )
+
     def override_db():
         with factory() as session:
             yield session

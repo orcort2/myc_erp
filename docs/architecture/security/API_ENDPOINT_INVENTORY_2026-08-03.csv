@@ -365,6 +365,11 @@ POST,/api/portal/registration,portal-registration,register_portal_account,public
 POST,/api/portal/registration/resend-verification,portal-registration,resend_portal_registration_email,public_intentional,none,,,anonymous,yes,not_applicable,not_applicable,not_applicable,
 POST,/api/portal/registration/verify-email,portal-registration,verify_portal_registration_email,public_intentional,none,,,anonymous,yes,not_applicable,not_applicable,not_applicable,
 GET,/api/portal/registration/{registration_id}/status,portal-registration,get_portal_registration_status,administrative,access_jwt,users.manage,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+POST,/api/public/quotation-signing/accept,quotation-signing-public,accept_quotation,public_signed_token,authentication_code,,,anonymous,yes,not_applicable,not_applicable,not_applicable,
+POST,/api/public/quotation-signing/document,quotation-signing-public,document_info,public_signed_token,authentication_code,,,anonymous,yes,not_applicable,not_applicable,not_applicable,
+POST,/api/public/quotation-signing/otp/request,quotation-signing-public,request_code,public_signed_token,authentication_code,,,anonymous,yes,not_applicable,not_applicable,not_applicable,
+POST,/api/public/quotation-signing/otp/verify,quotation-signing-public,verify_code,public_signed_token,authentication_code,,,anonymous,yes,not_applicable,not_applicable,not_applicable,
+POST,/api/public/quotation-signing/pdf,quotation-signing-public,document_pdf,public_signed_token,authentication_code,,,anonymous,yes,not_applicable,not_applicable,not_applicable,
 GET,/api/public/resolution-engine/v1/capabilities,Resolution Engine Public API v1,capabilities,resolution_engine_consumer,consumer_context,,organization_id,api_consumer,yes,required,not_applicable,required,
 GET,/api/public/resolution-engine/v1/resolutions,Resolution Engine Public API v1,list_resolutions,resolution_engine_consumer,consumer_context,,organization_id,api_consumer,yes,required,not_applicable,required,
 POST,/api/public/resolution-engine/v1/resolutions,Resolution Engine Public API v1,create_resolution,resolution_engine_consumer,consumer_context,,organization_id,api_consumer,yes,required,not_applicable,required,
@@ -392,6 +397,7 @@ PATCH,/api/quotations/{quotation_id}/items/{item_id},quotations,patch_quotation_
 POST,/api/quotations/{quotation_id}/items/{item_id}/decision,quotations,post_quotation_item_decision,authenticated_permission,access_jwt,quotations.update,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 GET,/api/quotations/{quotation_id}/pdf,quotations,get_quotation_pdf,authenticated_permission,access_jwt,quotations.read,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/quotations/{quotation_id}/reject,quotations,reject_quotation,authenticated_permission,access_jwt,quotations.create,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+POST,/api/quotations/{quotation_id}/reopen,quotations,reopen_quotation,authenticated_permission,access_jwt,quotations.create,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/quotations/{quotation_id}/send,quotations,send_quotation,authenticated_permission,access_jwt,quotations.create,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 GET,/api/quotations/{quotation_id}/snapshots,quotations,get_quotation_snapshots,authenticated_permission,access_jwt,quotations.read,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/quotations/{quotation_id}/snapshots/restore,quotations,restore_quotation_version,authenticated_permission,access_jwt,quotations.create,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
