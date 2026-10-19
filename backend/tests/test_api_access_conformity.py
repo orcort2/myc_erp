@@ -29,7 +29,8 @@ def test_every_http_operation_has_an_explicit_access_classification():
     # EMAIL-2 adds public forgot-password / reset-password.
     # EMAIL-3 adds five ClientContact operations and three contextual quotation email operations.
     # EMAIL-4: tres endpoints de correo de facturacion.
-    assert len(operations) == 577
+    # REVISION-CYCLE adds acceptance history/PDF and ETS archive read operations.
+    assert len(operations) == 582
     assert all(classify_operation(item.method, item.path, item.tags) for item in operations)
 
 

@@ -100,5 +100,6 @@ def accept_quotation(payload: AcceptanceRequest, db: Session = Depends(get_db)):
         "quotation_id": acceptance.quotation_id,
         "snapshot_id": acceptance.snapshot_id,
         "acceptance_id": acceptance.id,
+        "confirmation_folio": acceptance.confirmation_folio,
         "status": "accepted",
     }

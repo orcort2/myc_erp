@@ -8,6 +8,24 @@
 
 # Estado operativo actual del ERP MYC
 
+## Ciclo de revisión de cotizaciones (2026-10-19, rama `feat/quotation-acceptance-revision-cycle`)
+
+- Base `3e8aab1`; sin merge, push ni deploy. Migración `a1b2c3d4e5f7` sobre `f9a2b3c4d5e6` (único head):
+  `quotation_acceptances.confirmation_folio` (único, con relleno histórico `MYC-AC-AAAA-NNNNNN`) y tabla
+  `service_order_archives`. No se tocó la base local ni `backup_erp_myc_antes_prueba.sql`.
+- Backend: `in_revision`; `apply_change` archiva + elimina la ETS sin crear reemplazo; `/reopen` responde
+  409; evento `quotation.accepted_electronically`, `quotation.service_order_archived`,
+  `quotation.in_revision`, `quotation.new_version`, `quotation.revision_resent`; endpoints autenticados
+  de aceptaciones y archivos de ETS (+4 operaciones, inventario de acceso regenerado).
+- Frontend: estado `En revisión`, apertura directa `?quotation_id=`, sección Contacto, «Abrir en
+  Comunicaciones» (conversación interna), historial de aceptaciones, logo oficial y folio en la
+  confirmación de firmado.
+- Validaciones: `pytest tests` 2430 passed / 50 skipped; `vite build` OK; pruebas node nuevas pasan.
+  Validada en navegador y en PostgreSQL (copia desechable). Restauración administrativa de ETS:
+  `POST /quotations/service-order-archives/{id}/restore` (migración con `restored_by_id`/
+  `restoration_reason`); concurrencia probada en PostgreSQL (`test_quotation_unlock_concurrency_pg.py`,
+  requiere `PG_CONCURRENCY_URL`). Rama actualizada con `origin/main` 864d09f.
+
 ## Modalidades iniciales de grupos LAB internos (2026-10-06, sin commit)
 
 - Worktree `myc_erp-lab-group-workflow`, rama

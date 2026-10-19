@@ -7,11 +7,18 @@ from sqlalchemy.orm import Session
 
 from app.models.certificate import Certificate
 from app.models.folio_sequence import InstitutionalFolioSequence
+from app.models.quotation_acceptance import QuotationAcceptance
 from app.models.service_order import ServiceOrder, ServiceWorkOrder
 from app.schemas.service_type import ServiceType, normalize_certificate_prefix, normalize_service_type
 
 
+ACCEPTANCE_DOCUMENT_TYPE = "quotation_acceptance"
+ACCEPTANCE_SEQUENCE_PREFIX = "MYCAC"
+
+
 def _initial_value(document_type: str, year: int, *, prefix: str | None = None) -> int:
+    if document_type == ACCEPTANCE_DOCUMENT_TYPE:
+        return 1
     if document_type == "certificate" and prefix == "MYCV":
         return 1
     if year == 2026:
@@ -37,6 +44,16 @@ def _existing_certificate_max(
         ):
             sequences.append(int(value[-4:]))
     return max(sequences) if sequences else None
+
+
+def _existing_acceptance_max(db: Session, *, year: int) -> int | None:
+    values = db.scalars(
+        select(QuotationAcceptance.confirmation_folio).where(
+            QuotationAcceptance.confirmation_folio.like(f"MYC-AC-{year}-%")
+        )
+    ).all()
+    numbers = [int(v.rsplit("-", 1)[-1]) for v in values if v and v.rsplit("-", 1)[-1].isdigit()]
+    return max(numbers) if numbers else None
 
 
 def _existing_work_order_max(db: Session, *, year: int) -> int | None:
@@ -70,11 +87,14 @@ def allocate_sequence(
         .with_for_update()
     )
     minimum = _initial_value(document_type, issued_on.year, prefix=normalized_prefix)
-    existing_max = (
-        _existing_work_order_max(db, year=issued_on.year)
-        if document_type == "work_order"
-        else _existing_certificate_max(db, prefix=normalized_prefix, issued_on=issued_on)
-    )
+    if document_type == "work_order":
+        existing_max = _existing_work_order_max(db, year=issued_on.year)
+    elif document_type == ACCEPTANCE_DOCUMENT_TYPE:
+        existing_max = _existing_acceptance_max(db, year=issued_on.year)
+    else:
+        existing_max = _existing_certificate_max(
+            db, prefix=normalized_prefix, issued_on=issued_on
+        )
     candidate = max(minimum, (existing_max + 1) if existing_max is not None else minimum)
     if counter is None:
         counter = InstitutionalFolioSequence(
@@ -132,3 +152,15 @@ def next_work_order_number(db: Session, *, issued_on: date | None = None) -> int
         prefix="OT",
         issued_on=resolved_date,
     )
+
+
+def next_acceptance_confirmation_folio(db: Session, *, issued_on: date | None = None) -> str:
+    """Folio institucional ``MYC-AC-AAAA-NNNNNN``; se asigna dentro de la transacción."""
+    resolved = issued_on or date.today()
+    sequence = allocate_sequence(
+        db,
+        document_type=ACCEPTANCE_DOCUMENT_TYPE,
+        prefix=ACCEPTANCE_SEQUENCE_PREFIX,
+        issued_on=resolved,
+    )
+    return f"MYC-AC-{resolved.year}-{sequence:06d}"

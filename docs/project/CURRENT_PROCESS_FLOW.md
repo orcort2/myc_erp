@@ -271,7 +271,7 @@ creador. No hay polling durante la vida de la pestaña. La descarga
 conserva el filename del servidor y difiere la liberación de su URL.
 
 
-El cliente conserva identidad, datos fiscales, contactos dependientes, constancia y perfiles de certificado. La cotización se crea con partidas propias o provenientes del Catálogo MYC, calcula importes, guarda snapshots y puede transitar entre `draft`, `sent`, `waiting` y estados terminales.
+El cliente conserva identidad, datos fiscales, contactos dependientes, constancia y perfiles de certificado. La cotización se crea con partidas propias o provenientes del Catálogo MYC, calcula importes, guarda snapshots y puede transitar entre `draft`, `sent`, `waiting`, `in_revision` y estados terminales. Una aceptada vuelve a revisión sólo mediante el desbloqueo autorizado: la ETS no intervenida se archiva y elimina, y la ETS nueva nace al aceptarse la nueva versión.
 
 La transición institucional a `accepted` materializa automáticamente el ETS en
 la misma transacción backend. El backend bloquea la Cotización, reutiliza el

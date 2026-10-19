@@ -128,6 +128,8 @@ def _catalog_policy(method: str, path: str) -> AccessPolicy:
 def _quotation_policy(method: str, path: str) -> AccessPolicy:
     if path.endswith("/decision"):
         return _permission("quotations.update")
+    if "/service-order-archives" in path:
+        return _permission("quotations.exceptions.inspect")
     # EMAIL-3: contextual email endpoints (the router also requires quotations.read for history).
     if "/email/" in path:
         if path.endswith("/deliveries"):

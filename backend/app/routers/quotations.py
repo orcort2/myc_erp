@@ -12,6 +12,7 @@ from app.schemas.quotation import (
     QuotationStatusChange,
     QuotationUpdate,
 )
+from app.schemas.quotation_service_change import ServiceOrderRestore
 from app.schemas.email import (
     QuotationEmailDeliveryRead,
     QuotationEmailPreview,
@@ -42,6 +43,13 @@ from app.services.quotation_email import (
     send_quotation_email,
 )
 from app.services.quotation_pdfs import generate_quotation_pdf
+from app.services.quotation_acceptance_history import get_acceptance_pdf, list_acceptances
+from app.services.service_order_archives import (
+    get_archive,
+    list_archives,
+    restoration_conflicts,
+    restore_service_order,
+)
 from app.services.service_execution import decide_quotation_item
 from app.models.user import User
 from app.services.auth import get_current_user, require_permission, user_has_permission
@@ -93,6 +101,63 @@ def get_quotation_by_id(
     quotation_id: int, db: Session = Depends(get_db)
 ) -> QuotationRead:
     return get_quotation(db, quotation_id)
+
+
+@router.get("/{quotation_id}/acceptances")
+def get_quotation_acceptances(
+    quotation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("quotations.read")),
+) -> list[dict]:
+    """Historial de aceptaciones (vigente e invalidadas) con su folio de confirmación."""
+    return list_acceptances(db, quotation_id)
+
+
+@router.get("/{quotation_id}/acceptances/{acceptance_id}/pdf")
+def get_quotation_acceptance_pdf(
+    quotation_id: int,
+    acceptance_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("quotations.read")),
+) -> Response:
+    content, filename = get_acceptance_pdf(db, quotation_id, acceptance_id)
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@router.get("/{quotation_id}/service-order-archives")
+def get_quotation_service_order_archives(
+    quotation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("quotations.exceptions.inspect")),
+) -> list[dict]:
+    return list_archives(db, quotation_id)
+
+
+@router.get("/service-order-archives/{archive_id}/restoration-check")
+def get_service_order_archive_restoration_check(
+    archive_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("quotations.exceptions.inspect")),
+) -> dict:
+    """Sólo informa conflictos; la recuperación nunca es automática."""
+    archive = get_archive(db, archive_id)
+    conflicts = restoration_conflicts(db, archive)
+    return {"archive_id": archive.id, "recoverable": not conflicts, "conflicts": conflicts}
+
+
+@router.post("/service-order-archives/{archive_id}/restore")
+def post_service_order_archive_restore(
+    archive_id: int,
+    payload: ServiceOrderRestore,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("quotations.exceptions.inspect")),
+) -> dict:
+    """Restauración administrativa explícita (permisos adicionales en el servicio)."""
+    return restore_service_order(db, archive_id, current_user, payload.reason)
 
 
 @router.get("/{quotation_id}/pdf")
@@ -242,7 +307,7 @@ def reopen_quotation(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("quotations.update")),
 ) -> QuotationRead:
-    """Explicit administrative reopening; existing ETS remain unchanged."""
+    """Deshabilitado: la revisión de una cotización aceptada exige el desbloqueo EXV."""
     return reopen_accepted_quotation(db, quotation_id, user_id=current_user.id)
 
 

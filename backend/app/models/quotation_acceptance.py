@@ -20,6 +20,8 @@ class QuotationAcceptance(IntegerPkMixin, TimestampMixin, Base):
         ),
     )
 
+    # Folio institucional MYC-AC-AAAA-NNNNNN: único, inmutable y nunca reutilizado.
+    confirmation_folio: Mapped[str | None] = mapped_column(String(24), unique=True, index=True)
     quotation_id: Mapped[int] = mapped_column(ForeignKey("quotations.id", ondelete="RESTRICT"), index=True)
     snapshot_id: Mapped[int] = mapped_column(ForeignKey("quotation_snapshots.id", ondelete="RESTRICT"))
     pdf_sha256: Mapped[str] = mapped_column(String(64), nullable=False)

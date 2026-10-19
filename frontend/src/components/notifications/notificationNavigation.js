@@ -11,11 +11,29 @@ const ENTITY_DESTINATIONS = {
   communication: '/communications',
 };
 
+// `/quotations` nunca fue una ruta del frontend: las notificaciones históricas
+// de aceptación la guardaron como frontend_path y terminaban sin abrir nada.
+const LEGACY_QUOTATION_PATHS = new Set(['/quotations', '/quotations/']);
+
+export function quotationDeepLink(quotationId) {
+  return `/dashboard?quotation_id=${encodeURIComponent(quotationId)}#cotizaciones`;
+}
+
 export function getNotificationDestination(notification) {
   const metadata = notification?.metadata_json ?? {};
+  const quotationId = notification?.entity_type === 'quotation'
+    ? notification.entity_id ?? metadata.quotation_id
+    : null;
 
-  if (typeof metadata.frontend_path === 'string') {
+  if (
+    typeof metadata.frontend_path === 'string'
+    && !(quotationId != null && LEGACY_QUOTATION_PATHS.has(metadata.frontend_path))
+  ) {
     return metadata.frontend_path;
+  }
+
+  if (quotationId != null) {
+    return quotationDeepLink(quotationId);
   }
 
   if (typeof metadata.path === 'string') {

@@ -31,7 +31,9 @@ def test_accept_endpoint_dispatches_only_after_successful_acceptance():
     from app.routers.quotation_signing_public import AcceptanceRequest, accept_quotation
 
     db = MagicMock()
-    acceptance = SimpleNamespace(quotation_id=18, snapshot_id=12, id=40)
+    acceptance = SimpleNamespace(
+        quotation_id=18, snapshot_id=12, id=40, confirmation_folio="MYC-AC-2026-000002"
+    )
     request = AcceptanceRequest(
         token="a" * 20, challenge_id=30, signer_name="Persona Autorizada", consent=True
     )
@@ -49,6 +51,7 @@ def test_accept_endpoint_dispatches_only_after_successful_acceptance():
     dispatch.assert_called_once_with(db)
     db.commit.assert_not_called()
     assert result["acceptance_id"] == 40
+    assert result["confirmation_folio"] == "MYC-AC-2026-000002"
     assert result["accepted"] is True
 
 
