@@ -297,6 +297,7 @@ class QuotationRead(QuotationBase):
     contact_email: str | None = None
 
     contact_position: str | None = None
+    contact_phone: str | None = None
 
     status: str
 

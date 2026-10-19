@@ -808,3 +808,14 @@ para mutarlo después. La auditoría de materialización conserva la configuraci
 inicial sin simular cambios administrativos. Sin nuevo agregado, columna ni
 migración; solicitudes externas conservan su contrato y aprobación históricos.
 [Contrato](../architecture/LAB_WORK_ORDERS.md#modalidades-iniciales-de-grupos-directos-internos-2026-10-06).
+
+## D-2026-10-19 — Ciclo de revisión de cotizaciones aceptadas
+
+El desbloqueo autorizado (EXV) deja de reconstruir la ETS con partidas nuevas: archiva y elimina la
+ETS no intervenida, pone la cotización en `in_revision` y difiere la ETS nueva a la siguiente
+aceptación. Se reutilizan `quotation_service_changes`, `service_order_rebuilds` (validador único,
+extendido con dependencias reales) y `quotation_signing_authority`; el nuevo
+`service_order_archives` es la única autoridad del archivo hasheado. El folio de aceptación
+`MYC-AC-AAAA-NNNNNN` usa `institutional_folios.allocate_sequence`. La ruta profunda canónica de una
+cotización es `/dashboard?quotation_id=ID#cotizaciones` (`/quotations` nunca existió en el frontend).
+Migración `a1b2c3d4e5f7`. Contrato en [`BUSINESS_RULES.md`](BUSINESS_RULES.md#ciclo-de-revisión-de-cotizaciones--2026-10-19-vigente-sustituye-las-reglas-13-de-la-sección-siguiente).

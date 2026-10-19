@@ -65,6 +65,7 @@ export const quotationStatusLabels = {
   sent: 'Enviada',
   waiting: 'En espera',
   accepted: 'Aceptada',
+  in_revision: 'En revisión',
   rejected: 'Rechazada',
   expired: 'Expirada',
   cancelled: 'Cancelada'
@@ -198,7 +199,9 @@ export const quotationTransitions = {
   draft: new Set(['sent', 'cancelled']),
   sent: new Set(['waiting', 'accepted', 'rejected', 'expired', 'cancelled']),
   waiting: new Set(['accepted', 'rejected', 'expired', 'cancelled']),
+  // Una aceptada sólo entra en revisión mediante el desbloqueo autorizado (EXV).
   accepted: new Set(),
+  in_revision: new Set(['sent', 'cancelled']),
   rejected: new Set(),
   expired: new Set(),
   cancelled: new Set()

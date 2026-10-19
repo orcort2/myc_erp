@@ -175,7 +175,7 @@ def accept_signed_quotation(
                 "acceptance_id": acceptance.id,
                 "quotation_folio": quotation.folio,
                 "confirmation_folio": confirmation_folio,
-                "frontend_path": f"/quotations?quotation_id={quotation.id}",
+                "frontend_path": f"/dashboard?quotation_id={quotation.id}#cotizaciones",
             },
         )
         db.add(notification)

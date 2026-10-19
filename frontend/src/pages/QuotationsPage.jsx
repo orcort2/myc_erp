@@ -8,6 +8,8 @@ import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import ActivityPanel from '../components/activity/ActivityPanel.jsx';
 import QuotationEmailHistory from '../components/QuotationEmailHistory.jsx';
 import QuotationEmailModal from '../components/QuotationEmailModal.jsx';
+import QuotationAcceptanceHistory from '../components/sales/QuotationAcceptanceHistory.jsx';
+import QuotationContactSection from '../components/sales/QuotationContactSection.jsx';
 import {
   QuotationServiceExceptionAction,
   QuotationServiceExceptionReview
@@ -58,6 +60,11 @@ import { getRowValue } from '../utils/clients.js';
 import { hasPermission } from '../utils/accessControl.js';
 import useConfirmDialog from '../utils/useConfirmDialog.js';
 import { navigate } from '../utils/routing.js';
+import {
+  clearQuotationDeepLink,
+  findDeepLinkedQuotation,
+  readQuotationDeepLink
+} from '../utils/quotationDeepLink.js';
 import { formatDate, formatMoney, getClientDisplayName, normalizeKey } from '../utils/formatters.js';
 import { validateLinkedServiceFields } from '../utils/quotationServiceExceptions.js';
 import { contactIdPayload, contactOptionsForClient } from '../utils/quotationContacts.js';
@@ -613,8 +620,9 @@ function QuotationsPage({ user = null }) {
   const canEditSelectedQuotation = Boolean(
     selectedQuotation &&
       canUpdateQuotations &&
-      (!isQuotationTerminal(selectedQuotation) || exceptionalUnlock?.can_apply)
+      !isQuotationTerminal(selectedQuotation)
   );
+  const canOpenCommunications = hasPermission(effectiveUser, 'clients.read');
 
 
   async function loadQuotationData({ silent = false } = {}) {
@@ -680,6 +688,26 @@ function QuotationsPage({ user = null }) {
     setSalesTab('quotations');
     openQuotationDetail(quotation);
   }, [quotations, isDetailOpen]);
+
+  // Apertura directa: /dashboard?quotation_id=ID#cotizaciones (notificaciones).
+  // Reutiliza openQuotationDetail; la URL se limpia para no reabrir el modal.
+  useEffect(() => {
+    function openFromUrl() {
+      const link = readQuotationDeepLink(window.location.search);
+      if (!link || !quotations.length) return;
+      const quotation = findDeepLinkedQuotation(quotations, link);
+      window.history.replaceState({}, '', clearQuotationDeepLink(window.location.href));
+      if (!quotation) {
+        setError('La cotización de la notificación ya no está disponible.');
+        return;
+      }
+      setSalesTab('quotations');
+      openQuotationDetail(quotation);
+    }
+    openFromUrl();
+    window.addEventListener('popstate', openFromUrl);
+    return () => window.removeEventListener('popstate', openFromUrl);
+  }, [quotations]);
 
   useEffect(() => {
     if (!isDetailOpen || !selectedQuotation || !canUpdateQuotations || isQuotationTerminal(selectedQuotation)) {
@@ -1507,41 +1535,15 @@ function QuotationsPage({ user = null }) {
     }));
   }
 
-  function enterExceptionalMode(activeRequest) {
+  // El desbloqueo autorizado ya no habilita edición directa: abre una
+  // confirmación que explica el efecto (archivar y eliminar la ETS, pasar a
+  // «En revisión») y sólo entonces se aplica.
+  async function enterExceptionalMode(activeRequest) {
     setExceptionalUnlock(activeRequest);
     setUnlockPreview(null);
-    setDraftItems([]);
-    setEditingItemForms({});
-    setQuotationDetailTab('items');
-    setNotice(`Edición excepcional activa mediante ${activeRequest.folio}.`);
-  }
-
-  function buildUnlockItems() {
-    return getQuotationItems(selectedQuotation).map((item) => {
-      const catalog = catalogItems.find(
-        (catalogItem) => String(catalogItem.id) === String(item.catalog_item_id)
-      );
-      if (!catalog?.internalKey) {
-        throw new Error(`La partida ${item.service_name} no tiene una clave de servicio vigente.`);
-      }
-      return {
-        service_key: catalog.internalKey,
-        quantity: Number(item.quantity || 1),
-        unit_price: Number(item.unit_price || 0),
-        discount_percent: Number(item.discount_percent || 0),
-        description: item.description || null
-      };
-    });
-  }
-
-  async function previewExceptionalRevision() {
-    if (!exceptionalUnlock) return;
     setError('');
     try {
-      const preview = await previewQuotationUnlock(exceptionalUnlock.folio, {
-        items: buildUnlockItems()
-      });
-      setUnlockPreview(preview);
+      setUnlockPreview(await previewQuotationUnlock(activeRequest.folio));
     } catch (requestError) {
       setError(requestError.message);
     }
@@ -1553,11 +1555,18 @@ function QuotationsPage({ user = null }) {
     setError('');
     try {
       const result = await applyQuotationServiceChange(exceptionalUnlock.folio, {
-        expected_snapshot_number: exceptionalUnlock.base_snapshot_number,
-        items: buildUnlockItems()
+        expected_snapshot_number: exceptionalUnlock.base_snapshot_number
       });
       const updated = await getQuotation(selectedQuotation.id);
       setSelectedQuotation(updated);
+      skipNextAutosaveRef.current = true;
+      setDetailForm({
+        clientId: String(updated.client_id ?? ''),
+        contactId: String(updated.contact_id ?? ''),
+        validUntil: updated.valid_until ?? '',
+        paymentTerms: updated.payment_terms ?? '',
+        notes: updated.notes ?? ''
+      });
       setExceptionalUnlock(null);
       setUnlockPreview(null);
       setDraftItems([]);
@@ -1565,7 +1574,7 @@ function QuotationsPage({ user = null }) {
       await refreshQuotationSnapshots(updated.id);
       await loadQuotationData();
       setNotice(
-        `${result.quotation_folio} actualizada; el ETS ${result.service_order_folio} fue reconstruido con el mismo folio.`
+        `${result.quotation_folio} está en revisión; el ETS ${result.service_order_folio} se archivó. Edita y reenvía la nueva versión.`
       );
     } catch (requestError) {
       setError(requestError.message);
@@ -1589,24 +1598,6 @@ function QuotationsPage({ user = null }) {
     setError('');
     setNotice('');
     try {
-      if (exceptionalUnlock?.can_apply) {
-        const payload = buildQuotationItemPayload(draft);
-        const temporaryItem = {
-          ...payload,
-          id: `exceptional-${draft.id}`,
-          is_active: true,
-          total: Number(payload.quantity) * Number(payload.unit_price),
-          tax_total: 0,
-          _exceptionalNew: true
-        };
-        setSelectedQuotation((current) => ({
-          ...current,
-          items: [...(current.items || []), temporaryItem]
-        }));
-        setDraftItems((current) => current.filter((item) => item.id !== draft.id));
-        setNotice('Partida nueva preparada para la revisión excepcional.');
-        return;
-      }
       const updated = await createQuotationItem(selectedQuotation.id, buildQuotationItemPayload(draft));
       setSelectedQuotation(updated);
       setNotice(`Partida agregada a ${updated.folio}`);
@@ -1676,20 +1667,6 @@ function QuotationsPage({ user = null }) {
     setError('');
     setNotice('');
     try {
-      if (exceptionalUnlock?.can_apply) {
-        const payload = buildQuotationItemPayload(form);
-        setSelectedQuotation((current) => ({
-          ...current,
-          items: (current.items || []).map((item) => (
-            item.id === itemId
-              ? { ...item, ...payload, _exceptionalChanged: true }
-              : item
-          ))
-        }));
-        cancelEditQuotationItem(itemId);
-        setNotice('Cambio preparado para la revisión excepcional.');
-        return;
-      }
       const updated = await updateQuotationItem(
         selectedQuotation.id,
         itemId,
@@ -1722,15 +1699,6 @@ function QuotationsPage({ user = null }) {
         setError('');
         setNotice('');
         try {
-          if (exceptionalUnlock?.can_apply) {
-            setSelectedQuotation((current) => ({
-              ...current,
-              items: (current.items || []).filter((currentItem) => currentItem.id !== item.id)
-            }));
-            cancelEditQuotationItem(item.id);
-            setNotice('Partida retirada de la revisión excepcional.');
-            return;
-          }
           const updated = await deleteQuotationItem(selectedQuotation.id, item.id);
           setSelectedQuotation(updated);
           cancelEditQuotationItem(item.id);
@@ -1769,7 +1737,7 @@ function QuotationsPage({ user = null }) {
       setNotice('Abre una cotizacion para agregar este concepto como partida.');
       return;
     }
-    if (isQuotationTerminal(selectedQuotation) && !exceptionalUnlock?.can_apply) {
+    if (isQuotationTerminal(selectedQuotation)) {
       setError('No se pueden agregar partidas a una cotizacion en estado terminal.');
       return;
     }
@@ -2509,6 +2477,15 @@ function QuotationsPage({ user = null }) {
 
             {quotationDetailTab === 'info' ? (
               <>
+                <QuotationContactSection
+                  canOpenCommunications={canOpenCommunications}
+                  client={clientsById.get(selectedQuotation.client_id)}
+                  quotation={selectedQuotation}
+                />
+                <QuotationAcceptanceHistory
+                  quotationId={selectedQuotation.id}
+                  status={selectedQuotation.status}
+                />
                 <section className="quotation-section">
                   <div className="quotation-section__title">
                     <p>Resumen economico</p>
@@ -2687,17 +2664,13 @@ function QuotationsPage({ user = null }) {
 
             {quotationDetailTab === 'items' ? (
               <section className="quotation-section">
-                {exceptionalUnlock?.can_apply ? (
-                  <div className="quotation-exceptional-banner">
-                    <div>
-                      <strong>Edición excepcional activa · {exceptionalUnlock.folio}</strong>
-                      <span>Autorizó: {exceptionalUnlock.reviewer_name || 'Autorizador registrado'}</span>
-                      <span>Motivo: {exceptionalUnlock.reason}</span>
-                      <span>Vigencia: {new Date(exceptionalUnlock.expires_at).toLocaleString('es-MX')}</span>
-                    </div>
-                    <button className="primary-button" onClick={previewExceptionalRevision} type="button">
-                      Guardar nueva revisión
-                    </button>
+                {selectedQuotation.status === 'in_revision' ? (
+                  <div className="quotation-revision-banner" role="status">
+                    <strong>Cotización en revisión</strong>
+                    <span>
+                      La aceptación anterior ya no es vigente y su ETS fue archivada. Edita las partidas y reenvía
+                      la nueva versión; la ETS se generará cuando el cliente la acepte.
+                    </span>
                   </div>
                 ) : null}
                 <div className="quotation-section__title">
@@ -2714,7 +2687,7 @@ function QuotationsPage({ user = null }) {
                     + Agregar partida
                   </button>
                 </div>
-                {isQuotationTerminal(selectedQuotation) && !exceptionalUnlock?.can_apply ? (
+                {isQuotationTerminal(selectedQuotation) ? (
                   <div className="client-fiscal-note">
                     Esta cotizacion esta en estado terminal. Las partidas quedan bloqueadas para conservar el historico comercial.
                   </div>
@@ -2743,7 +2716,7 @@ function QuotationsPage({ user = null }) {
                             <span className="quote-line-concept">
                               {isEditing ? (
                                 <>
-                                  {exceptionalUnlock?.can_apply ? (
+                                  {selectedQuotation.status === 'in_revision' ? (
                                     <select
                                       onChange={(event) => selectEditingCatalogConcept(item.id, event.target.value)}
                                       value={form.catalogItemId || ''}
@@ -2812,8 +2785,6 @@ function QuotationsPage({ user = null }) {
                               ) : (
                                 <>
                                   <strong>{item.service_name}</strong>
-                                  {item._exceptionalNew ? <mark className="status-pill">Nueva</mark> : null}
-                                  {item._exceptionalChanged ? <mark className="status-pill">Modificada</mark> : null}
                                   {item.description ? <small>{item.description}</small> : null}
                                   {item.quotation_legend ? <small>{item.quotation_legend}</small> : null}
                                   {quotationCommercialComponents(item).length ? (
@@ -4374,48 +4345,36 @@ function QuotationsPage({ user = null }) {
           <section className="client-modal quotation-modal quotation-unlock-summary" aria-modal="true" role="dialog">
             <div className="section-heading">
               <div>
-                <p>Cambios detectados</p>
-                <h2>Nueva revisión de {unlockPreview.quotation_folio}</h2>
+                <p>Desbloqueo autorizado</p>
+                <h2>Iniciar revisión de {unlockPreview.quotation_folio}</h2>
               </div>
               <button className="icon-text-button" onClick={() => setUnlockPreview(null)} type="button">
                 Cerrar
               </button>
             </div>
-            <div className="quotation-unlock-summary__columns">
-              <section>
-                <h3>Eliminado</h3>
-                {unlockPreview.delta.removed.length ? unlockPreview.delta.removed.map((item, index) => (
-                  <article key={`${item.service_key}-removed-${index}`}>
-                    <strong>{item.service_name}</strong>
-                    <span>{item.service_type || 'Sin tipo'} · {formatMoney(item.unit_price)}</span>
-                  </article>
-                )) : <span>Sin partidas eliminadas.</span>}
-              </section>
-              <section>
-                <h3>Agregado</h3>
-                {unlockPreview.delta.added.length ? unlockPreview.delta.added.map((item, index) => (
-                  <article key={`${item.service_key}-added-${index}`}>
-                    <strong>{item.service_name}</strong>
-                    <span>{item.service_type || 'Sin tipo'} · {formatMoney(item.unit_price)}</span>
-                    {item.linked_company ? <small>{item.linked_company} · {item.certificate_prefix}</small> : null}
-                  </article>
-                )) : <span>Sin partidas agregadas.</span>}
-              </section>
-            </div>
+            <ul className="quotation-unlock-summary__effects">
+              <li>La aceptación vigente dejará de operar; su evidencia (PDF, huella y folio) se conserva.</li>
+              <li>La cotización pasará a «En revisión» y podrá editarse y reenviarse.</li>
+              <li>
+                El ETS {unlockPreview.service_order_folio} se archivará con un snapshot recuperable y se eliminará
+                de la operación activa. No se crea un ETS de reemplazo ahora.
+              </li>
+              <li>El ETS nuevo se generará únicamente cuando el cliente acepte la nueva versión.</li>
+            </ul>
             <div className={unlockPreview.rebuild.allowed ? 'sales-exception-impact' : 'form-error dashboard-error'}>
               {unlockPreview.rebuild.allowed
-                ? `El ETS ${unlockPreview.service_order_folio} está vacío y será reconstruido conservando exactamente el mismo folio.`
-                : `No puede reconstruirse: ${unlockPreview.rebuild.blockers.join(', ')}.`}
+                ? `El ETS ${unlockPreview.service_order_folio} no tiene intervención operativa y puede archivarse.`
+                : `No puede continuar: ${unlockPreview.rebuild.blockers.join(', ')}.`}
             </div>
             <div className="toolbar-actions">
-              <button className="table-button" onClick={() => setUnlockPreview(null)} type="button">Volver a editar</button>
+              <button className="table-button" onClick={() => setUnlockPreview(null)} type="button">Cancelar</button>
               <button
                 className="primary-button"
-                disabled={isSaving || !unlockPreview.delta.has_changes || !unlockPreview.rebuild.allowed}
+                disabled={isSaving || !unlockPreview.rebuild.allowed}
                 onClick={applyExceptionalRevision}
                 type="button"
               >
-                {isSaving ? 'Reconstruyendo…' : 'Confirmar revisión y reconstruir ETS'}
+                {isSaving ? 'Archivando ETS…' : 'Confirmar y entrar en revisión'}
               </button>
             </div>
           </section>

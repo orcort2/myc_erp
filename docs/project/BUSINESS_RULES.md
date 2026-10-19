@@ -187,9 +187,37 @@ Una regla nueva debe registrar evidencia y fecha. Si sólo existe en Diseño fut
 6. Notas técnicas, comerciales, fiscales o documentales permanecen en su
    agregado; no se migran a conversación sin clasificación inequívoca.
 7. Un adjunto admite máximo 15 MB y debe coincidir en extensión, MIME y firma.
+## Ciclo de revisión de cotizaciones — 2026-10-19 (vigente; sustituye las reglas 1–3 de la sección siguiente)
+
+1. Estado canónico `in_revision` («En revisión»): `draft → sent → accepted → in_revision → sent → accepted`.
+   `accepted` sigue siendo terminal en la tabla de transiciones; sólo el desbloqueo autorizado
+   (`quotation.controlled_unlock`, EXV) la lleva a `in_revision`. `POST /quotations/{id}/reopen` ya
+   no reabre: responde 409 y remite al flujo EXV.
+2. Aplicar el desbloqueo, en una sola transacción y con bloqueo de solicitud, cotización y ETS:
+   revalida autorización, vigencia, aplicador y versión base; ejecuta
+   `can_physically_rebuild_service_order()` (única autoridad de dependencias); archiva un snapshot
+   hasheado en `service_order_archives` y verifica que quedó persistido; elimina físicamente la ETS
+   operativa y su proyección de Venta; pone la cotización en `in_revision`; invalida la vigencia de la
+   aceptación sin borrarla; publica Actividad y auditoría. **No** crea una ETS de reemplazo.
+3. La ETS nueva nace únicamente al aceptarse la nueva versión comercial (`sent → accepted`) y conserva
+   el folio `OSMYC-…` de la ETS archivada si éste sigue libre.
+4. `in_revision` permite editar y reenviar; nunca reutiliza la aceptación ni los enlaces de firmado
+   anteriores (se invalidan al desbloquear y en cada edición).
+5. Cada aceptación electrónica recibe un folio institucional `MYC-AC-AAAA-NNNNNN` (secuencia
+   `quotation_acceptance`/`MYCAC`, asignada en la misma transacción, único e inmutable; no cambia al
+   desbloquear). La evidencia (PDF, huella, firmante, consentimiento) se consulta con
+   `GET /quotations/{id}/acceptances[/{aid}/pdf]` autenticado, nunca con enlaces públicos revocados.
+6. El archivo de ETS no es una ETS activa. Su recuperación es administrativa; el sistema sólo informa
+   conflictos (`restoration-check`) y no restaura de forma automática.
+7. El validador de dependencias también bloquea por excepciones operativas de la ETS, partidas de
+   cotización originadas en ella, solicitudes técnicas, tareas, ejecuciones de reparación y
+   mantenimiento, y unidades de servicio ajenas a Venta.
+8. «Abrir en Comunicaciones» abre/reutiliza la conversación **interna** tipo `client`; no se entrega al
+   contacto externo. El envío real al contacto sigue siendo el correo de la cotización.
+
 ## Reglas de desbloqueo, servicios y folios — 2026-07-29
 
-1. Una cotización aprobada sólo se edita mediante una autorización
+1. (Superada el 2026-10-19: ahora entra en `in_revision`.) Una cotización aprobada sólo se edita mediante una autorización
    `quotation.controlled_unlock` vigente, asignada al aplicador y ligada a su
    revisión base y `OSMYC-…`.
 2. El ETS sólo se elimina físicamente cuando el validador propietario no

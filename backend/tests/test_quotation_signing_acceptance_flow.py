@@ -95,7 +95,7 @@ def test_acceptance_creates_ets_without_committing():
     assert notification.recipient_user_id == 7
     assert notification.notification_type == "quotation.accepted"
     assert notification.event_key == "quotation:18:acceptance:40:advisor:7"
-    assert notification.metadata_json["frontend_path"] == "/quotations?quotation_id=18"
+    assert notification.metadata_json["frontend_path"] == "/dashboard?quotation_id=18#cotizaciones"
     db.commit.assert_not_called()
 
 
