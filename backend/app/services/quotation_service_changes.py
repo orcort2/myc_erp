@@ -9,34 +9,22 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.catalog_item import CatalogItem
 from app.models.notification import Notification
-from app.models.quotation import Quotation, QuotationItem, QuotationSnapshot
+from app.models.quotation import Quotation, QuotationSnapshot
+from app.models.quotation_acceptance import QuotationAcceptance
 from app.models.quotation_service_change import QuotationServiceChangeRequest
 from app.models.service_order import ServiceOrder
 from app.models.user import User
-from app.schemas.quotation import QuotationItemCreate
 from app.schemas.quotation_service_change import (
     QuotationServiceChangeCreate,
     QuotationServiceChangeReview,
     QuotationUnlockApply,
-    QuotationUnlockPreview,
 )
-from app.schemas.service_type import ServiceType, normalize_service_type
 from app.services.activity import publish_event
 from app.services.audit_logs import write_audit_log
 from app.services.auth import user_has_permission
-from app.services.quotation_revision_diff import compare_quotation_revisions
-from app.services.quotations import (
-    _quotation_item_values,
-    _quotation_snapshot_data,
-    _recalculate_totals,
-    _write_snapshot,
-)
+from app.services.quotation_signing_authority import invalidate_document_links
+from app.services.service_order_archives import archive_service_order
 from app.services.service_order_rebuilds import can_physically_rebuild_service_order
-from app.services.service_orders import (
-    assign_productive_work_orders,
-    _service_order_source_snapshot,
-    _service_order_items_from_quotation,
-)
 
 
 REQUEST_PERMISSION = "quotations.exceptions.request_unlock"
@@ -271,7 +259,7 @@ def _resource(
             if request.authorized_apply_user
             else None
         ),
-        "service_order_status": order.status if order else "reconstruido",
+        "service_order_status": order.status if order else "archivada",
         "reason": request.reason,
         "observation": request.observation,
         "review_comment": request.review_comment,
@@ -591,83 +579,22 @@ def review_request(
     return _resource(db, _get_request(db, request.folio), user)
 
 
-def _proposed_items(
-    db: Session, payload: QuotationUnlockPreview
-) -> tuple[list[QuotationItem], list[dict]]:
-    models: list[QuotationItem] = []
-    serialized: list[dict] = []
-    for row in payload.items:
-        catalog = db.scalar(
-            select(CatalogItem).where(
-                CatalogItem.internal_key == row.service_key.strip(),
-                CatalogItem.is_active.is_(True),
-                CatalogItem.item_type == "service",
-            )
-        )
-        if catalog is None:
-            raise HTTPException(
-                status_code=422,
-                detail=f"El servicio {row.service_key} no está activo",
-            )
-        service_type = normalize_service_type(
-            catalog.service_type, calibration_scope=catalog.calibration_scope
-        )
-        if catalog.category == "Calibracion":
-            if service_type is None:
-                raise HTTPException(status_code=422, detail=f"{catalog.name} no tiene tipo válido")
-            if service_type is ServiceType.LINKED and (
-                catalog.linked_company_id is None or not catalog.linked_certificate_prefix
-            ):
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"{catalog.name} requiere empresa e iniciales vinculadas",
-                )
-        values = _quotation_item_values(
-            db,
-            QuotationItemCreate(
-                catalog_item_id=catalog.id,
-                service_name=catalog.name,
-                description=row.description,
-                quantity=row.quantity,
-                unit_price=row.unit_price,
-                discount_percent=row.discount_percent,
-                currency="MXN",
-                calibration_scope=catalog.calibration_scope,
-                tax_object=catalog.tax_object,
-                tax_rate=catalog.tax_rate,
-            ),
-        )
-        model = QuotationItem(**values)
-        models.append(model)
-        serialized.append(
-            {
-                **values,
-                "service_key": catalog.internal_key,
-                "service_type": service_type.value if service_type else None,
-            }
-        )
-    return models, serialized
-
-
-def preview_change(
-    db: Session,
-    exception_folio: str,
-    payload: QuotationUnlockPreview,
-    user: User,
-) -> dict:
+def preview_change(db: Session, exception_folio: str, user: User) -> dict:
+    """Qué ocurrirá al aplicar: sólo lectura; no propone partidas nuevas."""
     _require(user, APPLY_PERMISSION)
     request = _get_request(db, exception_folio)
     if request.status != "authorized" or request.authorized_apply_user_id != user.id:
         raise HTTPException(status_code=409, detail="El desbloqueo no está disponible para este usuario")
-    _, proposed = _proposed_items(db, payload)
     return {
         "exception_folio": request.folio,
         "quotation_folio": request.quotation.folio,
         "service_order_folio": request.service_order_folio_snapshot,
-        "delta": compare_quotation_revisions(
-            (request.base_quotation_snapshot or {}).get("items", []),
-            proposed,
-        ),
+        "outcome": {
+            "next_status": "in_revision",
+            "archives_service_order": True,
+            "creates_service_order": False,
+            "invalidates_current_acceptance": True,
+        },
         "rebuild": (
             can_physically_rebuild_service_order(db, request.service_order).to_dict()
             if request.service_order
@@ -682,6 +609,11 @@ def apply_change(
     payload: QuotationUnlockApply,
     user: User,
 ) -> dict:
+    """Desbloqueo autorizado: archiva y elimina la ETS no intervenida.
+
+    La cotización pasa a ``in_revision``. No se crea ninguna ETS de reemplazo:
+    se generará al aceptarse la nueva versión comercial.
+    """
     for permission in (
         APPLY_PERMISSION,
         REBUILD_PERMISSION,
@@ -690,7 +622,9 @@ def apply_change(
         "activity.create",
     ):
         _require(user, permission)
+    # 1. Bloqueo de la solicitud, la cotización y la ETS.
     request = _get_request(db, exception_folio, lock=True)
+    # 2. Revalidación de la autorización EXV.
     if request.status != "authorized":
         raise HTTPException(status_code=409, detail="El desbloqueo no está autorizado")
     if request.capability != CAPABILITY:
@@ -707,12 +641,16 @@ def apply_change(
         raise HTTPException(status_code=409, detail="El desbloqueo venció")
 
     quotation = _load_quotation(db, request.quotation.folio, lock=True)
+    if quotation.status != "accepted":
+        raise HTTPException(status_code=409, detail="La cotización debe estar aprobada")
     order = _related_service_order(db, quotation, lock=True)
     if order.id != request.service_order_id or order.folio != request.service_order_folio_snapshot:
         raise HTTPException(status_code=409, detail="El ETS relacionado cambió")
+    # 3. Revalidación de la versión base.
     latest = _latest_snapshot(db, quotation.id)
     if latest.id != request.snapshot_id or latest.snapshot_number != payload.expected_snapshot_number:
         raise HTTPException(status_code=409, detail="La revisión base cambió")
+    # 4. Única autoridad de dependencias.
     validation = can_physically_rebuild_service_order(db, order)
     if not validation.allowed:
         request.block_reason = "; ".join(validation.blockers)
@@ -722,7 +660,7 @@ def apply_change(
             entity_id=quotation.id,
             event_code="quotation.unlock.blocked",
             idempotency_key=f"{request.folio}:blocked:{latest.snapshot_number}",
-            body=f"El ETS {order.folio} no puede reconstruirse: {request.block_reason}.",
+            body=f"El ETS {order.folio} no puede eliminarse: {request.block_reason}.",
             actor_id=user.id,
             metadata={"dependencies": validation.to_dict()["dependencies"]},
         )
@@ -732,90 +670,80 @@ def apply_change(
             recipient_id=user.id,
             actor_id=user.id,
             kind="quotation_unlock_blocked",
-            title=f"Reconstrucción bloqueada: {order.folio}",
+            title=f"Desbloqueo bloqueado: {order.folio}",
             body=request.block_reason,
             event_id=event.id,
         )
         db.commit()
         raise HTTPException(status_code=409, detail=validation.to_dict())
 
-    proposed_models, proposed_serialized = _proposed_items(db, payload)
-    delta = compare_quotation_revisions(
-        (request.base_quotation_snapshot or {}).get("items", []),
-        proposed_serialized,
-    )
-    if not delta["has_changes"]:
-        raise HTTPException(status_code=422, detail="No se detectaron cambios entre revisiones")
-
+    moment = _now()
     order_folio = order.folio
     previous_order_id = order.id
-    order_values = {
-        # Decided after the rebuilt items are frozen (canonical OT strategy).
-        "work_order_number": None,
-        "client_id": quotation.client_id,
-        "quotation_id": quotation.id,
-        "advisor_id": quotation.advisor_id,
-        "technician_id": None,
-        "status": "scheduled",
-        "requires_payment": order.requires_payment,
-        "notes": order.notes,
-        "total_equipment": 0,
-        "completed_equipment": 0,
-        "source_snapshot": _service_order_source_snapshot(quotation),
-    }
-    for item in quotation.items:
-        if item.is_active:
-            item.is_active = False
-            item.deleted_at = _now()
-            item.deleted_by = user.id
-    quotation.items.extend(proposed_models)
-    _recalculate_totals(quotation)
-    db.flush()
-    result_snapshot = _write_snapshot(
-        db, quotation, reason=f"exceptional_unlock:{request.folio}", user_id=user.id
+    acceptances = list(
+        db.scalars(
+            select(QuotationAcceptance)
+            .where(
+                QuotationAcceptance.quotation_id == quotation.id,
+                QuotationAcceptance.invalidated_at.is_(None),
+            )
+            .with_for_update()
+        ).all()
     )
 
+    # 5-6. Snapshot histórico persistido y verificado antes de borrar nada.
+    archive = archive_service_order(
+        db,
+        order=order,
+        quotation=quotation,
+        snapshot=latest,
+        acceptance=acceptances[0] if acceptances else None,
+        request=request,
+        user_id=user.id,
+        reason=request.reason,
+        deleted_at=moment,
+    )
+
+    # 7-8. Desvincular referencias administrativas y eliminar la ETS operativa.
     request.service_order_id = None
     db.flush()
-    from app.services.sale_execution import delete_pristine_sale_execution, initialize_sale_execution
+    from app.services.sale_execution import delete_pristine_sale_execution
 
     delete_pristine_sale_execution(db, order.id)
     db.delete(order)
     db.flush()
 
-    new_order = ServiceOrder(folio=order_folio, **order_values)
-    new_order.items, expansion_log = _service_order_items_from_quotation(db, quotation)
-    db.add(new_order)
-    db.flush()
-    assign_productive_work_orders(db, new_order)
-    db.flush()
-    initialize_sale_execution(db, new_order, user_id=user.id)
-    db.flush()
+    # 10-11. La cotización entra en revisión; la aceptación deja de ser vigente
+    # pero su evidencia (PDF, huella, firmante, folio) permanece intacta.
+    quotation.status = "in_revision"
+    for acceptance in acceptances:
+        acceptance.invalidated_at = moment
+        acceptance.invalidated_by_id = user.id
+        acceptance.invalidation_reason = f"controlled_unlock:{request.folio}"
+    invalidate_document_links(db, quotation_id=quotation.id)
 
-    request.service_order_id = new_order.id
-    request.result_snapshot_id = result_snapshot.id
-    request.delta_snapshot = delta
     request.rebuild_audit_snapshot = {
         "service_order_folio": order_folio,
-        "previous_service_order_id": previous_order_id,
-        "new_service_order_id": new_order.id,
-        "folio_preserved": True,
+        "archived_service_order_id": previous_order_id,
+        "archive_id": archive.id,
+        "archive_integrity_hash": archive.integrity_hash,
+        "creates_service_order": False,
         "validation": validation.to_dict(),
-        "expansion_log": expansion_log,
+        "invalidated_acceptance_ids": [a.id for a in acceptances],
     }
     request.status = "completed"
     request.applied_by_id = user.id
-    request.applied_at = _now()
-    request.consumed_at = request.applied_at
+    request.applied_at = moment
+    request.consumed_at = moment
     request.active_scope_key = None
     request.block_reason = None
 
-    removed_names = ", ".join(item["service_name"] for item in delta["removed"]) or "ninguna"
-    added_names = ", ".join(item["service_name"] for item in delta["added"]) or "ninguna"
+    # 12. Actividad y auditoría.
+    confirmation_folios = [a.confirmation_folio for a in acceptances if a.confirmation_folio]
     body = (
-        f"La cotización {quotation.folio} guardó una nueva revisión excepcional. "
-        f"Partidas eliminadas: {removed_names}. Partidas agregadas: {added_names}. "
-        f"El ETS {order_folio} fue reconstruido y conservó su folio original."
+        f"La cotización {quotation.folio} entró en revisión mediante {request.folio}. "
+        f"La ETS {order_folio} no tenía intervención: se archivó y se eliminó de la operación activa. "
+        "Se generará una nueva ETS cuando la nueva versión comercial sea aceptada."
     )
     event = publish_event(
         db,
@@ -828,22 +756,38 @@ def apply_change(
         metadata={
             "exception_folio": request.folio,
             "service_order_folio": order_folio,
-            "delta": delta,
+            "archive_id": archive.id,
+            "confirmation_folios": confirmation_folios,
         },
-        related_entity_type="service_order",
-        related_entity_id=new_order.id,
     )
     publish_event(
         db,
-        entity_type="service_order",
-        entity_id=new_order.id,
-        event_code="service_order.rebuilt_from_quotation",
-        idempotency_key=f"{request.folio}:service-order-rebuilt",
-        body=body,
+        entity_type="quotation",
+        entity_id=quotation.id,
+        event_code="quotation.service_order_archived",
+        idempotency_key=f"{request.folio}:service-order-archived",
+        body=f"ETS {order_folio} archivada y eliminada (archivo #{archive.id}).",
         actor_id=user.id,
-        metadata={"exception_folio": request.folio, "quotation_folio": quotation.folio},
-        related_entity_type="quotation",
-        related_entity_id=quotation.id,
+        metadata={
+            "archive_id": archive.id,
+            "service_order_folio": order_folio,
+            "integrity_hash": archive.integrity_hash,
+            "schema_version": archive.schema_version,
+        },
+    )
+    publish_event(
+        db,
+        entity_type="quotation",
+        entity_id=quotation.id,
+        event_code="quotation.in_revision",
+        idempotency_key=f"{request.folio}:in-revision",
+        body=f"{quotation.folio} está en revisión; la aceptación anterior dejó de ser vigente.",
+        actor_id=user.id,
+        metadata={
+            "previous_status": "accepted",
+            "status": "in_revision",
+            "invalidated_acceptance_ids": [a.id for a in acceptances],
+        },
     )
     _notify(
         db,
@@ -851,8 +795,8 @@ def apply_change(
         recipient_id=user.id,
         actor_id=user.id,
         kind="quotation_unlock_completed",
-        title=f"Cotización {quotation.folio} actualizada",
-        body=f"El ETS {order_folio} fue reconstruido con el mismo folio.",
+        title=f"Cotización {quotation.folio} en revisión",
+        body=f"La ETS {order_folio} fue archivada; edita y reenvía la nueva versión.",
         event_id=event.id,
     )
     write_audit_log(
@@ -862,23 +806,24 @@ def apply_change(
         entity_id=quotation.id,
         user_id=user.id,
         previous_values={
+            "status": "accepted",
             "snapshot_number": latest.snapshot_number,
             "service_order_folio": order_folio,
             "service_order_id": previous_order_id,
         },
         new_values={
-            "snapshot_number": result_snapshot.snapshot_number,
-            "service_order_folio": order_folio,
-            "service_order_id": new_order.id,
-            "delta": delta,
+            "status": "in_revision",
+            "archive_id": archive.id,
+            "invalidated_acceptance_ids": [a.id for a in acceptances],
         },
     )
+    # 13. Una sola transacción.
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
         raise HTTPException(
             status_code=409,
-            detail="No fue posible reconstruir atómicamente el ETS; no se aplicó ningún cambio",
+            detail="No fue posible archivar y eliminar atómicamente el ETS; no se aplicó ningún cambio",
         )
     return _resource(db, _get_request(db, request.folio), user)

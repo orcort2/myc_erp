@@ -14,6 +14,12 @@ from app.models.service_order import (
     ServiceOrderSignatureCycle,
     ServiceWorkOrder,
 )
+from app.models.maintenance_execution import MaintenanceExecution
+from app.models.quotation import QuotationItem
+from app.models.repair_execution import RepairExecution
+from app.models.sale_execution import SaleOrderItem, SaleUnitState
+from app.models.service_execution import ServiceTask, ServiceUnit, TechnicalServiceRequest
+from app.models.service_order_exception import ServiceOrderExceptionRequest
 from app.resolution_engine.infrastructure.persistence import ResolutionEntityReference
 from app.services.sale_execution import count_non_pristine_sale_dependencies
 
@@ -129,6 +135,71 @@ def can_physically_rebuild_service_order(
         "sale_execution",
         "movimientos operativos de Venta",
         count_non_pristine_sale_dependencies(db, service_order.id),
+    )
+    # Dependencias reales que el validador no cubría y que impiden borrar la ETS
+    # (FK RESTRICT o evidencia operativa propia).
+    add(
+        "exception_requests",
+        "excepciones operativas de la ETS",
+        _count(
+            db,
+            ServiceOrderExceptionRequest,
+            ServiceOrderExceptionRequest.service_order_id == service_order.id,
+        ),
+    )
+    add(
+        "dependent_quotation_items",
+        "partidas de cotización originadas en la ETS",
+        _count(
+            db,
+            QuotationItem,
+            QuotationItem.source_service_order_id == service_order.id,
+        ),
+    )
+    add(
+        "technical_requests",
+        "solicitudes técnicas",
+        _count(
+            db,
+            TechnicalServiceRequest,
+            TechnicalServiceRequest.service_order_id == service_order.id,
+        ),
+    )
+    add(
+        "service_tasks",
+        "tareas de servicio",
+        _count(db, ServiceTask, ServiceTask.service_order_id == service_order.id),
+    )
+    add(
+        "repair_executions",
+        "ejecuciones de reparación",
+        _count(
+            db,
+            RepairExecution,
+            RepairExecution.service_order_id == service_order.id,
+        ),
+    )
+    add(
+        "maintenance_executions",
+        "ejecuciones de mantenimiento",
+        _count(
+            db,
+            MaintenanceExecution,
+            MaintenanceExecution.service_order_id == service_order.id,
+        ),
+    )
+    sale_unit_ids = select(SaleUnitState.service_unit_id).join(SaleOrderItem).where(
+        SaleOrderItem.service_order_id == service_order.id
+    )
+    add(
+        "service_units",
+        "unidades de servicio no derivadas de Venta",
+        _count(
+            db,
+            ServiceUnit,
+            (ServiceUnit.service_order_id == service_order.id)
+            & ServiceUnit.id.not_in(sale_unit_ids),
+        ),
     )
     signature_fields = (
         service_order.technician_signature_data_url,

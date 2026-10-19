@@ -49,6 +49,7 @@ from app.schemas.service_order import (
     ServiceOrderStatusChange,
     ServiceOrderUpdate,
 )
+from app.services.service_order_archives import latest_archived_folio
 from app.services.audit_logs import write_audit_log
 from app.services.activity import publish_event
 from app.services.catalog_items import expand_catalog_item_for_operations
@@ -737,8 +738,19 @@ def create_service_order(
 
     # El número de OT se decide después de congelar las partidas: un ETS
     # nuevo exclusivamente de calibración no consume folio OT (MYC Mobile).
+    # Tras un desbloqueo autorizado la ETS archivada deja libre su folio: la
+    # nueva ETS de la misma cotización lo conserva (continuidad con el cliente).
+    archived_folio = (
+        latest_archived_folio(db, payload.quotation_id)
+        if payload.quotation_id is not None
+        else None
+    )
+    if archived_folio is not None and db.scalar(
+        select(ServiceOrder.id).where(ServiceOrder.folio == archived_folio)
+    ):
+        archived_folio = None
     service_order = ServiceOrder(
-        folio=_next_service_order_folio(
+        folio=archived_folio or _next_service_order_folio(
             db,
             date.today(),
         ),

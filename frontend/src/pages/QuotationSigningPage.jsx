@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import './QuotationSigningPage.css';
+import mycLogo from '../assets/myc-logo.png';
 
 const API = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 const endpoint = (path) => API + '/public/quotation-signing/' + path;
@@ -56,14 +57,14 @@ export default function QuotationSigningPage() {
 
   return (
     <main className="myc-signing">
-      <header className="myc-signing__header"><div className="myc-signing__logo">MYC<span>.</span></div><span>METROLOGÍA Y SERVICIOS</span><div className="myc-signing__secure">✓ Firma segura</div></header>
+      <header className="myc-signing__header"><img className="myc-signing__logo" src={mycLogo} alt="MYC" width="240" height="211" /><span>METROLOGÍA Y SERVICIOS</span><div className="myc-signing__secure">✓ Firma segura</div></header>
       <div className="myc-signing__content">
       <p className="myc-signing__eyebrow">PORTAL DE CLIENTES · FIRMA DIGITAL</p>
       <h1>{result ? 'Gracias por confiar en MYC.' : 'Su cotización, lista para revisar.'}</h1>
       <p className="myc-signing__lead">Revise su documento y complete la verificación para confirmar el servicio.</p>
       {error && <p role="alert" className="myc-signing__error">{error}</p>}
       {result ? (
-        <section role="status" className="myc-signing__success"><div className="myc-signing__success-mark">MYC<span>.</span><b>✓</b></div><p className="myc-signing__eyebrow">ACEPTACIÓN REGISTRADA</p><h2>Su orden ha sido emitida.</h2><p>Gracias por confiar en Metrología y Servicios MYC. En breve, un asesor se pondrá en contacto con usted para coordinar la programación de su servicio.</p><div className="myc-signing__receipt">Confirmación #{result.acceptance_id}</div></section>
+        <section role="status" className="myc-signing__success"><div className="myc-signing__success-mark"><img src={mycLogo} alt="MYC Metrología y Servicios" width="240" height="211" /><b aria-hidden="true">✓</b></div><p className="myc-signing__eyebrow">ACEPTACIÓN REGISTRADA</p><h2>Su orden ha sido emitida.</h2><p>Gracias por confiar en Metrología y Servicios MYC. En breve, un asesor se pondrá en contacto con usted para coordinar la programación de su servicio.</p><div className="myc-signing__receipt">Confirmación {result.confirmation_folio || `#${result.acceptance_id}`}</div></section>
       ) : document ? (
         <>
           <div className="myc-signing__grid"><section className="myc-signing__document"><div className="myc-signing__document-bar"><div><strong>{document.filename}</strong><small>Documento oficial · PDF</small></div><a href={pdfUrl} download={document.filename || "cotizacion-myc.pdf"} className="myc-signing__download" aria-label="Descargar documento PDF">↓ Descargar</a></div>

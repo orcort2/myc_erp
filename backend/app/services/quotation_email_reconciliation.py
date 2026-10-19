@@ -55,7 +55,7 @@ def reconcile_batch(
                     .where(
                         Quotation.id > last_id,
                         Quotation.is_active.is_(True),
-                        Quotation.status == "draft",
+                        Quotation.status.in_(("draft", "in_revision")),
                         select(EmailDelivery.id)
                         .where(
                             EmailDelivery.related_entity_type == ENTITY_TYPE,

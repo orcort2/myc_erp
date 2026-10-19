@@ -58,12 +58,26 @@ def test_acceptance_creates_ets_without_committing():
         ) as invalidate,
         patch("app.services.quotation_signing_acceptance.write_audit_log") as audit,
         patch("app.services.quotation_signing_acceptance.queue_notification_for_delivery") as enqueue,
+        patch(
+            "app.services.quotation_signing_acceptance.next_acceptance_confirmation_folio",
+            return_value="MYC-AC-2026-000002",
+        ),
+        patch("app.services.quotation_signing_acceptance.publish_event") as publish,
     ):
+        create_ets.return_value = SimpleNamespace(id=55, folio="OSMYC-26-10-0001")
         result = accept_signed_quotation(
             db, signing_token="test-token", challenge_id=30,
             signer_name="  Persona Autorizada  ", consent=True,
             settings=_settings(),
         )
+    assert result.confirmation_folio == "MYC-AC-2026-000002"
+    publish.assert_called_once()
+    event = publish.call_args.kwargs
+    assert event["event_code"] == "quotation.accepted_electronically"
+    assert event["idempotency_key"] == "quotation:18:acceptance:40"
+    assert event["metadata"]["confirmation_folio"] == "MYC-AC-2026-000002"
+    assert event["metadata"]["service_order_id"] == 55
+    assert "pdf_bytes" not in event["metadata"]
     assert authorize.call_count == 2
     assert result.id == 40
     assert result.signer_name == "Persona Autorizada"
@@ -81,6 +95,7 @@ def test_acceptance_creates_ets_without_committing():
     assert notification.recipient_user_id == 7
     assert notification.notification_type == "quotation.accepted"
     assert notification.event_key == "quotation:18:acceptance:40:advisor:7"
+    assert notification.metadata_json["frontend_path"] == "/quotations?quotation_id=18"
     db.commit.assert_not_called()
 
 

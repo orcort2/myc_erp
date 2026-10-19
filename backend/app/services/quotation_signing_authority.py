@@ -86,7 +86,7 @@ def freeze_document(
         .with_for_update()
     )
 
-    if quotation is None or quotation.status not in ({"draft", "sent", "waiting"} if staged else {"sent", "waiting"}):
+    if quotation is None or quotation.status not in ({"draft", "in_revision", "sent", "waiting"} if staged else {"sent", "waiting"}):
         _deny()
 
     latest = _latest_snapshot(db, quotation_id)
@@ -177,7 +177,7 @@ def create_document_link(
 
     if (
         quotation is None
-        or quotation.status not in ({"draft", "sent", "waiting"} if staged else {"sent", "waiting"})
+        or quotation.status not in ({"draft", "in_revision", "sent", "waiting"} if staged else {"sent", "waiting"})
         or latest is None
         or latest.id != document.snapshot_id
         or snapshot_digest(latest.snapshot_data) != document.snapshot_sha256

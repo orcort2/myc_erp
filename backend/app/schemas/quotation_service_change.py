@@ -1,5 +1,4 @@
 from datetime import datetime
-from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -16,19 +15,7 @@ class QuotationServiceChangeReview(BaseModel):
     validity_hours: int = Field(default=72, ge=1, le=168)
 
 
-class QuotationUnlockItem(BaseModel):
-    service_key: str = Field(min_length=1, max_length=80)
-    quantity: int = Field(default=1, ge=1)
-    unit_price: Decimal = Field(default=Decimal("0.00"), ge=0)
-    discount_percent: Decimal = Field(default=Decimal("0.00"), ge=0, le=100)
-    description: str | None = Field(default=None, max_length=4000)
-
-
-class QuotationUnlockPreview(BaseModel):
-    items: list[QuotationUnlockItem] = Field(min_length=1)
-
-
-class QuotationUnlockApply(QuotationUnlockPreview):
+class QuotationUnlockApply(BaseModel):
     expected_snapshot_number: int = Field(gt=0)
 
 
