@@ -1,8 +1,16 @@
 """Archivo histórico recuperable de ETS eliminadas por un desbloqueo autorizado.
 
-Única autoridad para construir, verificar y consultar ``ServiceOrderArchive``.
-No restaura nada: la recuperación es administrativa y se limita a informar
-conflictos (``restoration_conflicts``) para que una persona decida.
+Única autoridad para construir, verificar, consultar y restaurar
+``ServiceOrderArchive``. La restauración (``restore_service_order``) es
+administrativa y explícita: nunca se ejecuta sola; ``restoration_conflicts``
+enumera lo que la impide.
+
+Aceptación en la restauración: si el archivo declara ``acceptance_id`` debe
+existir, pertenecer a la cotización y al snapshot archivado y haber sido
+invalidada por el mismo desbloqueo (``controlled_unlock:{EXV}``); se reactiva.
+Un archivo sin ``acceptance_id`` corresponde a una cotización aceptada sin
+evidencia electrónica (aceptación manual): se restaura sin reactivar ni fabricar
+ninguna aceptación, y sólo si ninguna aceptación fue invalidada por ese EXV.
 """
 from __future__ import annotations
 
@@ -214,6 +222,36 @@ def get_archive(db: Session, archive_id: int) -> ServiceOrderArchive:
     return archive
 
 
+def _acceptance_conflicts(db: Session, archive: ServiceOrderArchive) -> list[str]:
+    reason = f"controlled_unlock:{archive.exception_folio}"
+    if archive.acceptance_id is None:
+        stray = db.scalar(
+            select(QuotationAcceptance.id).where(
+                QuotationAcceptance.quotation_id == archive.quotation_id,
+                QuotationAcceptance.invalidation_reason == reason,
+            )
+        )
+        if stray is not None:
+            return [
+                "El archivo no declara aceptación, pero el desbloqueo invalidó una; "
+                "los datos son inconsistentes."
+            ]
+        return []
+    acceptance = db.get(QuotationAcceptance, archive.acceptance_id)
+    if acceptance is None:
+        return ["La aceptación histórica del archivo no existe."]
+    problems: list[str] = []
+    if acceptance.quotation_id != archive.quotation_id:
+        problems.append("La aceptación del archivo pertenece a otra cotización.")
+    if acceptance.snapshot_id != archive.accepted_snapshot_id:
+        problems.append("La aceptación no corresponde al snapshot archivado.")
+    if acceptance.invalidated_at is None or acceptance.invalidation_reason != reason:
+        problems.append("La aceptación no fue invalidada por el desbloqueo que se revierte.")
+    elif acceptance.invalidated_by_id != archive.deleted_by_id:
+        problems.append("La invalidación de la aceptación la hizo otro usuario.")
+    return problems
+
+
 def restoration_conflicts(db: Session, archive: ServiceOrderArchive) -> list[str]:
     """Por qué NO es seguro restaurar. Lista vacía = restaurable."""
     conflicts: list[str] = []
@@ -259,6 +297,7 @@ def restoration_conflicts(db: Session, archive: ServiceOrderArchive) -> list[str
     )
     if current is not None:
         conflicts.append("La cotización ya tiene una aceptación vigente.")
+    conflicts.extend(_acceptance_conflicts(db, archive))
     return conflicts
 
 
@@ -330,6 +369,12 @@ def restore_service_order(
         .with_for_update()
         .execution_options(populate_existing=True)
     )
+    if archive.acceptance_id is not None:
+        db.scalar(
+            select(QuotationAcceptance.id)
+            .where(QuotationAcceptance.id == archive.acceptance_id)
+            .with_for_update()
+        )
     conflicts = restoration_conflicts(db, archive)
     if conflicts:
         raise HTTPException(status_code=409, detail={"message": "No se puede restaurar", "conflicts": conflicts})
@@ -344,16 +389,11 @@ def restore_service_order(
             db.flush()
         reinstated = []
         if archive.acceptance_id is not None:
-            acceptance = db.scalar(
-                select(QuotationAcceptance)
-                .where(QuotationAcceptance.id == archive.acceptance_id)
-                .with_for_update()
-            )
-            if acceptance is not None:
-                acceptance.invalidated_at = None
-                acceptance.invalidated_by_id = None
-                acceptance.invalidation_reason = None
-                reinstated.append(acceptance.id)
+            acceptance = db.get(QuotationAcceptance, archive.acceptance_id)
+            acceptance.invalidated_at = None
+            acceptance.invalidated_by_id = None
+            acceptance.invalidation_reason = None
+            reinstated.append(acceptance.id)
         quotation.status = "accepted"
         archive.restored_at = moment
         archive.restored_by_id = user.id

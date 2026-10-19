@@ -212,6 +212,10 @@ Una regla nueva debe registrar evidencia y fecha. Si sólo existe en Diseño fut
    `rebuild_empty_service_order` y motivo): sólo deshace un desbloqueo sin versiones comerciales
    posteriores, en una transacción; reinserta la ETS con su id y folio originales, reactiva la
    aceptación que el desbloqueo invalidó, devuelve la cotización a `accepted` y es de un solo uso.
+   Si el archivo declara una aceptación, ésta debe existir, ser de la misma cotización y del snapshot
+   archivado y haber sido invalidada por ese mismo desbloqueo y usuario; si no, 409 sin cambios. Un
+   archivo sin aceptación (aceptación manual) se restaura sin reactivar ni fabricar ninguna, y se
+   rechaza si el EXV invalidó alguna.
    `restoration-check` informa los conflictos (hash, folio/id ocupados, ETS activa, estado, versión).
    Nunca se restaura de forma automática o silenciosa.
 7. El validador de dependencias también bloquea por excepciones operativas de la ETS, partidas de

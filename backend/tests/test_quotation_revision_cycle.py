@@ -338,3 +338,96 @@ def test_restore_rolls_back_when_a_row_cannot_be_inserted(db, context, monkeypat
     assert db.scalar(select(func.count(ServiceOrder.id))) == 0
     assert db.get(Quotation, context.quotation.id).status == "in_revision"
     assert db.get(ServiceOrderArchive, archive.id).restored_at is None
+
+
+def _snapshot_state(db, context):
+    acceptance = db.scalar(select(QuotationAcceptance))
+    return (
+        db.scalar(select(func.count(ServiceOrder.id))),
+        db.get(Quotation, context.quotation.id).status,
+        None if acceptance is None else (acceptance.invalidated_at, acceptance.invalidation_reason),
+        db.scalar(select(ServiceOrderArchive.restored_at)),
+    )
+
+
+def _assert_refused_without_changes(db, context, archive_id, fragment):
+    before = _snapshot_state(db, context)
+    with pytest.raises(HTTPException) as refused:
+        restore_service_order(db, archive_id, context.administrator, "Debe rechazarse")
+    assert refused.value.status_code == 409
+    assert any(fragment in c for c in refused.value.detail["conflicts"])
+    db.rollback()
+    assert _snapshot_state(db, context) == before
+
+
+def test_restore_refuses_when_declared_acceptance_does_not_exist(db, context):
+    _unlock(db, context)
+    archive = db.scalar(select(ServiceOrderArchive))
+    archive.acceptance_id = 999999  # SQLite no impone la FK; en PostgreSQL RESTRICT lo impide
+    db.commit()
+    _assert_refused_without_changes(db, context, archive.id, "no existe")
+
+
+def test_restore_refuses_acceptance_of_another_quotation(db, context):
+    _unlock(db, context)
+    archive = db.scalar(select(ServiceOrderArchive))
+    acceptance = db.scalar(select(QuotationAcceptance))
+    other_client = Client(legal_name="Otro")
+    db.add(other_client)
+    db.flush()
+    other = Quotation(folio="MYC-OTRA", client_id=other_client.id, status="sent")
+    db.add(other)
+    db.flush()
+    acceptance.quotation_id = other.id
+    db.commit()
+    _assert_refused_without_changes(db, context, archive.id, "otra cotización")
+
+
+def test_restore_refuses_acceptance_with_wrong_snapshot(db, context):
+    from app.services.quotations import _write_snapshot
+
+    _unlock(db, context)
+    archive = db.scalar(select(ServiceOrderArchive))
+    acceptance = db.scalar(select(QuotationAcceptance))
+    other_snapshot = _write_snapshot(db, db.get(Quotation, context.quotation.id), reason="x", user_id=None)
+    acceptance.snapshot_id = other_snapshot.id
+    db.commit()
+    _assert_refused_without_changes(db, context, archive.id, "snapshot archivado")
+
+
+def test_restore_refuses_acceptance_invalidated_by_someone_else(db, context):
+    _unlock(db, context)
+    archive = db.scalar(select(ServiceOrderArchive))
+    acceptance = db.scalar(select(QuotationAcceptance))
+    acceptance.invalidation_reason = "controlled_unlock:EXV-2099-00001"
+    db.commit()
+    _assert_refused_without_changes(db, context, archive.id, "no fue invalidada por el desbloqueo")
+
+
+def test_restore_refuses_when_another_user_invalidated_the_acceptance(db, context):
+    _unlock(db, context)
+    archive = db.scalar(select(ServiceOrderArchive))
+    acceptance = db.scalar(select(QuotationAcceptance))
+    acceptance.invalidated_by_id = context.administrator.id
+    assert archive.deleted_by_id == context.requester.id
+    db.commit()
+    _assert_refused_without_changes(db, context, archive.id, "otro usuario")
+
+
+def test_archive_without_acceptance_restores_without_fabricating_one(db, context):
+    # Cotización aceptada manualmente (sin evidencia electrónica): no hay aceptación que reactivar.
+    authorized = _request_and_authorize(db, context)
+    _apply(db, context, authorized)
+    archive = db.scalar(select(ServiceOrderArchive))
+    assert archive.acceptance_id is None
+    restore_service_order(db, archive.id, context.administrator, "Sin evidencia electrónica")
+    assert db.get(Quotation, context.quotation.id).status == "accepted"
+    assert db.scalar(select(func.count(QuotationAcceptance.id))) == 0
+
+
+def test_archive_without_acceptance_refuses_if_unlock_invalidated_one(db, context):
+    _unlock(db, context)
+    archive = db.scalar(select(ServiceOrderArchive))
+    archive.acceptance_id = None
+    db.commit()
+    _assert_refused_without_changes(db, context, archive.id, "inconsistentes")
