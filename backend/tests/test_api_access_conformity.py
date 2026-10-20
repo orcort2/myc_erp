@@ -29,14 +29,13 @@ def test_every_http_operation_has_an_explicit_access_classification():
     # EMAIL-2 adds public forgot-password / reset-password.
     # EMAIL-3 adds five ClientContact operations and three contextual quotation email operations.
     # EMAIL-4: tres endpoints de correo de facturacion.
-    # SG-2 adds GET/POST .../equipment/{equipment_id}/technical-report (mobile lab).
-    # SG-4 adds PATCH technical-report, POST/GET/DELETE technical-report evidence.
-    # SG-4E adds POST .../technical-report/confirm-capture.
-    # SG-4G adds POST ./technical-report/finalize and GET ./technical-report/pdf.
-    # SG-4I adds POST ./technical-report/delete-draft and POST ./technical-report/change-type.
-    # SG-4J-A4 adds list/detail/create/revisions/cancel under ./technical-interventions.
-    # Integration audit 2026-10-19: combined runtime inventory.
-    assert len(operations) == 593
+# SG-2 adds GET/POST technical-report operations (mobile lab).
+    # SG-4 adds evidence management and report updates.
+    # SG-4E/4G/4I add confirmation, finalization, PDF and draft management.
+    # SG-4J-A4 adds technical intervention operations.
+    # REVISION-CYCLE adds acceptance history/PDF and ETS archive read operations.
+    # Integration audit: validate the combined runtime inventory.
+    assert len(operations) == 598
     assert all(classify_operation(item.method, item.path, item.tags) for item in operations)
 
 

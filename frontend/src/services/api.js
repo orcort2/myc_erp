@@ -226,11 +226,27 @@ export function reviewQuotationServiceChange(exceptionFolio, payload) {
   );
 }
 
-export function previewQuotationUnlock(exceptionFolio, payload) {
+export function previewQuotationUnlock(exceptionFolio) {
   return request(
     `/quotation-service-exceptions/${encodeURIComponent(exceptionFolio)}/preview`,
-    { method: 'POST', body: JSON.stringify(payload) }
+    { method: 'POST' }
   );
+}
+
+export function listQuotationAcceptances(quotationId) {
+  return request(`/quotations/${encodeURIComponent(quotationId)}/acceptances`);
+}
+
+export async function openQuotationAcceptancePdf(quotationId, acceptanceId) {
+  const token = getAccessToken();
+  const response = await fetch(
+    `${API_URL}/quotations/${encodeURIComponent(quotationId)}/acceptances/${encodeURIComponent(acceptanceId)}/pdf`,
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+  );
+  if (!response.ok) throw new Error('No fue posible abrir el PDF aceptado.');
+  const url = URL.createObjectURL(await response.blob());
+  window.open(url, '_blank', 'noopener');
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
 export function applyQuotationServiceChange(exceptionFolio, payload) {

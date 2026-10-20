@@ -3218,6 +3218,7 @@ button {
 }
 
 .quotation-status.status-sent,
+.quotation-status.status-in_revision,
 .quotation-status.status-waiting,
 .quotation-status.status-generated,
 .quotation-status.status-quality_review,
@@ -10149,3 +10150,12 @@ textarea {
     min-width: 100px;
   }
 }
+
+.quotation-contact-card{display:grid;gap:12px}
+.quotation-contact-card dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 18px;margin:0}
+.quotation-contact-card dt{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#6a7c8c}
+.quotation-contact-card dd{margin:2px 0 0;font-weight:600;overflow-wrap:anywhere}
+.quotation-contact-card__actions{display:flex;flex-wrap:wrap;gap:8px}
+.quotation-contact-card__actions .table-button{display:inline-flex;align-items:center;gap:6px;text-decoration:none}
+.quotation-contact-card__note{color:#6a7c8c}
+.quotation-revision-banner{display:grid;gap:4px;padding:12px 14px;border:1px solid rgba(24,117,129,.3);border-radius:12px;background:rgba(229,249,250,.7);margin-bottom:12px}

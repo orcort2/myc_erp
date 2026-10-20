@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import date, datetime, timezone
+from hashlib import sha256
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -18,6 +19,8 @@ from app.models.equipment import Equipment
 from app.models.linked_company import LinkedCompany
 from app.models.notification import Notification
 from app.models.quotation import Quotation, QuotationItem, QuotationSnapshot
+from app.models.quotation_acceptance import QuotationAcceptance
+from app.models.service_order_archive import ServiceOrderArchive
 from app.models.quotation_service_change import QuotationServiceChangeRequest
 from app.models.service_order import ServiceOrder, ServiceOrderItem, ServiceWorkOrder
 from app.models.user import Role, User
@@ -25,7 +28,6 @@ from app.schemas.quotation_service_change import (
     QuotationServiceChangeCreate,
     QuotationServiceChangeReview,
     QuotationUnlockApply,
-    QuotationUnlockPreview,
 )
 from app.schemas.service_type import (
     ServiceType,
@@ -41,7 +43,14 @@ from app.services.quotation_service_changes import (
     request_change,
     review_request,
 )
-from app.services.quotations import _build_operational_snapshot, _write_snapshot
+from app.schemas.quotation import QuotationUpdate
+from app.services.quotations import (
+    _build_operational_snapshot,
+    _write_snapshot,
+    change_quotation_status,
+    update_quotation,
+)
+from app.services.service_order_archives import restoration_conflicts, verify_archive_integrity
 from app.services.service_order_rebuilds import can_physically_rebuild_service_order
 
 
@@ -225,6 +234,27 @@ def context(db: Session):
     )
 
 
+def _acceptance(db: Session, context) -> QuotationAcceptance:
+    pdf = b"%PDF-1.4 frozen"
+    now = datetime(2026, 7, 29, 12, 0, tzinfo=timezone.utc)
+    acceptance = QuotationAcceptance(
+        confirmation_folio="MYC-AC-2026-000001",
+        quotation_id=context.quotation.id,
+        snapshot_id=context.base_snapshot.id,
+        pdf_sha256=sha256(pdf).hexdigest(),
+        pdf_bytes=pdf,
+        signer_name="Cliente Autorizado",
+        signer_email="firmante@example.test",
+        consent_text="Acepto",
+        evidence={"method": "email_otp"},
+        verified_at=now,
+        accepted_at=now,
+    )
+    db.add(acceptance)
+    db.commit()
+    return acceptance
+
+
 def _request_and_authorize(db: Session, context) -> dict:
     requested = request_change(
         db,
@@ -242,7 +272,7 @@ def _request_and_authorize(db: Session, context) -> dict:
     )
 
 
-def test_controlled_unlock_rebuilds_empty_ets_with_same_visible_folio(db, context):
+def test_controlled_unlock_archives_ets_and_enters_revision(db, context):
     eligibility = quotation_context(db, context.quotation.folio, context.requester)
     assert eligibility["eligible"] is True
     assert eligibility["service_order_folio"] == "OSMYC-26-07-0005"
@@ -253,57 +283,155 @@ def test_controlled_unlock_rebuilds_empty_ets_with_same_visible_folio(db, contex
     request_record = db.scalar(select(QuotationServiceChangeRequest))
     assert request_record.authorized_apply_user_id == context.requester.id
     assert user_has_permission(context.requester, "quotations.exceptions.apply_unlock")
-    assert user_has_permission(
-        context.requester, "quotations.exceptions.rebuild_empty_service_order"
-    )
     active_for_requester = quotation_context(
         db, context.quotation.folio, context.requester
     )["active_request"]
     assert active_for_requester["can_apply"] is True
 
-    payload = QuotationUnlockPreview(
-        items=[
-            {
-                "service_key": context.accredited.internal_key,
-                "quantity": 1,
-                "unit_price": "3",
-                "discount_percent": "0",
-            }
-        ]
-    )
-    preview = preview_change(db, authorized["folio"], payload, context.requester)
-    assert preview["delta"]["removed"][0]["service_type"] == "traceable"
-    assert preview["delta"]["added"][0]["service_type"] == "accredited"
+    preview = preview_change(db, authorized["folio"], context.requester)
+    assert preview["outcome"]["creates_service_order"] is False
     assert preview["rebuild"]["allowed"] is True
 
     previous_order_id = context.order.id
+    acceptance = _acceptance(db, context)
     completed = apply_change(
         db,
         authorized["folio"],
-        QuotationUnlockApply(
-            expected_snapshot_number=authorized["base_snapshot_number"],
-            items=payload.items,
-        ),
+        QuotationUnlockApply(expected_snapshot_number=authorized["base_snapshot_number"]),
         context.requester,
     )
-    rebuilt = db.scalar(
-        select(ServiceOrder).where(ServiceOrder.quotation_id == context.quotation.id)
-    )
     assert completed["status"] == "completed"
-    assert rebuilt.id != previous_order_id
-    assert rebuilt.folio == "OSMYC-26-07-0005"
+    # La ETS operativa desaparece y no se crea una de reemplazo.
     assert db.get(ServiceOrder, previous_order_id) is None
-    assert db.scalar(select(func.count(ServiceOrder.id)).where(ServiceOrder.folio == rebuilt.folio)) == 1
-    assert rebuilt.items[0].calibration_scope == "accredited_iso_17025"
-    assert rebuilt.items[0].service_snapshot["service_type_snapshot"] == "accredited"
-    active_item = next(item for item in context.quotation.items if item.is_active)
-    assert active_item.unit_price == Decimal("3")
-    assert active_item.operational_snapshot["commercial_service_snapshot"]["price_snapshot"] == "3.00"
-    assert db.scalar(select(func.count(QuotationSnapshot.id)).where(QuotationSnapshot.quotation_id == context.quotation.id)) == 2
-    request = db.scalar(select(QuotationServiceChangeRequest))
-    assert request.rebuild_audit_snapshot["folio_preserved"] is True
-    assert db.scalar(select(func.count(ActivityMessage.id))) >= 4
+    assert db.scalar(select(func.count(ServiceOrder.id))) == 0
+    assert db.get(Quotation, context.quotation.id).status == "in_revision"
+    # El snapshot histórico queda íntegro y no es una ETS activa.
+    archive = db.scalar(select(ServiceOrderArchive))
+    assert archive.service_order_folio == "OSMYC-26-07-0005"
+    assert archive.original_service_order_id == previous_order_id
+    assert archive.exception_folio == authorized["folio"]
+    assert archive.acceptance_id == acceptance.id
+    assert archive.accepted_snapshot_number == 1
+    assert archive.archive_data["items"][0]["service_name"] == context.traceable.name
+    assert len(archive.archive_data["work_orders"]) == 1
+    assert verify_archive_integrity(archive)
+    assert restoration_conflicts(db, archive) == []
+    # La evidencia de la aceptación se conserva; sólo se invalida su vigencia.
+    db.refresh(acceptance)
+    assert acceptance.invalidated_at is not None
+    assert acceptance.invalidation_reason == f"controlled_unlock:{authorized['folio']}"
+    assert acceptance.pdf_bytes == b"%PDF-1.4 frozen"
+    assert acceptance.confirmation_folio == "MYC-AC-2026-000001"
+    codes = set(db.scalars(select(ActivityMessage.event_code)).all())
+    assert {
+        "quotation.unlock.completed",
+        "quotation.service_order_archived",
+        "quotation.in_revision",
+    } <= codes
     assert db.scalar(select(func.count(Notification.id))) >= 2
+    # Una aplicación repetida no puede duplicar archivo ni eliminar nada más.
+    with pytest.raises(HTTPException) as repeated:
+        apply_change(
+            db,
+            authorized["folio"],
+            QuotationUnlockApply(expected_snapshot_number=1),
+            context.requester,
+        )
+    assert repeated.value.status_code == 409
+    assert db.scalar(select(func.count(ServiceOrderArchive.id))) == 1
+
+
+def test_reopen_endpoint_cannot_bypass_the_unlock_flow(db, context):
+    from app.services.quotations import reopen_accepted_quotation
+
+    with pytest.raises(HTTPException) as error:
+        reopen_accepted_quotation(db, context.quotation.id)
+    assert error.value.status_code == 409
+    assert db.get(Quotation, context.quotation.id).status == "accepted"
+    assert db.get(ServiceOrder, context.order.id) is not None
+
+
+def test_intervened_ets_blocks_unlock_and_keeps_everything(db, context):
+    authorized = _request_and_authorize(db, context)
+    db.add(
+        Equipment(
+            service_order_id=context.order.id,
+            work_order_id=context.order.work_orders[0].id,
+            status="registered",
+            name="Pirómetro",
+        )
+    )
+    db.commit()
+    with pytest.raises(HTTPException) as error:
+        apply_change(
+            db,
+            authorized["folio"],
+            QuotationUnlockApply(expected_snapshot_number=1),
+            context.requester,
+        )
+    assert error.value.status_code == 409
+    assert db.get(ServiceOrder, context.order.id) is not None
+    assert db.get(Quotation, context.quotation.id).status == "accepted"
+    assert db.scalar(select(func.count(ServiceOrderArchive.id))) == 0
+    assert db.scalar(
+        select(func.count(ActivityMessage.id)).where(
+            ActivityMessage.event_code == "quotation.unlock.blocked"
+        )
+    ) == 1
+
+
+def test_revision_cycle_new_version_resend_and_reacceptance_creates_one_ets(db, context):
+    authorized = _request_and_authorize(db, context)
+    first = _acceptance(db, context)
+    apply_change(
+        db,
+        authorized["folio"],
+        QuotationUnlockApply(expected_snapshot_number=1),
+        context.requester,
+    )
+    quotation = db.get(Quotation, context.quotation.id)
+    assert quotation.status == "in_revision"
+
+    # in_revision permite edición y genera una nueva versión comercial.
+    update_quotation(
+        db,
+        quotation.id,
+        QuotationUpdate(notes="Alcance corregido"),
+        user_id=context.requester.id,
+    )
+    assert db.scalar(
+        select(func.count(QuotationSnapshot.id)).where(
+            QuotationSnapshot.quotation_id == quotation.id
+        )
+    ) == 2
+    assert db.scalar(
+        select(func.count(ActivityMessage.id)).where(
+            ActivityMessage.event_code == "quotation.new_version"
+        )
+    ) == 1
+
+    # No se puede aceptar sin reenviar, ni reutilizar la aceptación anterior.
+    with pytest.raises(HTTPException) as skipped:
+        change_quotation_status(db, quotation.id, "accepted", user_id=context.requester.id)
+    assert skipped.value.status_code == 409
+    sent = change_quotation_status(db, quotation.id, "sent", user_id=context.requester.id)
+    assert sent.status == "sent"
+    change_quotation_status(db, quotation.id, "accepted", user_id=context.requester.id)
+
+    orders = db.scalars(select(ServiceOrder)).all()
+    assert len(orders) == 1
+    assert orders[0].folio == "OSMYC-26-07-0005"
+    assert orders[0].id != context.order.id
+    # Cada ciclo conserva su propio evento de estado (claves por ciclo).
+    sent_events = db.scalars(
+        select(ActivityMessage.idempotency_key).where(
+            ActivityMessage.idempotency_key.like(f"quotation:{quotation.id}:status:%")
+        )
+    ).all()
+    assert any(key.endswith(":r1") for key in sent_events)
+    db.refresh(first)
+    assert first.invalidated_at is not None
+    assert first.confirmation_folio == "MYC-AC-2026-000001"
 
 
 def test_administrator_registers_reason_and_unlocks_directly(db, context):
@@ -400,17 +528,7 @@ def test_apply_rolls_back_if_atomic_commit_fails(db, context, monkeypatch):
         apply_change(
             db,
             authorized["folio"],
-            QuotationUnlockApply(
-                expected_snapshot_number=authorized["base_snapshot_number"],
-                items=[
-                    {
-                        "service_key": context.accredited.internal_key,
-                        "quantity": 1,
-                        "unit_price": "3",
-                        "discount_percent": "0",
-                    }
-                ],
-            ),
+            QuotationUnlockApply(expected_snapshot_number=authorized["base_snapshot_number"]),
             context.requester,
         )
     monkeypatch.setattr(db, "commit", real_commit)
@@ -426,32 +544,8 @@ def test_apply_rolls_back_if_atomic_commit_fails(db, context, monkeypatch):
             QuotationSnapshot.quotation_id == context.quotation.id
         )
     ) == 1
-
-
-def test_linked_service_snapshot_keeps_company_and_prefix(db, context):
-    authorized = _request_and_authorize(db, context)
-    result = apply_change(
-        db,
-        authorized["folio"],
-        QuotationUnlockApply(
-            expected_snapshot_number=authorized["base_snapshot_number"],
-            items=[
-                {
-                    "service_key": context.linked.internal_key,
-                    "quantity": 1,
-                    "unit_price": "4",
-                    "discount_percent": "0",
-                }
-            ],
-        ),
-        context.requester,
-    )
-    request = db.scalar(select(QuotationServiceChangeRequest))
-    order = db.get(ServiceOrder, request.service_order_id)
-    snapshot = order.items[0].service_snapshot
-    assert snapshot["service_type_snapshot"] == "linked"
-    assert snapshot["linked_company_name_snapshot"] == "CAPYMET"
-    assert snapshot["certificate_prefix_snapshot"] == "CMVG"
+    assert db.scalar(select(func.count(ServiceOrderArchive.id))) == 0
+    assert db.get(Quotation, context.quotation.id).status == "accepted"
 
 
 def test_service_type_aliases_and_linked_prefix_are_canonical():

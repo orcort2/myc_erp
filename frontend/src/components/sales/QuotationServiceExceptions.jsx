@@ -129,7 +129,7 @@ export function QuotationServiceExceptionAction({
           onClick={() => onEnterExceptionalMode?.(active)}
           type="button"
         >
-          Editar cotización desbloqueada
+          Iniciar revisión de la cotización
         </button>
       ) : active &&
         canSelfAuthorize &&
@@ -141,7 +141,7 @@ export function QuotationServiceExceptionAction({
           onClick={authorizeExistingRequest}
           type="button"
         >
-          {isSaving ? 'Procesando…' : 'Autorizar y editar'}
+          {isSaving ? 'Procesando…' : 'Autorizar y revisar'}
         </button>
       ) : active ? (
         <span className="sales-exception-inline-status">
@@ -155,7 +155,7 @@ export function QuotationServiceExceptionAction({
           title={
             context?.reason ||
             (canSelfAuthorize
-              ? 'Desbloquear y editar directamente'
+              ? 'Desbloquear y revisar directamente'
               : 'Solicitar desbloqueo controlado')
           }
           type="button"
@@ -184,8 +184,9 @@ export function QuotationServiceExceptionAction({
             <div className="sales-exception-impact">
               <strong>Alcance controlado</strong>
               <span>
-                La autorización habilita la edición directa de partidas y reconstruye el ETS
-                únicamente si continúa sin información operativa.
+                La autorización permite iniciar la revisión: la cotización pasa a «En revisión» y
+                su ETS se archiva y elimina únicamente si continúa sin información operativa.
+                El ETS nuevo se genera cuando el cliente acepte la nueva versión.
               </span>
             </div>
             <label>

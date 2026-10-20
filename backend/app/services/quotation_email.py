@@ -30,7 +30,7 @@ from app.services.email import EmailAttachment, preview_email, send_email
 from app.services.email.errors import EmailError
 from app.services.email.transport import normalize_addresses
 from app.services.quotation_pdfs import _format_date, _format_money, generate_quotation_pdf
-from app.services.quotations import get_quotation
+from app.services.quotations import get_quotation, status_event_key
 from app.services.activity import publish_event
 
 TEMPLATE_KEY = "quotation_send_signing"
@@ -140,7 +140,7 @@ def send_quotation_email(
 ) -> QuotationEmailSendResult:
     quotation = get_quotation(db, quotation_id)
     # Reject terminal quotations before triggering irreversible SMTP I/O.
-    if quotation.status not in {"draft", "sent", "waiting"}:
+    if quotation.status not in {"draft", "in_revision", "sent", "waiting"}:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="La cotización no admite envío por correo en su estado actual")
     chosen_to, chosen_cc, suggestions = _resolve_recipients(quotation, to, cc)
     settings = settings or get_settings()
@@ -229,7 +229,7 @@ def reconcile_quotation_email_status(db: Session, quotation_id: int, *, actor_id
         .with_for_update()
         .execution_options(populate_existing=True)
     )
-    if quotation is None or quotation.status not in {"draft", "sent", "waiting"}:
+    if quotation is None or quotation.status not in {"draft", "in_revision", "sent", "waiting"}:
         return False
     deliveries = db.scalars(
         select(EmailDelivery)
@@ -259,10 +259,11 @@ def reconcile_quotation_email_status(db: Session, quotation_id: int, *, actor_id
                 first_delivery = delivery
     if first_delivery is None:
         return False
-    if quotation.status != "draft":
+    if quotation.status not in {"draft", "in_revision"}:
         db.commit()
         return False
     delivery = first_delivery
+    previous_status = quotation.status
     quotation.status = "sent"
     write_audit_log(
         db,
@@ -270,18 +271,26 @@ def reconcile_quotation_email_status(db: Session, quotation_id: int, *, actor_id
         entity="quotations",
         entity_id=quotation_id,
         user_id=actor_id or delivery.requested_by_id,
-        previous_values={"status": "draft"},
+        previous_values={"status": previous_status},
         new_values={"status": "sent", "delivery_id": delivery.id, "source": "smtp_reconciliation"},
     )
     publish_event(
         db,
         entity_type="quotation",
         entity_id=quotation_id,
-        event_code="quotation.status_changed",
-        idempotency_key=f"quotation:{quotation_id}:status:sent",
-        body="Estado actualizado de draft a sent.",
+        event_code=(
+            "quotation.revision_resent"
+            if previous_status == "in_revision"
+            else "quotation.status_changed"
+        ),
+        idempotency_key=status_event_key(db, quotation_id, "sent"),
+        body=(
+            "Nueva versión de la cotización reenviada al cliente."
+            if previous_status == "in_revision"
+            else "Estado actualizado de draft a sent."
+        ),
         actor_id=actor_id or delivery.requested_by_id,
-        metadata={"previous_status": "draft", "status": "sent"},
+        metadata={"previous_status": previous_status, "status": "sent"},
     )
     db.commit()
     return True

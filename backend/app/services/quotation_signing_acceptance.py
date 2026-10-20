@@ -18,7 +18,9 @@ from app.services.quotation_signing_authority import (
     authorize_document_link,
     invalidate_document_links,
 )
+from app.services.activity import publish_event
 from app.services.audit_logs import write_audit_log
+from app.services.institutional_folios import next_acceptance_confirmation_folio
 from app.services.push_notifications import queue_notification_for_delivery
 
 
@@ -106,7 +108,10 @@ def accept_signed_quotation(
         )
 
     previous_status = quotation.status
+    # El folio nace con la aceptación dentro de la misma transacción y nunca se reasigna.
+    confirmation_folio = next_acceptance_confirmation_folio(db, issued_on=now.date())
     acceptance = QuotationAcceptance(
+        confirmation_folio=confirmation_folio,
         quotation_id=quotation.id,
         snapshot_id=document.snapshot_id,
         pdf_sha256=document.pdf_sha256,
@@ -116,6 +121,7 @@ def accept_signed_quotation(
         consent_text=CONSENT_TEXT,
         evidence={
             "method": "email_otp",
+            "confirmation_folio": confirmation_folio,
             "signing_link_id": link.id,
             "signing_document_id": document.id,
             "challenge_id": challenge.id,
@@ -136,7 +142,7 @@ def accept_signed_quotation(
     # Never commit here: evidence, OTP consumption and ETS must be atomic.
     from app.schemas.service_order import ServiceOrderCreate
     from app.services.service_orders import create_service_order
-    create_service_order(
+    service_order = create_service_order(
         db,
         ServiceOrderCreate(
             client_id=quotation.client_id,
@@ -168,11 +174,38 @@ def accept_signed_quotation(
                 "quotation_id": quotation.id,
                 "acceptance_id": acceptance.id,
                 "quotation_folio": quotation.folio,
-                "frontend_path": "/quotations",
+                "confirmation_folio": confirmation_folio,
+                "frontend_path": f"/dashboard?quotation_id={quotation.id}#cotizaciones",
             },
         )
         db.add(notification)
         queue_notification_for_delivery(db, notification)
+
+    # Evento institucional en la misma transacción; el PDF sólo se referencia por huella.
+    publish_event(
+        db,
+        entity_type="quotation",
+        entity_id=quotation.id,
+        event_code="quotation.accepted_electronically",
+        idempotency_key=f"quotation:{quotation.id}:acceptance:{acceptance.id}",
+        body=(
+            f"{name} aceptó electrónicamente la cotización {quotation.folio}. "
+            f"Confirmación {confirmation_folio}."
+        ),
+        actor_id=None,
+        metadata={
+            "confirmation_folio": confirmation_folio,
+            "acceptance_id": acceptance.id,
+            "signer_name": name,
+            "accepted_at": now.isoformat(),
+            "snapshot_id": acceptance.snapshot_id,
+            "pdf_sha256": acceptance.pdf_sha256,
+            "service_order_id": service_order.id,
+            "service_order_folio": service_order.folio,
+            "previous_status": previous_status,
+            "status": "accepted",
+        },
+    )
 
     invalidate_document_links(db, quotation_id=quotation.id)
     write_audit_log(
@@ -184,6 +217,7 @@ def accept_signed_quotation(
         previous_values={"status": previous_status},
         new_values={
             "acceptance_id": acceptance.id,
+            "confirmation_folio": confirmation_folio,
             "snapshot_id": acceptance.snapshot_id,
             "pdf_sha256": acceptance.pdf_sha256,
             "signing_link_id": link.id,
