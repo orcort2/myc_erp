@@ -1,6 +1,7 @@
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -42,6 +43,22 @@ from app.schemas.field_sheet import FieldSheetRead, FieldSheetUpdate
 from app.schemas.field_sheet_template import FieldSheetTemplateRead
 from app.schemas.lab_field_sheet_external import LabExternalStructureWrite
 from app.schemas.operational_ticket import LabRevisionRead
+from app.schemas.technical_intervention import (
+    TechnicalInterventionCancel,
+    TechnicalInterventionCreate,
+    TechnicalInterventionDetailRead,
+    TechnicalInterventionRead,
+    TechnicalReportRevisionRead,
+)
+from app.schemas.technical_report import (
+    TechnicalReportCaptureUpdate,
+    TechnicalReportCreate,
+    TechnicalReportEvidenceRead,
+    TechnicalReportDraftDeleted,
+    TechnicalReportEvidenceType,
+    TechnicalReportRead,
+    TechnicalReportRetype,
+)
 from app.services.lab_work_orders import (
     add_equipment,
     assign_equipment_service,
@@ -98,6 +115,20 @@ from app.services.lab_field_sheets import (
 )
 from app.services.lab_field_sheets_external import apply_lab_external_structure
 from app.services.lab_packages import generate_lab_package
+from app.services import technical_intervention_admin
+from app.services.technical_reports import (
+    add_technical_report_evidence,
+    confirm_technical_report_capture,
+    change_technical_report_type,
+    create_technical_report,
+    delete_technical_report_draft,
+    delete_technical_report_evidence,
+    finalize_technical_report,
+    read_technical_report,
+    read_technical_report_pdf,
+    resolve_technical_report_evidence_file,
+    update_technical_report_capture,
+)
 from app.models.linked_company import LinkedCompany
 from sqlalchemy import select
 from app.services.operational_tickets import get_revision_pdf, list_revisions, reopen_work_order_directly
@@ -164,13 +195,31 @@ def create_mobile_staff_group(
             status_code=403,
             detail="La creación directa de grupos está reservada a staff MYC",
         )
-    base = LabWorkOrderGroupCreate(**payload.model_dump(exclude={"service_order_id", "member_workflow_modes"}))
-    if payload.service_order_id is None:
-        # Grupo LAB sin vínculo ERP; sin configuración individual conserva el legacy.
-        return create_work_order_group(
-            db, base, context.user, operator_client_id=None,
-            member_workflow_modes=payload.member_workflow_modes,
+    base = LabWorkOrderGroupCreate(
+        **payload.model_dump(
+            exclude={
+                "service_order_id",
+                "member_workflow_modes",
+                "operational_category",
+            }
         )
+    )
+    if payload.service_order_id is None:
+        return create_work_order_group(
+            db,
+            base,
+            context.user,
+            operator_client_id=None,
+            member_workflow_modes=payload.member_workflow_modes,
+            operational_category=payload.operational_category,
+        )
+
+    if payload.operational_category != "calibration":
+        raise HTTPException(
+            status_code=409,
+            detail="El vínculo ERP actual sólo admite OTs LAB de calibración",
+        )
+
     return create_linked_work_order_group(
         db, base, payload.service_order_id, context.user,
         member_workflow_modes=payload.member_workflow_modes,
@@ -311,16 +360,33 @@ def create_lab_work_order(
             status_code=403,
             detail="Los actores externos deben solicitar un grupo de OT",
         )
-    base = LabWorkOrderCreate(**payload.model_dump(exclude={"service_order_id"}))
+    base = LabWorkOrderCreate(
+        **payload.model_dump(
+            exclude={"service_order_id", "operational_category"}
+        )
+    )
+
     if payload.service_order_id is None:
-        # Legacy exacto: OT LAB sin vínculo ERP.
         return create_work_order(
             db,
             base,
             context.user,
             operator_client_id=context.client_id,
+            operational_category=payload.operational_category,
         )
-    return create_linked_work_order(db, base, payload.service_order_id, context.user)
+
+    if payload.operational_category != "calibration":
+        raise HTTPException(
+            status_code=409,
+            detail="El vínculo ERP actual sólo admite OTs LAB de calibración",
+        )
+
+    return create_linked_work_order(
+        db,
+        base,
+        payload.service_order_id,
+        context.user,
+    )
 
 
 @router.get("", response_model=list[LabWorkOrderListItem])
@@ -666,6 +732,332 @@ def patch_lab_equipment_certificate_client(
         context.user,
         operator_client_id=context.client_id,
     )
+
+
+def _ensure_internal_report_writer(context: MobileSecurityContext) -> None:
+    """Misma regla que Mobile (canCaptureTechnicalReports): sólo staff MYC
+    escribe reportes técnicos (captura, evidencia, creación)."""
+    if context.actor_type != "internal":
+        raise HTTPException(
+            status_code=403,
+            detail="Los reportes técnicos sólo los captura staff MYC",
+        )
+
+
+@router.post(
+    "/{work_order_id}/equipment/{equipment_id}/technical-report",
+    response_model=TechnicalReportRead,
+    status_code=201,
+)
+def post_technical_report(
+    work_order_id: int,
+    equipment_id: int,
+    payload: TechnicalReportCreate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(
+            "technical_reports.capture",
+            "lab_work_orders.use",
+        )
+    ),
+) -> TechnicalReportRead:
+    """Crea el documento técnico vigente de un equipo de Servicio General."""
+    _ensure_internal_report_writer(context)
+    ensure_lab_work_order_scope(
+        db,
+        context=context,
+        work_order_id=work_order_id,
+    )
+
+    return create_technical_report(
+        db,
+        work_order_id,
+        equipment_id,
+        payload,
+        context.user,
+    )
+
+
+@router.get(
+    "/{work_order_id}/equipment/{equipment_id}/technical-report",
+    response_model=TechnicalReportRead,
+)
+def get_technical_report(
+    work_order_id: int,
+    equipment_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(
+            "technical_reports.read",
+            "technical_reports.capture",
+            "lab_work_orders.use",
+        )
+    ),
+) -> TechnicalReportRead:
+    ensure_lab_work_order_scope(
+        db,
+        context=context,
+        work_order_id=work_order_id,
+    )
+
+    return read_technical_report(
+        db,
+        work_order_id,
+        equipment_id,
+    )
+
+
+_TECHNICAL_REPORT_WRITE = ("technical_reports.capture", "lab_work_orders.use")
+_TECHNICAL_REPORT_READ = ("technical_reports.read", "technical_reports.capture", "lab_work_orders.use")
+
+
+@router.patch(
+    "/{work_order_id}/equipment/{equipment_id}/technical-report",
+    response_model=TechnicalReportRead,
+)
+def patch_technical_report(
+    work_order_id: int,
+    equipment_id: int,
+    payload: TechnicalReportCaptureUpdate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(*_TECHNICAL_REPORT_WRITE)
+    ),
+) -> TechnicalReportRead:
+    """Autosave del borrador: actualiza únicamente `capture_values`."""
+    _ensure_internal_report_writer(context)
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    return update_technical_report_capture(db, work_order_id, equipment_id, payload, context.user)
+
+
+@router.post(
+    "/{work_order_id}/equipment/{equipment_id}/technical-report/confirm-capture",
+    response_model=TechnicalReportRead,
+)
+def post_confirm_technical_report_capture(
+    work_order_id: int,
+    equipment_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(*_TECHNICAL_REPORT_WRITE)
+    ),
+) -> TechnicalReportRead:
+    """Confirma la captura (validación completa, técnico responsable y paso a
+    `ready_for_signatures`). Transición explícita: el autosave nunca finaliza."""
+    _ensure_internal_report_writer(context)
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    return confirm_technical_report_capture(db, work_order_id, equipment_id, context.user)
+
+
+@router.post(
+    "/{work_order_id}/equipment/{equipment_id}/technical-report/delete-draft",
+    response_model=TechnicalReportDraftDeleted,
+)
+def post_delete_technical_report_draft(
+    work_order_id: int,
+    equipment_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(*_TECHNICAL_REPORT_WRITE)
+    ),
+) -> TechnicalReportDraftDeleted:
+    """Elimina un borrador editable (operación de dominio, no un DELETE genérico)."""
+    _ensure_internal_report_writer(context)
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    return delete_technical_report_draft(db, work_order_id, equipment_id, context.user)
+
+
+@router.post(
+    "/{work_order_id}/equipment/{equipment_id}/technical-report/change-type",
+    response_model=TechnicalReportRead,
+)
+def post_change_technical_report_type(
+    work_order_id: int,
+    equipment_id: int,
+    payload: TechnicalReportRetype,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(*_TECHNICAL_REPORT_WRITE)
+    ),
+) -> TechnicalReportRead:
+    _ensure_internal_report_writer(context)
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    return change_technical_report_type(db, work_order_id, equipment_id, payload, context.user)
+
+
+_INTERVENTIONS = "/{work_order_id}/equipment/{equipment_id}/technical-interventions"
+
+
+@router.get(_INTERVENTIONS, response_model=list[TechnicalInterventionRead])
+def list_technical_interventions(
+    work_order_id: int,
+    equipment_id: int,
+    status: Literal["open", "completed", "cancelled"] | None = Query(default=None),
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(require_mobile_permission(*_TECHNICAL_REPORT_READ)),
+) -> list[TechnicalInterventionRead]:
+    """Intervenciones del equipo (estado, tipo, folio y revisión vigente)."""
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    return technical_intervention_admin.list_interventions(db, work_order_id, equipment_id, status=status)
+
+
+@router.post(_INTERVENTIONS, response_model=TechnicalInterventionRead, status_code=201)
+def create_technical_intervention(
+    work_order_id: int,
+    equipment_id: int,
+    payload: TechnicalInterventionCreate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(require_mobile_permission(*_TECHNICAL_REPORT_WRITE)),
+) -> TechnicalInterventionRead:
+    """Alta explícita de una intervención (R1 en borrador); no crea R2."""
+    _ensure_internal_report_writer(context)
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    return technical_intervention_admin.create_intervention(db, work_order_id, equipment_id, payload, context.user)
+
+
+@router.get(_INTERVENTIONS + "/{intervention_id}", response_model=TechnicalInterventionDetailRead)
+def get_technical_intervention(
+    work_order_id: int,
+    equipment_id: int,
+    intervention_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(require_mobile_permission(*_TECHNICAL_REPORT_READ)),
+) -> TechnicalInterventionDetailRead:
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    return technical_intervention_admin.get_intervention(db, work_order_id, equipment_id, intervention_id)
+
+
+@router.get(_INTERVENTIONS + "/{intervention_id}/revisions", response_model=list[TechnicalReportRevisionRead])
+def list_technical_intervention_revisions(
+    work_order_id: int,
+    equipment_id: int,
+    intervention_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(require_mobile_permission(*_TECHNICAL_REPORT_READ)),
+) -> list[TechnicalReportRevisionRead]:
+    """Revisiones documentales de la intervención y sus metadatos (hash, PDF, entrega)."""
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    return technical_intervention_admin.list_revisions(db, work_order_id, equipment_id, intervention_id)
+
+
+@router.post(_INTERVENTIONS + "/{intervention_id}/cancel", response_model=TechnicalInterventionRead)
+def cancel_technical_intervention(
+    work_order_id: int,
+    equipment_id: int,
+    intervention_id: int,
+    payload: TechnicalInterventionCancel,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(require_mobile_permission(*_TECHNICAL_REPORT_WRITE)),
+) -> TechnicalInterventionRead:
+    _ensure_internal_report_writer(context)
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    return technical_intervention_admin.cancel_intervention(db, work_order_id, equipment_id, intervention_id, payload, context.user)
+
+
+@router.post(
+    "/{work_order_id}/equipment/{equipment_id}/technical-report/finalize",
+    response_model=TechnicalReportRead,
+)
+def post_finalize_technical_report(
+    work_order_id: int,
+    equipment_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(*_TECHNICAL_REPORT_WRITE)
+    ),
+) -> TechnicalReportRead:
+    """Genera el PDF institucional y completa el reporte (requiere entrega
+    vigente). Transición explícita: ni PATCH ni el cliente deciden `completed`."""
+    _ensure_internal_report_writer(context)
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    return finalize_technical_report(db, work_order_id, equipment_id, context.user)
+
+
+@router.get("/{work_order_id}/equipment/{equipment_id}/technical-report/pdf")
+def get_technical_report_pdf(
+    work_order_id: int,
+    equipment_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(*_TECHNICAL_REPORT_READ)
+    ),
+) -> Response:
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    content, filename = read_technical_report_pdf(db, work_order_id, equipment_id)
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@router.post(
+    "/{work_order_id}/equipment/{equipment_id}/technical-report/evidence",
+    response_model=TechnicalReportEvidenceRead,
+    status_code=201,
+)
+def post_technical_report_evidence(
+    work_order_id: int,
+    equipment_id: int,
+    evidence_type: TechnicalReportEvidenceType = Form(...),
+    caption: str | None = Form(default=None, max_length=255),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(*_TECHNICAL_REPORT_WRITE)
+    ),
+) -> TechnicalReportEvidenceRead:
+    _ensure_internal_report_writer(context)
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    evidence = add_technical_report_evidence(
+        db,
+        work_order_id,
+        equipment_id,
+        evidence_type=evidence_type,
+        caption=caption,
+        upload=file,
+        user=context.user,
+    )
+    return TechnicalReportEvidenceRead.model_validate(evidence)
+
+
+@router.delete(
+    "/{work_order_id}/equipment/{equipment_id}/technical-report/evidence/{evidence_id}",
+    response_model=TechnicalReportRead,
+)
+def delete_technical_report_evidence_endpoint(
+    work_order_id: int,
+    equipment_id: int,
+    evidence_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(*_TECHNICAL_REPORT_WRITE)
+    ),
+) -> TechnicalReportRead:
+    _ensure_internal_report_writer(context)
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    return delete_technical_report_evidence(
+        db, work_order_id, equipment_id, evidence_id, context.user
+    )
+
+
+@router.get(
+    "/{work_order_id}/equipment/{equipment_id}/technical-report/evidence/{evidence_id}/file",
+)
+def get_technical_report_evidence_file(
+    work_order_id: int,
+    equipment_id: int,
+    evidence_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(*_TECHNICAL_REPORT_READ)
+    ),
+) -> FileResponse:
+    ensure_lab_work_order_scope(db, context=context, work_order_id=work_order_id)
+    path, mime_type = resolve_technical_report_evidence_file(
+        db, work_order_id, equipment_id, evidence_id
+    )
+    return FileResponse(path, media_type=mime_type)
 
 
 @router.post("/{work_order_id}/equipment/{equipment_id}/field-sheet", response_model=FieldSheetRead, status_code=201)

@@ -24,6 +24,10 @@ from app.core.config import settings
 
 MIB = 1024 * 1024
 GENERIC_MIME_TYPES = {"", "application/octet-stream"}
+
+# Evidencia fotográfica de reportes técnicos (SG-4C). Mobile entrega JPEG ya
+# comprimido (HEIC se convierte en el dispositivo); PNG se tolera.
+TECHNICAL_REPORT_EVIDENCE_MAX_BYTES = 5 * MIB
 MAX_FILENAME_LENGTH = 180
 
 
@@ -105,6 +109,16 @@ POLICIES: dict[str, UploadPolicy] = {
         name="tax_constancy", extensions=frozenset({".pdf", ".png", ".jpg", ".jpeg"}),
         mime_by_extension={".pdf": frozenset({"application/pdf"}), ".png": frozenset({"image/png"}), ".jpg": frozenset({"image/jpeg"}), ".jpeg": frozenset({"image/jpeg"})},
         max_bytes=settings.upload_tax_constancy_max_bytes,
+    ),
+    "technical_report_evidence": UploadPolicy(
+        name="technical_report_evidence",
+        extensions=frozenset({".jpg", ".jpeg", ".png"}),
+        mime_by_extension={
+            ".jpg": frozenset({"image/jpeg"}),
+            ".jpeg": frozenset({"image/jpeg"}),
+            ".png": frozenset({"image/png"}),
+        },
+        max_bytes=TECHNICAL_REPORT_EVIDENCE_MAX_BYTES,
     ),
     "client_import": UploadPolicy(
         name="client_import", extensions=frozenset({".csv", ".xlsx", ".xlsm"}),

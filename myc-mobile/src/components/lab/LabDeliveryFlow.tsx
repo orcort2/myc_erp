@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { AlertBanner, OperationalActionStack, PrimaryButton, SecondaryButton } from '@/src/design/primitives';
 import { MobileSignaturePad } from '@/src/components/signatures/MobileSignaturePad';
@@ -8,7 +8,9 @@ import { SignatureSubmissionLock } from '@/src/components/signatures/signature-f
 import {
   buildDeliveryPayload,
   createDeliveryWizardState,
+  deliveryConformityTexts,
   goToStep,
+  hasUnsubmittedSignature,
   validateContinueFromDeliveredBySignature,
   validateContinueFromRecipient,
   validateSubmitDelivery,
@@ -58,6 +60,22 @@ export function LabDeliveryFlow({
     setError('');
     setState((current) => goToStep(current, step));
   }
+
+  // Una firma ya dibujada no se descarta en silencio al salir del flujo.
+  function requestCancel() {
+    if (submitting) return;
+    if (!hasUnsubmittedSignature(state)) { onCancel(); return; }
+    Alert.alert(
+      '¿Descartar las firmas capturadas?',
+      'La entrega aún no se confirma; si sales se perderán las firmas capturadas.',
+      [
+        { text: 'Seguir en la entrega', style: 'cancel' },
+        { text: 'Descartar y salir', style: 'destructive', onPress: onCancel },
+      ],
+    );
+  }
+
+  const conformityTexts = useMemo(() => deliveryConformityTexts(equipment), [equipment]);
 
   function continueFromRecipient() {
     const validationError = validateContinueFromRecipient(state);
@@ -133,13 +151,13 @@ export function LabDeliveryFlow({
             <View key={group.folio} style={styles.group}>
               <Text style={styles.groupTitle}>OT {group.folio}</Text>
               {group.items.map((item) => (
-                <Text key={item.equipment_id} style={styles.equipment}>{item.instrument} · {item.brand} · {item.serial_number}</Text>
+                <Text key={item.equipment_id} style={styles.equipment}>{item.instrument} · {item.brand} · {item.serial_number}{item.technical_report_folio ? ` · ${item.technical_report_folio}` : ''}</Text>
               ))}
             </View>
           ))}
           <OperationalActionStack>
             <PrimaryButton icon="arrow-right-circle" label="Continuar" onPress={() => goTo('recipient')} />
-            <SecondaryButton icon="close" label="Cancelar" onPress={onCancel} />
+            <SecondaryButton icon="close" label="Cancelar" onPress={requestCancel} />
           </OperationalActionStack>
         </>
       )}
@@ -176,6 +194,7 @@ export function LabDeliveryFlow({
           <OperationalActionStack>
             <PrimaryButton icon="arrow-right-circle" label="Continuar con receptor" onPress={continueFromDeliveredBySignature} />
             <SecondaryButton icon="arrow-left" label="Volver" onPress={() => goTo('recipient')} />
+            <SecondaryButton icon="close" label="Cancelar entrega" onPress={requestCancel} />
           </OperationalActionStack>
         </>
       )}
@@ -193,15 +212,20 @@ export function LabDeliveryFlow({
             onChange={(capture) => { setError(''); setState((current) => ({ ...current, recipientCapture: capture })); }}
             onDrawingChange={onDrawingChange}
           />
-          <Text style={styles.conformity}>
-            {isPartial
-              ? 'Recibí de conformidad los equipos relacionados en esta entrega parcial.'
-              : 'Recibí de conformidad los equipos relacionados en este acuse.'}
-          </Text>
+          {conformityTexts.length > 0 ? conformityTexts.map((text) => (
+            <Text key={text} style={styles.conformity}>{text}</Text>
+          )) : (
+            <Text style={styles.conformity}>
+              {isPartial
+                ? 'Recibí de conformidad los equipos relacionados en esta entrega parcial.'
+                : 'Recibí de conformidad los equipos relacionados en este acuse.'}
+            </Text>
+          )}
           {!!error && <AlertBanner tone="danger">{error}</AlertBanner>}
           <OperationalActionStack>
             <PrimaryButton icon="package-check" label="Confirmar entrega" loading={submitting} onPress={() => void submit()} />
             <SecondaryButton disabled={submitting} icon="arrow-left" label="Volver" onPress={() => goTo('delivered_by_signature')} />
+            <SecondaryButton disabled={submitting} icon="close" label="Cancelar entrega" onPress={requestCancel} />
           </OperationalActionStack>
         </>
       )}

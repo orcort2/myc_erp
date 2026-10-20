@@ -62,6 +62,13 @@ from app.schemas.lab_work_order import (
     LabWorkOrderUpdate,
 )
 from app.services.audit_logs import write_audit_log
+from app.services.technical_interventions import (  # noqa: F401  (current_deliveries_for_equipment: re-export histórico)
+    DeliveryIndex,
+    InterventionRef,
+    current_deliveries_for_equipment,
+    equipment_interventions,
+    load_delivery_index,
+)
 from app.services.field_sheets import EDITABLE_STATUSES, _validate_ready_to_complete
 from app.services.lab_work_order_pdfs import generate_lab_work_order_pdf
 from app.services.lab_folio_requests import cancel_linked_folio_request, ensure_linked_folio_request
@@ -110,6 +117,12 @@ def _query_with_relations():
         selectinload(LabWorkOrder.equipment).selectinload(LabWorkOrderEquipment.field_sheets),
         selectinload(LabWorkOrder.equipment).selectinload(
             LabWorkOrderEquipment.current_field_sheet
+        ),
+        selectinload(LabWorkOrder.equipment).selectinload(
+            LabWorkOrderEquipment.technical_reports
+        ),
+        selectinload(LabWorkOrder.equipment).selectinload(
+            LabWorkOrderEquipment.technical_interventions
         ),
         selectinload(LabWorkOrder.signature_session).selectinload(
             LabWorkOrderSignatureSession.signatures
@@ -349,6 +362,22 @@ def _read(db: Session, work_order: LabWorkOrder) -> LabWorkOrderRead:
         source = by_id[projected.id]
         projected.field_sheet_id = source.field_sheet.id if source.field_sheet else None
         projected.field_sheet_status = source.field_sheet.status if source.field_sheet else None
+
+        current_report = source.current_technical_report
+        projected.technical_report_id = current_report.id if current_report else None
+        projected.technical_report_type = (
+            current_report.report_type if current_report else None
+        )
+        projected.technical_report_folio = (
+            current_report.folio if current_report else None
+        )
+        projected.technical_report_status = (
+            current_report.status if current_report else None
+        )
+        # Revisiones de la intervención principal (la que expone current_technical_report).
+        projected.technical_report_revision_count = (
+            len(current_report.intervention.reports) if current_report else len(source.technical_reports)
+        )
     result.signature_scope = _recorded_signature_scope(
         db, work_order.signature_session_id
     )
@@ -506,12 +535,34 @@ def create_work_order(
     user: User,
     *,
     operator_client_id: int | None = None,
+    operational_category: Literal["calibration", "general_service"] = "calibration",
 ) -> LabWorkOrderRead:
     work_order = _create_work_order_row(
-        db, payload, user, operator_client_id=operator_client_id
+        db,
+        payload,
+        user,
+        operator_client_id=operator_client_id,
+        operational_category=operational_category,
     )
     commit_and_dispatch_notifications(db)
     return _read(db, _get(db, work_order.id))
+
+
+def _ensure_category_workflow_modes(
+    operational_category: str,
+    modes: list[str],
+) -> None:
+    """Servicio General no usa FieldSheets, así que `equipment_by_equipment`
+    (capturar una hoja completa por equipo antes de la firma final) no tiene
+    sentido ahí: su lifecycle es group (recepción -> captura técnica ->
+    reporte)."""
+    if operational_category == "general_service" and any(
+        mode == "equipment_by_equipment" for mode in modes
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Servicio General sólo admite la modalidad de trabajo por grupo",
+        )
 
 
 def _create_work_order_row(
@@ -520,8 +571,10 @@ def _create_work_order_row(
     user: User,
     *,
     operator_client_id: int | None = None,
+    operational_category: Literal["calibration", "general_service"] = "calibration",
 ) -> LabWorkOrder:
     """Create one LAB order as its own root; caller owns the commit."""
+    _ensure_category_workflow_modes(operational_category, [payload.workflow_mode])
     values = payload.model_dump()
     lab_client_id = values.get("lab_client_id")
     if lab_client_id is not None:
@@ -546,6 +599,7 @@ def _create_work_order_row(
         sequence_number=1,
         created_by_user_id=user.id,
         operator_client_id=operator_client_id,
+        operational_category=operational_category,
         **values,
     )
     db.add(work_order)
@@ -557,7 +611,11 @@ def _create_work_order_row(
         entity="lab_work_orders",
         entity_id=work_order.id,
         user_id=user.id,
-        new_values={"folio": work_order.folio, "root_work_order_id": work_order.id},
+        new_values={
+            "folio": work_order.folio,
+            "root_work_order_id": work_order.id,
+            "operational_category": work_order.operational_category,
+        },
     )
     return work_order
 
@@ -570,6 +628,7 @@ def _materialize_group(
     operator_client_id: int | None,
     origin: str,
     member_workflow_modes: list[Literal["group", "equipment_by_equipment"]] | None = None,
+    operational_category: Literal["calibration", "general_service"] = "calibration",
 ) -> LabWorkOrder:
     """Create an anticipated LAB group atomically; caller owns the commit."""
     # Validate before allocating folios, including direct service callers.
@@ -578,6 +637,9 @@ def _materialize_group(
         or any(mode not in ("group", "equipment_by_equipment") for mode in member_workflow_modes)
     ):
         raise ValueError("member_workflow_modes debe contener quantity modalidades válidas")
+    _ensure_category_workflow_modes(
+        operational_category, list(member_workflow_modes or [payload.workflow_mode])
+    )
     values = payload.model_dump(exclude={"quantity"})
     lab_client_id = values.get("lab_client_id")
     if lab_client_id is not None:
@@ -612,6 +674,7 @@ def _materialize_group(
             sequence_number=sequence_number,
             created_by_user_id=user.id,
             operator_client_id=operator_client_id,
+            operational_category=operational_category,
             **values,
         )
         db.add(item)
@@ -632,6 +695,7 @@ def _materialize_group(
             "quantity": payload.quantity,
             "folios": folios,
             "operator_client_id": operator_client_id,
+            "operational_category": operational_category,
             # Array position + 1 is sequence_number; homogeneous calls stay compact.
             **({"member_workflow_modes": member_workflow_modes}
                if member_workflow_modes is not None else {"workflow_mode": payload.workflow_mode}),
@@ -647,11 +711,17 @@ def create_work_order_group(
     *,
     operator_client_id: int | None,
     member_workflow_modes: list[Literal["group", "equipment_by_equipment"]] | None = None,
+    operational_category: Literal["calibration", "general_service"] = "calibration",
 ) -> LabWorkOrderRead:
     try:
         root = _materialize_group(
-            db, payload, user, operator_client_id=operator_client_id, origin="staff_direct",
+            db,
+            payload,
+            user,
+            operator_client_id=operator_client_id,
+            origin="staff_direct",
             member_workflow_modes=member_workflow_modes,
+            operational_category=operational_category,
         )
         commit_and_dispatch_notifications(db)
         return _read(db, _get(db, root.id))
@@ -875,10 +945,13 @@ def list_work_orders(
             reception_date=item.reception_date,
             status=item.status,
             workflow_mode=item.workflow_mode,
+            operational_category=item.operational_category,
             equipment_count=len(item.active_equipment),
+            # Autoridad category-aware. En el listado no se re-hashea cada PDF
+            # (costoso); el cierre sí verifica el archivo.
             completed_equipment_count=sum(
                 1 for equipment in item.active_equipment
-                if equipment.field_sheet is not None and equipment.field_sheet.status == "completed"
+                if equipment_technically_complete(db, item, equipment, verify_files=False)
             ),
             created_at=item.created_at,
             revision_number=item.revision_number,
@@ -1780,6 +1853,9 @@ def _set_equipment_certificate_client_core(
     el LabClient real. Sólo si no hay final_lab_client_id (cliente final sin
     referencia de catálogo) se confía en el snapshot que trae el payload.
     """
+    _ensure_not_general_service(
+        equipment.work_order, "El cliente documental de certificado"
+    )
     company_snapshot = payload.final_client_company_snapshot
     address_snapshot = payload.final_client_address_snapshot
     attention_snapshot = payload.final_client_attention_snapshot
@@ -2002,6 +2078,7 @@ def _assign_equipment_service_core(
     - Folio 'authorized' (autorización explícita de un actor con
       lab_folios.resolve) y hoja ya completada siguen bloqueando con 409.
     """
+    _ensure_not_general_service(work_order, "La modalidad metrológica")
     folio_already_secured = (
         equipment.certificate_folio is not None
         or equipment.folio_status in {"reserved", "authorized"}
@@ -2163,6 +2240,43 @@ def assign_equipment_service(
     return _read(db, _get(db, work_order.id))
 
 
+def _ensure_calibration_equipment_config(
+    work_order: LabWorkOrder,
+    payload: LabEquipmentConfiguredCreate,
+) -> None:
+    """Contrato por categoría del alta/edición integrada de equipo.
+
+    - calibration: la modalidad metrológica (`service`) es obligatoria, igual
+      que antes de Servicio General.
+    - general_service: no existe configuración metrológica; recibirla es un
+      error explícito (nunca se ignora en silencio ni se rellena con
+      placeholders) y el equipo conserva service_type=None.
+    """
+    if work_order.operational_category == "general_service":
+        if payload.service is not None or payload.certificate_client is not None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Servicio General no admite modalidad metrológica ni "
+                    "cliente documental de certificado"
+                ),
+            )
+        return
+    if payload.service is None:
+        raise HTTPException(
+            status_code=422,
+            detail="La modalidad de servicio es obligatoria para calibración",
+        )
+
+
+def _ensure_not_general_service(work_order: LabWorkOrder, what: str) -> None:
+    if work_order.operational_category == "general_service":
+        raise HTTPException(
+            status_code=409,
+            detail=f"{what} no aplica a una OT de Servicio General",
+        )
+
+
 def create_configured_equipment(
     db: Session,
     work_order_id: int,
@@ -2186,6 +2300,7 @@ def create_configured_equipment(
         work_order = _get(db, work_order_id, lock=True)
         group = _group(db, work_order, lock=True)
         _ensure_members_editable([work_order])
+        _ensure_calibration_equipment_config(work_order, payload)
         editable_members = _editable_group_members(group)
         equipment_values = payload.equipment.model_dump()
         expected_edit_version = equipment_values.pop("expected_edit_version", None)
@@ -2194,6 +2309,11 @@ def create_configured_equipment(
         equipment = _add_equipment_core(
             db, work_order, group, editable_members, equipment_values, user
         )
+
+        if work_order.operational_category == "general_service":
+            # Sin modalidad, folio ni cliente documental metrológicos.
+            commit_and_dispatch_notifications(db)
+            return _read(db, _get(db, work_order.id))
 
         certificate_client = payload.certificate_client
         if certificate_client is not None and certificate_client.certificate_client_mode == "different":
@@ -2250,6 +2370,7 @@ def update_configured_equipment(
         work_order = _get(db, work_order_id, lock=True)
         group = _group(db, work_order, lock=True)
         _ensure_members_editable([work_order])
+        _ensure_calibration_equipment_config(work_order, payload)
         editable_members = _editable_group_members(group)
         equipment = db.scalar(
             select(LabWorkOrderEquipment)
@@ -2271,6 +2392,11 @@ def update_configured_equipment(
         version_before = max(item.edit_version for item in editable_members)
 
         _update_equipment_core(db, work_order, group, editable_members, equipment, equipment_values, user)
+
+        if work_order.operational_category == "general_service":
+            # Sin cliente documental ni modalidad que reconciliar.
+            commit_and_dispatch_notifications(db)
+            return _read(db, _get(db, work_order.id))
 
         # A diferencia de create_configured_equipment, aquí SIEMPRE se aplica
         # el cliente documental (incluido el 'order' implícito por omisión):
@@ -2463,6 +2589,7 @@ def create_additional_work_order(
         # "equipment_by_equipment" libremente (sección 5 -- nunca una
         # constraint de igualdad por root).
         workflow_mode=workflow_mode or source.workflow_mode,
+        operational_category=source.operational_category,
         **values,
     )
     db.add(additional)
@@ -2559,6 +2686,10 @@ def _equipment_reception_gap(equipment: LabWorkOrderEquipment) -> str | None:
     'order' siempre hereda client_name (NOT NULL en la OT) y 'different'
     siempre exige un snapshot de empresa no vacío (CHECK constraint de Fase
     1), así que ambos modos son resolubles por construcción."""
+    if equipment.work_order.operational_category == "general_service":
+        # Servicio General no tiene modalidad ni folio metrológicos: los datos
+        # base del equipo/producto ya son obligatorios en LabEquipmentBase.
+        return None
     if equipment.service_type is None:
         return "Selecciona el tipo de servicio"
     if equipment.service_type in {"accredited", "traceable"} and equipment.folio_status not in {
@@ -2736,6 +2867,211 @@ def _missing_completed_sheets(members: list[LabWorkOrder]) -> list[dict]:
         if _requires_field_sheet_discipline(item)
         if equipment.field_sheet is None or equipment.field_sheet.status != "completed"
     ]
+
+
+# ---------------------------------------------------------------------------
+# SG-4H: autoridad técnica category-aware
+#
+# "¿Está técnicamente completo este equipo?" depende de operational_category:
+#   - calibration: FieldSheet completed (más las reglas de folio/certificado
+#     que ya aplica el cierre -- ver _missing_completed_sheets /
+#     _unresolved_folio_equipment, que siguen siendo EXCLUSIVAS de calibración).
+#   - general_service: TechnicalReport vigente `completed` + PDF final válido
+#     + entrega `completed` vigente que incluya el equipo. Sin FieldSheet, sin
+#     MYCA/MYCT, sin service_type. La firma de RECEPCIÓN de la OT
+#     (signature_session_id) NO cuenta como entrega: la autoridad de entrega es
+#     LabWorkOrderDelivery.
+# ---------------------------------------------------------------------------
+
+TECHNICAL_REPORT_INCOMPLETE = "TECHNICAL_REPORT_INCOMPLETE"
+TECHNICAL_REPORT_DOCUMENT_INVALID = "TECHNICAL_REPORT_DOCUMENT_INVALID"
+TECHNICAL_REPORT_DELIVERY_INCOMPLETE = "TECHNICAL_REPORT_DELIVERY_INCOMPLETE"
+TECHNICAL_REPORT_REVISION_REQUIRED = "TECHNICAL_REPORT_REVISION_REQUIRED"
+TECHNICAL_REPORT_REVISION_REQUIRED_MESSAGE = (
+    "El reporte técnico final fue generado con una entrega que posteriormente fue anulada. "
+    "Se requiere una revisión del reporte antes de registrar una nueva entrega."
+)
+# Prioridad al elegir el `code` del error agregado (qué atender primero).
+_GENERAL_SERVICE_BLOCKER_PRIORITY = (
+    TECHNICAL_REPORT_INCOMPLETE,
+    TECHNICAL_REPORT_DOCUMENT_INVALID,
+    TECHNICAL_REPORT_REVISION_REQUIRED,
+    TECHNICAL_REPORT_DELIVERY_INCOMPLETE,
+)
+_GENERAL_SERVICE_BLOCKER_MESSAGES = {
+    TECHNICAL_REPORT_INCOMPLETE: "Falta completar el reporte técnico de: {names}.",
+    TECHNICAL_REPORT_DOCUMENT_INVALID: "El documento final del reporte técnico no es válido para: {names}.",
+    TECHNICAL_REPORT_DELIVERY_INCOMPLETE: "Falta registrar la entrega de: {names}.",
+    TECHNICAL_REPORT_REVISION_REQUIRED: TECHNICAL_REPORT_REVISION_REQUIRED_MESSAGE,
+}
+
+
+def _technical_report_pdf_problem(report, *, verify_file: bool) -> str | None:
+    """None si el PDF final del reporte es utilizable. Con `verify_file` el
+    archivo debe resolverse en el storage administrado y coincidir con su
+    SHA-256 (nunca se regenera aquí)."""
+    if not (report.final_pdf_path and report.final_pdf_sha256 and report.final_pdf_generated_at):
+        return "El reporte no tiene PDF final"
+    if not verify_file:
+        return None
+    from app.services.storage_service import resolve_storage_path
+
+    resolved = resolve_storage_path(report.final_pdf_path)
+    if resolved is None or resolved.is_symlink() or not resolved.is_file():
+        return "El PDF final del reporte no está disponible"
+    if hashlib.sha256(resolved.read_bytes()).hexdigest() != report.final_pdf_sha256:
+        return "El PDF final del reporte no coincide con su SHA-256"
+    return None
+
+
+def _general_service_blockers(
+    db: Session,
+    item: LabWorkOrder,
+    equipment: LabWorkOrderEquipment,
+    *,
+    verify_files: bool,
+    index: DeliveryIndex | None = None,
+) -> list[dict]:
+    """Bloqueos de un equipo de Servicio General, resueltos POR INTERVENCIÓN
+    obligatoria (ver app/services/technical_interventions.py). Un equipo sin
+    intervenciones obligatorias bloquea ("Sin reporte técnico"); si tiene varias,
+    TODAS deben estar completas."""
+    base = {
+        "work_order_id": item.id,
+        "work_order_folio": item.folio,
+        "equipment_id": equipment.id,
+        "equipment_position": equipment.position,
+        "equipment": equipment.instrument,
+    }
+    refs = equipment_interventions(equipment)
+    if not refs:
+        return [{**base, "code": TECHNICAL_REPORT_INCOMPLETE, "reason": "Sin reporte técnico"}]
+    index = index if index is not None else load_delivery_index(db, [equipment])
+    blockers: list[dict] = []
+    for ref in refs:
+        blockers.extend(_intervention_blockers(base, ref, equipment, index, verify_files=verify_files))
+    return blockers
+
+
+def _intervention_blockers(
+    base: dict, ref: InterventionRef, equipment: LabWorkOrderEquipment, index: DeliveryIndex, *, verify_files: bool
+) -> list[dict]:
+    base = {**base, "intervention_id": ref.intervention_id, "intervention_folio": ref.folio}
+    report = ref.report
+    if report is None:
+        return [{**base, "code": TECHNICAL_REPORT_INCOMPLETE, "reason": "Sin reporte técnico"}]
+    if report.status != "completed":
+        return [{**base, "code": TECHNICAL_REPORT_INCOMPLETE, "reason": "El reporte técnico no está completado"}]
+    problem = _technical_report_pdf_problem(report, verify_file=verify_files)
+    if problem is not None:
+        return [{**base, "code": TECHNICAL_REPORT_DOCUMENT_INVALID, "reason": problem}]
+    deliveries = index.for_ref(ref, equipment)
+    # El PDF final se generó con una entrega concreta (snapshot). Si esa entrega
+    # ya no es la vigente (anulada, o reemplazada por otra), el documento sería
+    # contradictorio con el acuse vigente: se exige una revisión (SG-4J), nunca
+    # se mezclan documentos de entregas distintas.
+    frozen_delivery_id = ((report.document_snapshot or {}).get("delivery") or {}).get("delivery_id")
+    if frozen_delivery_id is not None and (len(deliveries) != 1 or deliveries[0][0].id != frozen_delivery_id):
+        return [{**base, "code": TECHNICAL_REPORT_REVISION_REQUIRED, "reason": TECHNICAL_REPORT_REVISION_REQUIRED_MESSAGE}]
+    if len(deliveries) != 1:
+        reason = "Sin entrega vigente registrada" if not deliveries else "Más de una entrega vigente"
+        return [{**base, "code": TECHNICAL_REPORT_DELIVERY_INCOMPLETE, "reason": reason}]
+    return []
+
+
+def work_order_technical_blockers(
+    db: Session, members: list[LabWorkOrder], *, verify_files: bool = True
+) -> list[dict]:
+    """Qué le falta a cada equipo activo para estar técnicamente completo.
+    Calibración conserva su autoridad histórica (`_missing_completed_sheets`,
+    con su propia disciplina de hoja); Servicio General usa
+    TechnicalReport + PDF + entrega."""
+    general = [item for item in members if item.operational_category == "general_service"]
+    legacy = [item for item in members if item.operational_category != "general_service"]
+    blockers = [
+        {**item_blocker, "code": "LAB_FIELD_SHEETS_INCOMPLETE"}
+        for item_blocker in _missing_completed_sheets(legacy)
+    ]
+    for item in general:
+        index = load_delivery_index(db, list(item.active_equipment))
+        for equipment in item.active_equipment:
+            blockers.extend(_general_service_blockers(db, item, equipment, verify_files=verify_files, index=index))
+    return blockers
+
+
+def equipment_technically_complete(
+    db: Session, item: LabWorkOrder, equipment: LabWorkOrderEquipment, *, verify_files: bool = True
+) -> bool:
+    """Autoridad por equipo, usada por contadores y proyecciones."""
+    if item.operational_category == "general_service":
+        return not _general_service_blockers(db, item, equipment, verify_files=verify_files)
+    return equipment.field_sheet is not None and equipment.field_sheet.status == "completed"
+
+
+def work_order_technically_complete(db: Session, item: LabWorkOrder) -> bool:
+    return bool(item.active_equipment) and not _general_service_blockers_for_order(db, item)
+
+
+def _general_service_blockers_for_order(db: Session, item: LabWorkOrder) -> list[dict]:
+    index = load_delivery_index(db, list(item.active_equipment))  # una carga por OT, sin N+1
+    return [
+        blocker
+        for equipment in item.active_equipment
+        for blocker in _general_service_blockers(db, item, equipment, verify_files=True, index=index)
+    ]
+
+
+def _ensure_general_service_technical_completion(db: Session, members: list[LabWorkOrder]) -> None:
+    """Frontera de cierre de Servicio General: error estructurado, sin
+    terminología de FieldSheet."""
+    blockers = [
+        blocker for item in members for blocker in _general_service_blockers_for_order(db, item)
+    ]
+    blockers += [
+        {
+            "work_order_id": item.id, "work_order_folio": item.folio, "equipment_id": None,
+            "equipment_position": None, "equipment": f"OT {item.folio}",
+            "code": TECHNICAL_REPORT_INCOMPLETE, "reason": "La OT no tiene equipos",
+        }
+        for item in members if not item.active_equipment
+    ]
+    if not blockers:
+        return
+    code = next(c for c in _GENERAL_SERVICE_BLOCKER_PRIORITY if any(b["code"] == c for b in blockers))
+    names = ", ".join(sorted({b["equipment"] for b in blockers if b["code"] == code}))
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "code": code,
+            "message": _GENERAL_SERVICE_BLOCKER_MESSAGES[code].format(names=names),
+            "items": blockers,
+        },
+    )
+
+
+def sync_general_service_readiness(db: Session, item: LabWorkOrder, user: User) -> None:
+    """`in_progress <-> ready_to_close` de una OT de Servicio General según la
+    autoridad técnica. Única transición: la invocan la finalización del reporte,
+    el registro y la anulación de entregas (nunca Mobile)."""
+    if item.operational_category != "general_service":
+        return
+    complete = work_order_technically_complete(db, item)
+    previous = item.status
+    if previous == "in_progress" and complete:
+        item.status = "ready_to_close"
+    elif previous == "ready_to_close" and not complete:
+        item.status = "in_progress"
+    else:
+        return
+    write_audit_log(
+        db,
+        action="lab_work_order.ready_to_close" if item.status == "ready_to_close" else "lab_work_order.ready_to_close_revoked",
+        entity="lab_work_orders",
+        entity_id=item.id,
+        user_id=user.id,
+        previous_values={"status": previous},
+        new_values={"status": item.status},
+    )
 
 
 def equipment_certificate_folio_resolved(equipment: LabWorkOrderEquipment) -> bool:
@@ -3010,6 +3346,22 @@ def _complete_members(
         raise HTTPException(
             status_code=409, detail="La cohorte requiere las firmas de técnico y cliente"
         )
+    # SG-4H: Servicio General cierra por TechnicalReport + PDF + entrega, nunca por
+    # FieldSheet/folio metrológico. La firma de recepción (exigida arriba) sólo
+    # prueba que la OT avanzó; no sustituye a la entrega. Calibración sigue el
+    # camino histórico con exactamente los mismos miembros que antes.
+    general_members = [item for item in members if item.operational_category == "general_service"]
+    if general_members:
+        if len(general_members) != len(members):
+            raise HTTPException(status_code=409, detail="La cohorte mezcla categorías operativas")
+        _ensure_general_service_technical_completion(db, members)
+        if any(item.status not in {"in_progress", "ready_to_close"} for item in members):
+            raise HTTPException(status_code=409, detail="INVALID_STATE_TRANSITION")
+        for item in members:
+            # Se re-valida todo aquí: un `ready_to_close` previo no es evidencia.
+            if item.status == "in_progress":
+                item.status = "ready_to_close"
+        return _finish_complete_members(db, work_order=work_order, members=members, user=user, scope=scope)
     if require_completed_sheets:
         # Cierre UX 2026-09: una OT con FieldSheets todavía en borrador ya no
         # bloquea el cierre de entrada -- si el usuario confirma, se
@@ -3763,6 +4115,9 @@ def change_lab_work_order_workflow_mode(
     'group'/'equipment_by_equipment' libremente (sección 5), y esta acción
     afecta sólo la fila indicada."""
     work_order = _get(db, work_order_id, lock=True)
+    _ensure_category_workflow_modes(
+        work_order.operational_category, [payload.new_workflow_mode]
+    )
     if work_order.workflow_mode == payload.new_workflow_mode:
         raise HTTPException(status_code=409, detail="La OT ya tiene esa modalidad de trabajo")
     if work_order.status != "draft" or work_order.signature_session_id is not None:
@@ -3927,6 +4282,77 @@ def get_pdf(db: Session, work_order_id: int) -> tuple[bytes, str]:
     )
 
 
+def _export_technical_reports(
+    db: Session, work_orders: list[LabWorkOrder], archive: zipfile.ZipFile, manifest: dict
+) -> list[dict]:
+    """Metadata de TODOS los TechnicalReport (incluye revisiones no vigentes, con
+    `is_current`) y, cuando el PDF final es válido, el archivo. Un PDF ausente o
+    corrupto no aborta el volcado histórico: queda marcado en `pdf_status`.
+    Calibración no tiene reportes: este bloque no cambia su export."""
+    from app.services.storage_service import resolve_storage_path
+
+    equipment_ids = [equipment.id for item in work_orders for equipment in item.equipment if equipment.technical_reports]
+    deliveries_by_equipment: dict[int, list[dict]] = {}
+    if equipment_ids:
+        for delivery, delivery_item in db.execute(
+            select(LabWorkOrderDelivery, LabDeliveryItem)
+            .join(LabDeliveryItem, LabDeliveryItem.delivery_id == LabWorkOrderDelivery.id)
+            .where(LabDeliveryItem.equipment_id.in_(equipment_ids))
+            .order_by(LabWorkOrderDelivery.id)
+        ).all():
+            deliveries_by_equipment.setdefault(delivery_item.equipment_id, []).append({
+                "delivery_id": delivery.id,
+                "exhibition_number": delivery.exhibition_number,
+                "status": delivery.status,
+                "delivered_at": delivery.delivered_at.isoformat(),
+                "recipient_name": delivery.recipient_name,
+                "voucher_sha256": delivery.voucher_pdf_sha256,
+            })
+    rows: list[dict] = []
+    for item in work_orders:
+        for equipment in item.equipment:
+            for report in equipment.technical_reports:
+                pdf_status = "none"
+                path = None
+                if report.final_pdf_path:
+                    pdf_status = _technical_report_pdf_problem(report, verify_file=True) or "ok"
+                    if pdf_status == "ok":
+                        content = resolve_storage_path(report.final_pdf_path).read_bytes()
+                        path = f"technical_reports/{report.folio}-r{report.revision_number}.pdf"
+                        archive.writestr(path, content)
+                        manifest["files"].append({
+                            "type": "technical_report", "report_type": report.report_type, "folio": report.folio,
+                            "revision": report.revision_number, "path": path,
+                            "sha256": hashlib.sha256(content).hexdigest(), "size_bytes": len(content),
+                        })
+                    else:
+                        pdf_status = "invalid"
+                rows.append({
+                    "id": report.id,
+                    "work_order_id": item.id,
+                    "work_order_folio": item.folio,
+                    "equipment_id": equipment.id,
+                    "report_type": report.report_type,
+                    "folio": report.folio,
+                    "revision_number": report.revision_number,
+                    "is_current": report.is_current,
+                    "status": report.status,
+                    "performed_by_name": report.performed_by_name_snapshot,
+                    "performed_at": report.performed_at.isoformat() if report.performed_at else None,
+                    "completed_at": report.completed_at.isoformat() if report.completed_at else None,
+                    "pdf_status": pdf_status,
+                    "pdf_path": path,
+                    "pdf_sha256": report.final_pdf_sha256,
+                    "pdf_renderer_version": report.pdf_renderer_version,
+                    "deliveries": deliveries_by_equipment.get(equipment.id, []),
+                    "evidence": [
+                        {"id": e.id, "evidence_type": e.evidence_type, "position": e.position, "sha256": e.sha256}
+                        for e in report.evidence
+                    ],
+                })
+    return rows
+
+
 def export_all(db: Session) -> tuple[bytes, str]:
     work_orders = list(db.scalars(_query_with_relations().order_by(LabWorkOrder.folio)).all())
     equipment_count = sum(len(item.equipment) for item in work_orders)
@@ -4006,8 +4432,12 @@ def export_all(db: Session) -> tuple[bytes, str]:
                 f"signatures/session-{session.id}.json",
                 json.dumps(metadata, ensure_ascii=False, indent=2),
             )
+        # SG-4I: TechnicalReports de Servicio General (metadata + PDF final + referencia a entrega).
+        report_rows = _export_technical_reports(db, work_orders, archive, manifest)
         archive.writestr("work_orders.json", json.dumps(work_order_rows, ensure_ascii=False, indent=2))
         archive.writestr("equipment.json", json.dumps(equipment_rows, ensure_ascii=False, indent=2))
+        if report_rows:
+            archive.writestr("technical_reports.json", json.dumps(report_rows, ensure_ascii=False, indent=2))
         if len(work_order_rows) != manifest["work_order_count"] or len(equipment_rows) != equipment_count:
             raise RuntimeError("La exportación LAB no coincide con los registros persistidos")
         archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))

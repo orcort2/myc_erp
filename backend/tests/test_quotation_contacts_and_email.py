@@ -429,9 +429,25 @@ def test_quotation_contact_migration_is_the_single_head():
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert len(script.get_heads()) == 1
+    # Integration: quotation signing and Mobile technical interventions.
+    assert script.get_heads() == ["69fc4e5d622e"]
     assert script.get_revision("f6b9c3d4e5a7") is not None
     assert script.get_revision("d4f7a1b2c3e5").down_revision == "c3e6a9b2d4f8"
+
+    merge_revision = script.get_revision("69fc4e5d622e")
+    assert set(merge_revision.down_revision) == {
+        "c6d9e2f5a8b1",
+        "f9a2b3c4d5e6",
+    }
+
+    lineage = {rev.revision for rev in script.walk_revisions()}
+    assert {
+        "c3e6a9b2d4f8",
+        "ef09a7ea9e97",
+        "a4b7c1d9e3f2",
+        "c6d9e2f5a8b1",
+        "f9a2b3c4d5e6",
+    }.issubset(lineage)
     assert script.get_revision("c3e6a9b2d4f8").down_revision == "b2d5f8a1c3e7"
     column = Quotation.__table__.c.contact_id
     assert column.nullable and next(iter(column.foreign_keys)).ondelete == "SET NULL"

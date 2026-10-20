@@ -163,7 +163,9 @@ function savedEquipment(overrides: Partial<LabEquipment> = {}): LabEquipment {
     report_number: null, is_good_condition: true, service_type: 'accredited', linked_company_id: null,
     linked_company_name_snapshot: null, linked_company_prefix_snapshot: null, certificate_folio: 'MYCA-09-26-4700',
     automatic_certificate_folio: 'MYCA-09-26-4700', folio_status: 'reserved', folio_ticket_id: null,
-    field_sheet_id: null, field_sheet_status: null, certificate_client_mode: 'order', final_lab_client_id: null,
+    field_sheet_id: null, field_sheet_status: null, technical_report_id: null, technical_report_type: null,
+    technical_report_folio: null, technical_report_status: null, technical_report_revision_count: 0,
+    certificate_client_mode: 'order', final_lab_client_id: null,
     final_client_company_snapshot: null, final_client_address_snapshot: null, final_client_attention_snapshot: null,
     ...overrides,
   };
@@ -393,5 +395,5 @@ test('leyenda de cambio de servicio: texto simple con nuevo folio y consecutivo;
 test('la advertencia vieja ya no existe en el formulario', () => {
   const form = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../components/lab/LabEquipmentForm.tsx'), 'utf8');
   assert.doesNotMatch(form, /será rechazado|ya tiene folio reservado|Reconfirmar el mismo servicio/);
-  assert.match(form, /serviceChangeNotice\(mode, initialValues\?\.service\.serviceType, service\)/);
+  assert.match(form, /serviceChangeNotice\(mode, calibrationInitial\?\.service\.serviceType, service\)/);
 });

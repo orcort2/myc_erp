@@ -30,9 +30,9 @@ test('el flujo técnico usa el canon de botones acordado', () => {
 });
 
 // Estas pruebas verifican cableado; no prueban geometría ni visibilidad nativa.
-test('los cuatro formularios tienen una sola autoridad por plataforma y conservan taps', () => {
+test('los cinco formularios tienen una sola autoridad por plataforma y conservan taps', () => {
   const containers = [...source.matchAll(/<KeyboardAvoidingView([^>]+)>\s*<ScrollView([^>]+)>/g)];
-  assert.equal(containers.length, 4);
+  assert.equal(containers.length, 5);
   for (const [, kav, scroll] of containers) {
     assert.match(kav, /enabled=\{Platform\.OS === 'android'\}/);
     assert.match(kav, /behavior=\{Platform\.OS === 'android' \? 'height' : undefined\}/);
@@ -41,13 +41,13 @@ test('los cuatro formularios tienen una sola autoridad por plataforma y conserva
     assert.doesNotMatch(scroll, /scrollEnabled=\{false\}/);
   }
   assert.doesNotMatch(source, /behavior=.*'padding'/);
-  assert.equal((source.match(/automaticallyAdjustKeyboardInsets=/g) ?? []).length, 4);
+  assert.equal((source.match(/automaticallyAdjustKeyboardInsets=/g) ?? []).length, 5);
 });
 
 test('el formulario conserva scroll acotado y bloqueo exclusivo durante el trazo de firma', () => {
   assert.match(source, /scrollEnabled=\{!signatureDrawing\}/);
   assert.match(source, /contentContainerStyle=\{styles\.modalContent\}/);
-  assert.equal((source.match(/contentContainerStyle=\{styles\.overlayContent\}/g) ?? []).length, 3);
+  assert.equal((source.match(/contentContainerStyle=\{styles\.overlayContent\}/g) ?? []).length, 4);
   assert.match(source, /flex: \{\s*flex: 1/);
 });
 
@@ -181,7 +181,7 @@ test('el diálogo identifica el equipo que será anulado y conserva el lenguaje 
 test('el alta de equipo (saveConfiguredEquipment) manda workOrder.edit_version para no producir REVISION_CONFLICT tras reabrir/anular', () => {
   assert.match(
     source,
-    /buildConfiguredEquipmentPayload\(values\.equipment, values\.documentaryClient, values\.service, workOrder\.edit_version\)/,
+    /buildEquipmentCreateBody\(values, workOrder\.edit_version\)/,
   );
 });
 

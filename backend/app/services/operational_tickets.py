@@ -45,6 +45,7 @@ from app.services.lab_work_orders import (
 )
 from app.services.lab_work_order_deliveries import (
     _delivered_equipment_ids,
+    _ensure_equipment_deliverable,
     _pending_equipment,
     _relevant_group_members,
 )
@@ -516,6 +517,7 @@ def create_partial_delivery_ticket(
             status_code=422,
             detail="Los equipos solicitados deben pertenecer al grupo y estar pendientes de entrega",
         )
+    _ensure_equipment_deliverable([pending_by_id[eid] for eid in requested_ids])
     existing = db.scalar(
         select(OperationalTicket.id).where(
             OperationalTicket.work_order_id == root_work_order.id,

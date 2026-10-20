@@ -36,9 +36,14 @@ class LabWorkOrderGroupCreate(LabWorkOrderCreate):
 class LabWorkOrderInternalCreate(LabWorkOrderCreate):
     service_order_id: int | None = Field(default=None, gt=0)
 
+    # Categoría técnica de la OT interna MYC Mobile.
+    # El contrato externo permanece sin este campo y conserva calibración.
+    operational_category: Literal["calibration", "general_service"] = "calibration"
+
 
 class LabWorkOrderInternalGroupCreate(LabWorkOrderGroupCreate):
     service_order_id: int | None = Field(default=None, gt=0)
+    operational_category: Literal["calibration", "general_service"] = "calibration"
     member_workflow_modes: list[Literal["group", "equipment_by_equipment"]] | None = None
 
     @model_validator(mode="after")
@@ -201,6 +206,14 @@ class LabEquipmentRead(LabEquipmentBase):
     folio_ticket_id: int | None = None
     field_sheet_id: int | None = None
     field_sheet_status: str | None = None
+
+    # Documento técnico vigente de Servicio General.
+    technical_report_id: int | None = None
+    technical_report_type: str | None = None
+    technical_report_folio: str | None = None
+    technical_report_status: str | None = None
+    technical_report_revision_count: int = 0
+
     certificate_client_mode: str = "order"
     final_lab_client_id: int | None = None
     final_client_company_snapshot: str | None = None
@@ -261,7 +274,11 @@ class LabEquipmentServiceWrite(BaseModel):
 class LabEquipmentConfiguredCreate(BaseModel):
     """Fase 2E: alta integrada (equipo + cliente documental + servicio/folio)
     como una sola operación. Compone los contratos existentes en vez de
-    duplicarlos: cada sección se valida con su propio schema de Fase 1/2."""
+    duplicarlos: cada sección se valida con su propio schema de Fase 1/2.
+
+    Servicio General (operational_category='general_service') omite
+    `certificate_client` y `service`: no hay modalidad ni cliente documental
+    metrológicos, y el equipo conserva service_type=None."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -270,7 +287,10 @@ class LabEquipmentConfiguredCreate(BaseModel):
         default=None,
         description="Si se omite, el equipo queda en certificate_client_mode='order' (default).",
     )
-    service: LabEquipmentServiceWrite
+    # Calibración exige modalidad metrológica; Servicio General la prohíbe.
+    # La obligatoriedad depende de la categoría de la OT (no del payload), por
+    # lo que se valida en el servicio con la OT bloqueada, no aquí.
+    service: LabEquipmentServiceWrite | None = None
 
 
 class LabManualFolioRequest(BaseModel):
@@ -509,6 +529,14 @@ class LabDeliveryPendingEquipmentItem(BaseModel):
     identification: str
     serial_number: str
     certificate_folio: str | None
+    # Servicio General: la entrega exige un TechnicalReport vigente con la
+    # captura finalizada. Calibración siempre es elegible aquí (sus reglas de
+    # entrega no cambian).
+    delivery_eligible: bool = True
+    delivery_blocked_reason: str | None = None
+    technical_report_folio: str | None = None
+    # Declaración que el receptor acepta al firmar; la congela el backend.
+    client_conformity_text: str | None = None
 
 
 class LabDeliveryGroupStatusRead(BaseModel):
@@ -565,6 +593,7 @@ class LabWorkOrderRead(BaseModel):
     signature_required: bool
     signature_preserved: bool
     workflow_mode: str
+    operational_category: Literal["calibration", "general_service"]
     created_at: datetime
     updated_at: datetime
     equipment: list[LabEquipmentRead]
@@ -584,6 +613,7 @@ class LabWorkOrderListItem(BaseModel):
     reception_date: date
     status: str
     workflow_mode: str
+    operational_category: Literal["calibration", "general_service"]
     equipment_count: int
     completed_equipment_count: int = 0
     created_at: datetime

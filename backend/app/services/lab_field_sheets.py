@@ -297,6 +297,11 @@ def create_lab_field_sheet(
     external: bool,
 ) -> FieldSheetRead:
     equipment = get_lab_equipment(db, work_order_id, equipment_id, lock=True)
+    if equipment.work_order.operational_category == "general_service":
+        raise HTTPException(
+            status_code=409,
+            detail="Servicio General usa reportes técnicos, no hojas de campo",
+        )
     _ensure_capture_allowed(equipment, external=external)
     if equipment.field_sheet is not None:
         raise HTTPException(status_code=409, detail="El equipo ya tiene una hoja de campo")

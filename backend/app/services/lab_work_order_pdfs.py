@@ -5,12 +5,24 @@ from types import SimpleNamespace
 from weasyprint import HTML
 
 from app.models.lab_work_order import LabWorkOrder
+from app.services.technical_interventions import equipment_report_folios
 from app.services.work_order_pdfs import APP_DIR, _filename, _render_html
 
 
 class _PendingDeliveryDate:
     def strftime(self, _format: str) -> str:
         return "PENDIENTE"
+
+
+def _report_number_column(work_order: LabWorkOrder, item) -> str | None:
+    """Columna "N° de informe" de la OT. Calibración: folio de certificado (como
+    siempre). Servicio General no tiene certificado: imprime el folio
+    institucional del Reporte técnico vigente del equipo (MYC-IN...); nunca el
+    `report_number` del equipo."""
+    if getattr(work_order, "operational_category", None) == "general_service":
+        folios = equipment_report_folios(item) if hasattr(item, "technical_interventions") else []
+        return ", ".join(folios) if folios else None
+    return item.certificate_folio
 
 
 def generate_lab_work_order_pdf(work_order: LabWorkOrder) -> tuple[bytes, str]:
@@ -67,7 +79,7 @@ def generate_lab_work_order_pdf(work_order: LabWorkOrder) -> tuple[bytes, str]:
                     key: upper(getattr(item, key))
                     for key in ("instrument", "brand", "identification", "serial_number", "report_number")
                 },
-                certificate_folio=upper(item.certificate_folio),
+                certificate_folio=upper(_report_number_column(work_order, item)),
                 is_good_condition=item.is_good_condition,
                 name=upper(item.name),
                 internal_id=upper(item.internal_id),

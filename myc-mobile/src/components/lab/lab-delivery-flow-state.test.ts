@@ -5,7 +5,9 @@ import { SignatureSubmissionLock, type SignatureCapture } from '@/src/components
 import {
   buildDeliveryPayload,
   createDeliveryWizardState,
+  deliveryConformityTexts,
   goToStep,
+  hasUnsubmittedSignature,
   validateContinueFromDeliveredBySignature,
   validateContinueFromRecipient,
   validateSubmitDelivery,
@@ -110,4 +112,21 @@ test('el payload construido usa exactamente las capturas/valores del wizard, rec
 test('observaciones vacías se envían como null, no como cadena vacía', () => {
   const state = readyForSubmit({ notes: '   ' });
   assert.equal(buildDeliveryPayload(state).notes, null);
+});
+
+test('SG-4F: deliveryConformityTexts devuelve las declaraciones congeladas sin repetir y vacío para calibración', () => {
+  assert.deepEqual(deliveryConformityTexts([
+    { client_conformity_text: 'Texto A' }, { client_conformity_text: ' Texto A ' }, { client_conformity_text: 'Texto B' }, { client_conformity_text: null }, {},
+  ]), ['Texto A', 'Texto B']);
+  assert.deepEqual(deliveryConformityTexts([{}, { client_conformity_text: null }]), []);
+});
+
+test('SG-4F: hasUnsubmittedSignature detecta firmas locales aún no enviadas', () => {
+  const stroke = [{ x: 0, y: 0 }, { x: 0.5, y: 0.5 }];
+  const drawn = { dataUrl: 'data:image/png;base64,AA==', hasDrawing: true, strokes: [stroke] };
+  const base = createDeliveryWizardState('Cliente');
+  assert.equal(hasUnsubmittedSignature(base), false);
+  assert.equal(hasUnsubmittedSignature({ ...base, deliveredByCapture: drawn }), true);
+  assert.equal(hasUnsubmittedSignature({ ...base, recipientCapture: drawn }), true);
+  assert.equal(hasUnsubmittedSignature({ ...base, step: 'success', recipientCapture: drawn }), false);
 });

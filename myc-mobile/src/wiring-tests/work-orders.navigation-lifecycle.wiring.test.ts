@@ -98,7 +98,7 @@ test('los efectos sensibles a refresh/notificación/sesión nunca tocan setOpen'
     { label: 'useFocusEffect', start: 'useFocusEffect(useCallback(() => { if (userId != null) refreshActiveRef.current(); }, [userId]));', end: 'useFocusEffect(useCallback(() => { if (userId != null) refreshActiveRef.current(); }, [userId]));' },
     { label: 'subscribe() -- notificación in-app', start: 'useEffect(() => subscribe((event) => {', end: '}), [closureScope, refreshActive, request, signatureFlowState?.rootWorkOrderId, subscribe, user?.full_name, workOrder]);' },
     { label: 'deep link workOrderId (openedDeepLinkId)', start: 'const openedDeepLinkId = useRef<number | null>(null);', end: '}, [params.workOrderId, user]);' },
-    { label: 'delivery status effect', start: "if (!workOrder || !['completed', 'partially_closed'].includes(workOrder.status)) {", end: '}, [workOrder?.id, workOrder?.status]);' },
+    { label: 'delivery status effect', start: "const deliverable = !!workOrder && (", end: '}, [workOrder?.id, workOrder?.status, reportProjectionKey]);' },
   ];
 
   for (const block of blocks) {

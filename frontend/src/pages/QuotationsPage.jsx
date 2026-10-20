@@ -1255,6 +1255,11 @@ function QuotationsPage({ user = null }) {
       setError('Selecciona el tipo de servicio.');
       return;
     }
+    if (productForm.operationalCategory === 'maintenance' &&
+        !['laboratory', 'field'].includes(productForm.maintenanceLocation)) {
+      setError('Selecciona el lugar del mantenimiento.');
+      return;
+    }
     const linkedServiceError = validateLinkedServiceFields(productForm);
     if (linkedServiceError) {
       setError(linkedServiceError);

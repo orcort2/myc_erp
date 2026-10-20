@@ -4,7 +4,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { useFocusEffect } from '@react-navigation/native';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   ActivityIndicator,
@@ -54,14 +54,32 @@ import {
 import { colors } from '@/src/design/tokens';
 import { MycDatePickerField } from '@/src/design/MycDatePickerField';
 import {
-  buildConfiguredEquipmentPayload,
+  buildEquipmentCreateBody,
   buildEquipmentEditRequestBody,
   describeEquipmentSummary,
   diffEquipmentEdit,
   hasEquipmentEditChanges,
   hydrateEquipmentFormValues,
-  type EquipmentFormValues,
+  type AnyEquipmentFormValues,
 } from '@/src/services/lab-equipment-configured-payload';
+import {
+  canChooseOperationalCategory,
+  categoryAllowsErpLink,
+  categoryAllowsWorkflowChoice,
+  DEFAULT_OPERATIONAL_CATEGORY,
+  equipmentFormProfile,
+  isGeneralService,
+  OPERATIONAL_CATEGORY_OPTIONS,
+  withOperationalCategory,
+} from '@/src/services/lab-operational-category';
+import {
+  buildCreateTechnicalReportRequest,
+  TECHNICAL_REPORT_TYPE_OPTIONS,
+} from '@/src/services/technical-report';
+import { LabInstallationReport } from '@/src/components/lab/LabInstallationReport';
+import { createTechnicalReportApi } from '@/src/services/technical-report-api';
+import { describeGeneralServiceClosure, technicalReportPdfPath } from '@/src/services/technical-report';
+import { LabTechnicalReportCard } from '@/src/components/lab/LabTechnicalReportCard';
 import { shouldResetFormAfterSubmit } from '@/src/services/lab-client-selector';
 import { generalWithLabClient } from '@/src/services/lab-work-order-client';
 import { describePendingSignatureReviewFields } from '@/src/services/lab-pending-signature-review';
@@ -143,7 +161,9 @@ import type {
   LabEquipment,
   LabClient,
   LabListItem,
+  LabOperationalCategory,
   LabWorkOrder,
+  TechnicalReportType,
   LabWorkOrderGroupRequest,
   LabWorkOrderWorkflowMode,
 } from '@/src/types/lab-work-order';
@@ -308,6 +328,12 @@ export default function WorkOrdersScreen() {
   const [general, setGeneral] = useState<GeneralData>(emptyGeneral);
   // Vínculo ERP opcional (ETS de calibración); sólo se envía al crear.
   const [erpLink, setErpLink] = useState<ErpCalibrationCandidate | null>(null);
+  // Categoría técnica de la OT que se está CREANDO (SG-3A). Una OT existente
+  // la trae del backend (workOrder.operational_category).
+  const [operationalCategory, setOperationalCategory] = useState<LabOperationalCategory>(DEFAULT_OPERATIONAL_CATEGORY);
+  // Servicio General: selector de tipo de reporte / vista base del reporte.
+  const [finalizingEquipmentId, setFinalizingEquipmentId] = useState<number | null>(null);
+  const [reportFlow, setReportFlow] = useState<{ mode: 'select' | 'view'; equipmentId: number } | null>(null);
   const [workOrder, setWorkOrder] = useState<LabWorkOrder | null>(null);
   const [receptionOrders, setReceptionOrders] = useState<LabWorkOrder[]>([]);
   const [equipmentEditor, setEquipmentEditor] = useState<LabEquipment | 'new' | null>(null);
@@ -362,7 +388,8 @@ export default function WorkOrdersScreen() {
 
   const requestResponse = useCallback(async (path: string, init?: RequestInit): Promise<Response> => {
     const headers = new Headers(init?.headers);
-    if (init?.body) headers.set('Content-Type', 'application/json');
+    // FormData (evidencia): fetch fija multipart/form-data con su boundary.
+    if (init?.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json');
     const response = await authorizedFetch(apiUrl(path), { ...init, headers });
     if (!response.ok) {
       const detail = await readApiErrorDetail(response);
@@ -395,6 +422,18 @@ export default function WorkOrdersScreen() {
   }, [deliveryStatus?.pending_partial_delivery_ticket_id, request]);
 
   const receptionOrderIds = workOrder?.related_work_orders.map((item) => item.id).join(',') ?? '';
+  // Cambia cuando un reporte de Servicio General se finaliza: re-consulta la elegibilidad de entrega.
+  const reportProjectionKey = workOrder?.equipment.map((item) => `${item.id}:${item.technical_report_status ?? ''}`).join(',') ?? '';
+  // Servicio General: equipos cuya entrega ya quedó registrada (exhibiciones vigentes).
+  const deliveredEquipmentIds = new Set(
+    (deliveryStatus?.exhibitions ?? [])
+      .filter((exhibition) => exhibition.status === 'completed')
+      .flatMap((exhibition) => exhibition.items.map((item) => item.equipment_id)),
+  );
+  // Servicio General: el cierre lo habilita el backend (OT en ready_to_close); aquí sólo se elige el mensaje.
+  const generalServiceClosure = workOrder && isGeneralService(workOrder)
+    ? describeGeneralServiceClosure({ orderStatus: workOrder.status, equipment: workOrder.equipment, deliveredEquipmentIds })
+    : null;
 
   useEffect(() => {
     if (!workOrder || step !== 'signatures' || workOrder.status !== 'draft') {
@@ -415,7 +454,13 @@ export default function WorkOrdersScreen() {
   }, [receptionOrderIds, request, step, workOrder]);
 
   useEffect(() => {
-    if (!workOrder || !['completed', 'partially_closed'].includes(workOrder.status)) {
+    // Calibración entrega con la OT cerrada; Servicio General entrega antes de
+    // cerrar (con la recepción firmada), así que consulta desde ahí.
+    const deliverable = !!workOrder && (
+      ['completed', 'partially_closed'].includes(workOrder.status)
+      || (isGeneralService(workOrder) && ['received_signed', 'in_progress', 'ready_to_close'].includes(workOrder.status))
+    );
+    if (!workOrder || !deliverable) {
       setDeliveryStatus(null);
       return;
     }
@@ -424,7 +469,7 @@ export default function WorkOrdersScreen() {
     // mutaciones de entrega (registrar/anular/ejecutar parcial) refrescan
     // explícitamente en su propio handler.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workOrder?.id, workOrder?.status]);
+  }, [workOrder?.id, workOrder?.status, reportProjectionKey]);
 
   const commitListLoad = useCallback((next: ListLoadState) => {
     listLoadRef.current = next;
@@ -583,6 +628,8 @@ export default function WorkOrdersScreen() {
     canManageEquipment,
     canCaptureSignatures,
     canCaptureFieldSheets,
+    canReadTechnicalReports,
+    canCaptureTechnicalReports,
     canDownloadLabPackages,
     canResolveLabFolios,
     canReopenFieldSheetDirectly,
@@ -629,6 +676,8 @@ export default function WorkOrdersScreen() {
     setEquipmentByEquipmentBlockers(null);
     setGeneral(emptyGeneral());
     setErpLink(null);
+    setOperationalCategory(DEFAULT_OPERATIONAL_CATEGORY);
+    setReportFlow(null);
     setWorkOrder(null);
     setStep('general');
     setSignatureFlowState(null);
@@ -1000,7 +1049,7 @@ export default function WorkOrdersScreen() {
         : '/mobile/v1/technician/lab-work-orders';
       const detail = await request<LabWorkOrder>(path, {
         method: workOrder ? 'PATCH' : 'POST',
-        body: JSON.stringify(withErpLink({
+        body: JSON.stringify(withOperationalCategory(withErpLink({
           ...general,
           contact_name: general.contact_name || null,
           contact_phone: general.contact_phone || null,
@@ -1013,7 +1062,7 @@ export default function WorkOrdersScreen() {
           ...(workOrder
             ? { expected_edit_version: workOrder.edit_version }
             : buildLabWorkflowCreationPayload(groupMode, workflowMode, groupQuantity, manualGroupWorkflow, memberWorkflowModes)),
-        }, erpLink, groupMode, !!workOrder)),
+        }, erpLink, groupMode, !!workOrder), operationalCategory, groupMode, !!workOrder)),
       });
       if (groupMode === 'request') {
         Alert.alert('Solicitud enviada', 'Los folios se asignarán únicamente cuando un administrador la apruebe.');
@@ -1076,6 +1125,130 @@ export default function WorkOrdersScreen() {
       Alert.alert('No fue posible registrar la entrega parcial', error instanceof Error ? error.message : 'Intenta nuevamente');
       throw error;
     } finally { setBusy(false); }
+  }
+
+  // Panel de entrega compartido: calibración lo muestra con la OT cerrada
+  // (step 'completed'); Servicio General lo muestra desde la captura técnica,
+  // porque entrega ANTES de cerrar. Mismo LabDeliveryFlow en ambos casos.
+  function renderDelivery() {
+    if (!workOrder || !user) return null;
+    const generalService = isGeneralService(workOrder);
+    const pendingAll = deliveryStatus?.pending_equipment ?? [];
+    const deliverablePending = pendingAll.filter((item) => item.delivery_eligible !== false);
+    const blockedPending = pendingAll.filter((item) => item.delivery_eligible === false);
+    // Entrega completa = todo lo pendiente; sólo es posible si todo está finalizado.
+    const canProceed = deliverablePending.length > 0 && blockedPending.length === 0;
+    return (
+      <>
+        {deliveryPanel === 'full' && deliveryStatus && (
+          <LabDeliveryFlow
+            clientName={workOrder.client_name}
+            defaultRecipientName={workOrder.contact_name ?? ''}
+            deliveredByName={user.full_name}
+            equipment={deliverablePending}
+            isPartial={false}
+            nextExhibitionNumber={Math.max(0, ...deliveryStatus.exhibitions.map((item) => item.exhibition_number)) + 1}
+            onCancel={closeDeliveryPanel}
+            onComplete={closeDeliveryPanel}
+            onDrawingChange={setSignatureDrawing}
+            onSubmit={completeDelivery}
+          />
+        )}
+        {deliveryPanel === 'partial_execute' && deliveryStatus && partialTicket && (
+          <LabDeliveryFlow
+            clientName={workOrder.client_name}
+            defaultRecipientName={workOrder.contact_name ?? ''}
+            deliveredByName={user.full_name}
+            equipment={deliveryStatus.pending_equipment.filter((item) => (
+              (partialTicket.resolution_snapshot?.requested_equipment_ids as number[] | undefined)?.includes(item.equipment_id)
+            ))}
+            isPartial
+            nextExhibitionNumber={Math.max(0, ...deliveryStatus.exhibitions.map((item) => item.exhibition_number)) + 1}
+            onCancel={closeDeliveryPanel}
+            onComplete={closeDeliveryPanel}
+            onDrawingChange={setSignatureDrawing}
+            onSubmit={(payload) => executePartialDelivery(partialTicket.id, payload)}
+          />
+        )}
+        {deliveryPanel === 'partial_request' && deliveryStatus && (
+          <LabPartialDeliveryRequest
+            busy={busy}
+            onCancel={() => setDeliveryPanel('closed')}
+            onSubmit={requestPartialDeliveryTicket}
+            pendingEquipment={deliverablePending}
+          />
+        )}
+        {deliveryPanel === 'closed' && deliveryStatus && (
+          <View>
+            <Text style={styles.sectionEyebrow}>ENTREGA DE EQUIPOS</Text>
+              {generalService && blockedPending.some((item) => item.delivery_blocked_reason?.includes('revisión')) && (
+                <AlertBanner tone="danger">{blockedPending.find((item) => item.delivery_blocked_reason?.includes('revisión'))?.delivery_blocked_reason}</AlertBanner>
+              )}
+              {generalService && blockedPending.some((item) => !item.delivery_blocked_reason?.includes('revisión')) && (
+                <AlertBanner tone="info">
+                  {`La entrega completa requiere el reporte finalizado de cada equipo. Pendientes de finalizar: ${blockedPending.map((item) => item.instrument).join(', ')}.`}
+                </AlertBanner>
+              )}
+            {deliveryStatus.group_complete ? (
+              <>
+                <Text style={styles.notice}>Entrega completada · {deliveryStatus.exhibitions.filter((item) => item.status === 'completed').length} exhibición(es)</Text>
+                <OperationalActionStack>
+                  <SecondaryButton icon="printer" label="Ver / imprimir acuse final" onPress={() => downloadFinalReceiptPdf('print')} />
+                  <SecondaryButton icon="share-variant" label="Compartir / descargar acuse final" onPress={() => downloadFinalReceiptPdf('share')} />
+                </OperationalActionStack>
+              </>
+            ) : deliveryStatus.exhibitions.length === 0 ? (
+              <>
+                <Text style={styles.notice}>Pendiente de entrega</Text>
+                {partialTicket?.status === 'pending' && <AlertBanner tone="info">Entrega parcial pendiente de autorización.</AlertBanner>}
+                <OperationalActionStack>
+                  {partialTicket?.status === 'approved' ? (
+                    <PrimaryButton icon="package-check" label="Ejecutar entrega parcial autorizada" onPress={() => setDeliveryPanel('partial_execute')} />
+                  ) : (
+                    canRegisterLabDelivery && <PrimaryButton disabled={generalService && !canProceed} icon="package-check" label={generalService ? 'Proceder a entrega' : 'Registrar entrega'} onPress={() => setDeliveryPanel('full')} />
+                  )}
+                  {!partialTicket && canRequestPartialDelivery && <AdministrativeButton icon="send" label="Solicitar entrega parcial" onPress={() => setDeliveryPanel('partial_request')} />}
+                </OperationalActionStack>
+              </>
+            ) : (
+              <>
+                <Text style={styles.notice}>{deliveryStatus.delivered_equipment} de {deliveryStatus.total_equipment} equipos entregados · {deliveryStatus.exhibitions.filter((item) => item.status === 'completed').length} exhibición(es)</Text>
+                {partialTicket?.status === 'pending' && <AlertBanner tone="info">Entrega parcial pendiente de autorización.</AlertBanner>}
+                <OperationalActionStack>
+                  {partialTicket?.status === 'approved' ? (
+                    <PrimaryButton icon="package-check" label="Ejecutar entrega parcial autorizada" onPress={() => setDeliveryPanel('partial_execute')} />
+                  ) : (
+                    canRegisterLabDelivery && <PrimaryButton disabled={generalService && !canProceed} icon="package-check" label={generalService ? 'Proceder a entrega' : 'Completar entrega'} onPress={() => setDeliveryPanel('full')} />
+                  )}
+                  {!partialTicket && canRequestPartialDelivery && <AdministrativeButton icon="send" label="Solicitar otra entrega parcial" onPress={() => setDeliveryPanel('partial_request')} />}
+                </OperationalActionStack>
+              </>
+            )}
+            {!!deliveryStatus.exhibitions.length && (
+              <OperationalActionStack>
+                <SecondaryButton icon="history" label={deliveryHistoryOpen ? 'Ocultar historial de entregas' : 'Ver historial de entregas'} onPress={() => setDeliveryHistoryOpen((current) => !current)} />
+              </OperationalActionStack>
+            )}
+            {deliveryHistoryOpen && deliveryStatus.exhibitions.map((exhibition) => (
+              <View key={exhibition.id} style={styles.deliveryHistoryRow}>
+                <Text style={styles.deliveryHistoryTitle}>
+                  Exhibición {exhibition.exhibition_number}{exhibition.delivery_type === 'partial' ? ' (parcial)' : ''} · {exhibition.status === 'voided' ? 'Anulada' : 'Completada'}
+                </Text>
+                <Text style={styles.detail}>{new Date(exhibition.delivered_at).toLocaleString('es-MX')} · Recibió: {exhibition.recipient_name}</Text>
+                <OperationalActionStack>
+                  <SecondaryButton icon="printer" label="Ver / imprimir acuse" onPress={() => downloadDeliveryPdf(exhibition.id, 'print')} />
+                  <SecondaryButton icon="share-variant" label="Compartir / descargar acuse" onPress={() => downloadDeliveryPdf(exhibition.id, 'share')} />
+                  {activeDeliveryCount > 1 && exhibition.status === 'completed' && canVoidLabDelivery
+                    && exhibition.items.some((item) => item.work_order_id === workOrder.id) && (
+                    <AdministrativeButton icon="undo" label="Anular esta exhibición" onPress={() => { setVoidingDelivery(exhibition); setTicketDialogMode('void_delivery'); setTicketOpen(true); }} />
+                  )}
+                </OperationalActionStack>
+              </View>
+            ))}
+          </View>
+        )}
+      </>
+    );
   }
 
   function closeDeliveryPanel() {
@@ -1209,9 +1382,9 @@ export default function WorkOrdersScreen() {
   // cambió, se manda la configuración completa (equipo + cliente documental +
   // servicio) y el backend aplica o revierte todo junto; ya no hay estado
   // parcial posible.
-  async function saveEquipmentEdit(values: EquipmentFormValues) {
+  async function saveEquipmentEdit(values: AnyEquipmentFormValues) {
     if (!workOrder || !equipmentEditor || equipmentEditor === 'new') return;
-    const initial = hydrateEquipmentFormValues(equipmentEditor);
+    const initial = hydrateEquipmentFormValues(equipmentEditor, workOrder.operational_category);
     const changes = diffEquipmentEdit(initial, values);
     if (!hasEquipmentEditChanges(changes)) {
       setEquipmentEditor(null);
@@ -1246,11 +1419,11 @@ export default function WorkOrdersScreen() {
   // Fase 2E/2F: alta integrada -- equipo + cliente documental + servicio/folio
   // como una sola operación atómica (POST .../equipment/configured). Reutiliza
   // el mismo endpoint que backend expone para no duplicar la orquestación acá.
-  async function saveConfiguredEquipment(values: EquipmentFormValues) {
+  async function saveConfiguredEquipment(values: AnyEquipmentFormValues) {
     if (!workOrder) return;
     setBusy(true);
     try {
-      const payload = buildConfiguredEquipmentPayload(values.equipment, values.documentaryClient, values.service, workOrder.edit_version);
+      const payload = buildEquipmentCreateBody(values, workOrder.edit_version);
       const detail = await request<LabWorkOrder>(
         `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/configured`,
         { method: 'POST', body: JSON.stringify(payload) },
@@ -1267,6 +1440,81 @@ export default function WorkOrdersScreen() {
     } finally {
       setBusy(false);
     }
+  }
+
+  // SG-3D/3E: crea el TechnicalReport vigente del equipo (sólo Installation
+  // está habilitado; los demás tipos nunca llegan a la red -- ver
+  // buildCreateTechnicalReportRequest) y refresca la OT para que la tarjeta
+  // muestre folio y estado sin cerrar/reabrir.
+  async function createTechnicalReport(equipment: LabEquipment, type: TechnicalReportType) {
+    if (!workOrder || !canCaptureTechnicalReports) return;
+    const call = buildCreateTechnicalReportRequest(workOrder.id, equipment.id, type);
+    if (!call) return;
+    setBusy(true);
+    try {
+      await request(call.path, call.init);
+      const detail = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}`);
+      detailRefreshSequence.current += 1;
+      setWorkOrder(detail);
+      setReportFlow(null);
+      publishLocalChange({ event_type: 'work_order.updated', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
+    } catch (error) {
+      Alert.alert('No fue posible crear el reporte', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Cambio relevante en un reporte (primera captura, foto subida/eliminada):
+  // refresca la OT una vez y publica. Nunca se invoca por tecla/autosave.
+  async function refreshAfterReportChange() {
+    if (!workOrder) return;
+    const orderId = workOrder.id;
+    try {
+      const detail = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${orderId}`);
+      if (openWorkOrderIdRef.current !== orderId) return;
+      detailRefreshSequence.current += 1;
+      setWorkOrder(detail);
+      publishLocalChange({ event_type: 'work_order.updated', entity_type: 'work_order', entity_id: orderId, work_order_id: orderId });
+    } catch {
+      // Best-effort: el siguiente foreground/realtime reconcilia la tarjeta.
+    }
+  }
+
+  // SG-4G: genera el PDF institucional (backend decide completed). Acción explícita:
+  // los errores se muestran aquí, no se esconden dentro del registro de entrega.
+  async function finalizeTechnicalReport(equipmentId: number) {
+    if (!workOrder || finalizingEquipmentId !== null) return;
+    setFinalizingEquipmentId(equipmentId);
+    try {
+      await createTechnicalReportApi({
+        accessToken: session?.access_token ?? '', apiUrl, equipmentId, request, workOrderId: workOrder.id,
+      }).finalize();
+      await refreshAfterReportChange();
+    } catch (error) {
+      Alert.alert('No fue posible generar el reporte final', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally { setFinalizingEquipmentId(null); }
+  }
+
+  async function openTechnicalReportPdf(equipmentId: number, action: 'print' | 'share') {
+    if (!workOrder) return;
+    setBusy(true);
+    try {
+      const result = await FileSystem.downloadAsync(
+        apiUrl(technicalReportPdfPath(workOrder.id, equipmentId)),
+        `${FileSystem.cacheDirectory}reporte-instalacion-OT-${workOrder.folio}-equipo-${equipmentId}.pdf`,
+        { headers: { Authorization: `Bearer ${session?.access_token ?? ''}` } },
+      );
+      if (action === 'print') await Print.printAsync({ uri: result.uri });
+      else if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(result.uri, { UTI: 'com.adobe.pdf', mimeType: 'application/pdf' });
+    } catch (error) {
+      Alert.alert('No fue posible abrir el reporte', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally { setBusy(false); }
+  }
+
+  function closeReportFlow() {
+    setReportFlow(null);
+    void refreshAfterReportChange();
   }
 
   function openVoidEquipmentDialog(equipment: LabEquipment) {
@@ -1421,7 +1669,7 @@ export default function WorkOrdersScreen() {
   // (LAB_DRAFT_SHEETS_INVALID), no se completa ni se cierra nada -- se
   // muestran los blockers exactos y la OT sigue abierta.
   async function completeClosure(scope: LabClosureScope = closureScope, confirmDraftCompletion = false) {
-    if (!workOrder) return;
+    if (!workOrder || (generalServiceClosure && !generalServiceClosure.canClose)) return;
     setBusy(true);
     try {
       const detail = await postLabCompletion({ confirmDraftCompletion, request, scope, workOrder });
@@ -1450,6 +1698,11 @@ export default function WorkOrdersScreen() {
           return `• ${equipmentLabel}: falta ${missing}`;
         }).join('\n');
         Alert.alert('No se puede cerrar todavía', `Completa estas hojas antes de cerrar:\n${bullets}`);
+        return;
+      }
+      if (error instanceof ApiError && error.code?.startsWith('TECHNICAL_REPORT_')) {
+        // Servicio General: el backend ya devuelve un mensaje legible (sin hojas de campo).
+        Alert.alert('No se puede cerrar todavía', error.message);
         return;
       }
       Alert.alert('No fue posible finalizar el grupo', error instanceof Error ? error.message : 'Intenta nuevamente');
@@ -1633,6 +1886,7 @@ export default function WorkOrdersScreen() {
     }
     setOpen(false);
     setEquipmentEditor(null);
+    setReportFlow(null);
     refresh();
   }
 
@@ -1802,7 +2056,33 @@ export default function WorkOrdersScreen() {
                       <Field label="Cantidad de OT (1–50)" required keyboardType="phone-pad" value={groupQuantity} onChangeText={changeGroupQuantity} />
                     </FormSection>
                   )}
-                  {!workOrder && groupMode !== 'request' && (
+                  {canChooseOperationalCategory(groupMode, !!workOrder, user.actor_type === 'internal', canCaptureTechnicalReports) && (
+                    <FormSection title="Categoría de servicio">
+                      {OPERATIONAL_CATEGORY_OPTIONS.map((option) => (
+                        <Pressable
+                          key={option.value}
+                          accessibilityLabel={`Categoría de servicio: ${option.title}`}
+                          accessibilityRole="radio"
+                          accessibilityState={{ checked: operationalCategory === option.value }}
+                          onPress={() => {
+                            setOperationalCategory(option.value);
+                            // El puente ERP es de calibración: nunca queda seleccionado en Servicio General.
+                            if (!categoryAllowsErpLink(option.value)) setErpLink(null);
+                            // Servicio General sólo admite el flujo por grupo (sin hoja por equipo).
+                            if (!categoryAllowsWorkflowChoice(option.value)) {
+                              setWorkflowMode('group');
+                              selectGroupWorkflowApplication(false);
+                            }
+                          }}
+                          style={[styles.workflowModeCard, operationalCategory === option.value && styles.workflowModeCardSelected]}
+                        >
+                          <Text style={styles.workflowModeTitle}>{option.title}</Text>
+                          <Text style={styles.workflowModeDescription}>{option.description}</Text>
+                        </Pressable>
+                      ))}
+                    </FormSection>
+                  )}
+                  {!workOrder && groupMode !== 'request' && categoryAllowsWorkflowChoice(operationalCategory) && (
                     <FormSection title="Modalidad de trabajo">
                       {WORKFLOW_MODE_OPTIONS.map((option) => (
                         <Pressable
@@ -1816,7 +2096,7 @@ export default function WorkOrdersScreen() {
                       ))}
                     </FormSection>
                   )}
-                  {!workOrder && groupMode === 'direct' && (
+                  {!workOrder && groupMode === 'direct' && categoryAllowsWorkflowChoice(operationalCategory) && (
                     <FormSection title="Aplicación de modalidad">
                       {[{ manual: false, title: 'Aplicar a todas' }, { manual: true, title: 'Configurar manualmente' }].map((option) => (
                         <Pressable
@@ -1869,7 +2149,7 @@ export default function WorkOrdersScreen() {
                     <Field label="Orden de compra / cotización" value={general.purchase_order} onChangeText={(value) => setGeneral({ ...general, purchase_order: value })} />
                     <Field label="Observaciones" multiline value={general.notes} onChangeText={(value) => setGeneral({ ...general, notes: value })} />
                   </FormSection>
-                  {user.actor_type === 'internal' && canAttachErpLink(groupMode, !!workOrder) && (
+                  {user.actor_type === 'internal' && canAttachErpLink(groupMode, !!workOrder) && categoryAllowsErpLink(operationalCategory) && (
                     <FormSection title="Vincular con cotización ERP (opcional)">
                       <Text style={styles.fieldHint}>
                         Asocia esta OT a un ETS de calibración con cotización aceptada. Es independiente de
@@ -1966,6 +2246,26 @@ export default function WorkOrdersScreen() {
                   )}
                   <View style={styles.sectionRow}><Text style={styles.sectionTitle}>Equipos</Text><Text style={styles.counter}>{workOrder.equipment.length}/10</Text></View>
                   {workOrder.equipment.map((item) => {
+                    // Servicio General: el equipo no lleva modalidad ni folio de certificado, y su
+                    // reporte técnico pertenece a la captura técnica (después de firmar la recepción).
+                    if (isGeneralService(workOrder)) {
+                      const generalSummary = describeEquipmentSummary(item, workOrder.client_name, workOrder.operational_category);
+                      return (
+                        <View key={item.id} style={styles.equipmentRow}>
+                          <View style={styles.flex}>
+                            <Text style={styles.equipmentTitle}>{item.position}. {item.instrument}</Text>
+                            <Text style={styles.equipmentMeta}>{item.brand} · {item.identification} · {item.serial_number}</Text>
+                            <Text style={styles.equipmentMeta}>{generalSummary.client} · Servicio general</Text>
+                            {editable && canManageEquipment && (
+                              <Pressable onPress={() => showEquipmentEditor(item)} hitSlop={8} style={styles.equipmentEditAction}>
+                                <Text style={styles.equipmentEditActionLabel}>Editar datos</Text>
+                              </Pressable>
+                            )}
+                          </View>
+                          <Text style={item.is_good_condition ? styles.good : styles.bad}>{item.is_good_condition ? '✓' : 'X'}</Text>
+                        </View>
+                      );
+                    }
                     const summary = describeEquipmentSummary(item, workOrder.client_name);
                     const equipmentByEquipmentAction = workOrder.workflow_mode === 'equipment_by_equipment'
                       ? describeEquipmentByEquipmentAction(item)
@@ -2046,9 +2346,24 @@ export default function WorkOrdersScreen() {
                 <FadeIn transitionKey={step}>
                   <View style={styles.sectionIntro}>
                     <Text style={styles.sectionEyebrow}>CAPTURA TÉCNICA</Text>
-                    <Text style={styles.sectionTitle}>Servicio, folio y hoja por equipo</Text>
+                    <Text style={styles.sectionTitle}>{equipmentFormProfile(workOrder.operational_category).technicalSectionTitle}</Text>
                   </View>
-                  <LabTechnicalCapture
+                  {isGeneralService(workOrder) ? (deliveryPanel !== 'closed' ? null : workOrder.equipment.map((item) => (
+                    <LabTechnicalReportCard
+                      key={item.id}
+                      canCaptureReports={canCaptureTechnicalReports}
+                      canFinalize={canCaptureTechnicalReports && item.technical_report_status === 'ready_for_signatures' && deliveredEquipmentIds.has(item.id)}
+                      canReadReports={canReadTechnicalReports}
+                      clientName={workOrder.client_name}
+                      equipment={item}
+                      finalizing={finalizingEquipmentId === item.id}
+                      onDownloadPdf={(equipment) => { void openTechnicalReportPdf(equipment.id, 'share'); }}
+                      onFinalize={(equipment) => { void finalizeTechnicalReport(equipment.id); }}
+                      onViewPdf={(equipment) => { void openTechnicalReportPdf(equipment.id, 'print'); }}
+                      onOpenReport={(equipment) => setReportFlow({ mode: 'view', equipmentId: equipment.id })}
+                      onSelectReport={(equipment) => setReportFlow({ mode: 'select', equipmentId: equipment.id })}
+                    />
+                  ))) : <LabTechnicalCapture
                     // Una OT distinta nunca hereda equipo/hoja activos de la
                     // anterior: el contexto de captura pertenece a UNA OT.
                     key={workOrder.id}
@@ -2061,7 +2376,11 @@ export default function WorkOrdersScreen() {
                     onUpdated={commitCaptureWorkOrder}
                     request={request}
                     workOrder={workOrder}
-                  />
+                  />}
+                  {isGeneralService(workOrder) && renderDelivery()}
+                  {generalServiceClosure?.message && deliveryPanel === 'closed' && (
+                    <AlertBanner tone="info">{generalServiceClosure.message}</AlertBanner>
+                  )}
                   <OperationalActionStack>
                     {editable && <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => setStep('capture')} />}
                     {/* equipment_by_equipment nunca pasa por 'review'/Technical
@@ -2071,7 +2390,7 @@ export default function WorkOrdersScreen() {
                         atómica (sección 31 del encargo: nunca vuelve a
                         aparecer una etapa manual de Captura Técnica ni cierre
                         aparte para esta modalidad). */}
-                    {workOrder.workflow_mode !== 'equipment_by_equipment' && canExecuteWorkOrders && (
+                    {workOrder.workflow_mode !== 'equipment_by_equipment' && canExecuteWorkOrders && (!generalServiceClosure || generalServiceClosure.canClose) && (
                       <PrimaryButton icon="arrow-right-circle" label="Continuar a cierre" onPress={() => setStep('review')} />
                     )}
                     {canDownloadLabPackages && <SecondaryButton icon="download" label="Descargar paquete disponible" onPress={() => downloadPackage('share')} />}
@@ -2118,14 +2437,14 @@ export default function WorkOrdersScreen() {
                       <View key={receptionOrder.id} style={styles.summary}>
                         <Text style={styles.summaryLine}>OT {receptionOrder.folio}</Text>
                         {receptionOrder.equipment.map((item) => {
-                          const summary = describeEquipmentSummary(item, receptionOrder.client_name);
+                          const summary = describeEquipmentSummary(item, receptionOrder.client_name, receptionOrder.operational_category);
                           return (
                             <View key={item.id} style={styles.equipmentRow}>
                               <View style={styles.flex}>
                                 <Text style={styles.equipmentTitle}>{item.position}. {item.instrument}</Text>
                                 <Text style={styles.equipmentMeta}>{item.brand} · {item.identification} · {item.serial_number}</Text>
                                 <Text style={styles.equipmentMeta}>{summary.client} · {summary.service}{summary.linkedCompany ? ` (${summary.linkedCompany})` : ''}</Text>
-                                <Text style={styles.equipmentMeta}>Folio: {summary.folio}</Text>
+                                {summary.folio != null && <Text style={styles.equipmentMeta}>Folio: {summary.folio}</Text>}
                               </View>
                             </View>
                           );
@@ -2264,111 +2583,24 @@ export default function WorkOrdersScreen() {
                 <>
                   <Text style={styles.sectionTitle}>OT {workOrder.folio} · {statusPresentation(workOrder.status).label}</Text>
                   <Text style={styles.notice}>Selecciona arriba cada folio para abrir, imprimir o compartir su PDF individual.</Text>
-                  {deliveryPanel === 'full' && deliveryStatus && (
-                    <LabDeliveryFlow
-                      clientName={workOrder.client_name}
-                      defaultRecipientName={workOrder.contact_name ?? ''}
-                      deliveredByName={user.full_name}
-                      equipment={deliveryStatus.pending_equipment}
-                      isPartial={false}
-                      nextExhibitionNumber={Math.max(0, ...deliveryStatus.exhibitions.map((item) => item.exhibition_number)) + 1}
-                      onCancel={closeDeliveryPanel}
-                      onComplete={closeDeliveryPanel}
-                      onDrawingChange={setSignatureDrawing}
-                      onSubmit={completeDelivery}
-                    />
-                  )}
-                  {deliveryPanel === 'partial_execute' && deliveryStatus && partialTicket && (
-                    <LabDeliveryFlow
-                      clientName={workOrder.client_name}
-                      defaultRecipientName={workOrder.contact_name ?? ''}
-                      deliveredByName={user.full_name}
-                      equipment={deliveryStatus.pending_equipment.filter((item) => (
-                        (partialTicket.resolution_snapshot?.requested_equipment_ids as number[] | undefined)?.includes(item.equipment_id)
-                      ))}
-                      isPartial
-                      nextExhibitionNumber={Math.max(0, ...deliveryStatus.exhibitions.map((item) => item.exhibition_number)) + 1}
-                      onCancel={closeDeliveryPanel}
-                      onComplete={closeDeliveryPanel}
-                      onDrawingChange={setSignatureDrawing}
-                      onSubmit={(payload) => executePartialDelivery(partialTicket.id, payload)}
-                    />
-                  )}
-                  {deliveryPanel === 'partial_request' && deliveryStatus && (
-                    <LabPartialDeliveryRequest
-                      busy={busy}
-                      onCancel={() => setDeliveryPanel('closed')}
-                      onSubmit={requestPartialDeliveryTicket}
-                      pendingEquipment={deliveryStatus.pending_equipment}
-                    />
-                  )}
-                  {deliveryPanel === 'closed' && deliveryStatus && (
-                    <View>
-                      <Text style={styles.sectionEyebrow}>ENTREGA DE EQUIPOS</Text>
-                      {deliveryStatus.group_complete ? (
-                        <>
-                          <Text style={styles.notice}>Entrega completada · {deliveryStatus.exhibitions.filter((item) => item.status === 'completed').length} exhibición(es)</Text>
-                          <OperationalActionStack>
-                            <SecondaryButton icon="printer" label="Ver / imprimir acuse final" onPress={() => downloadFinalReceiptPdf('print')} />
-                            <SecondaryButton icon="share-variant" label="Compartir / descargar acuse final" onPress={() => downloadFinalReceiptPdf('share')} />
-                          </OperationalActionStack>
-                        </>
-                      ) : deliveryStatus.exhibitions.length === 0 ? (
-                        <>
-                          <Text style={styles.notice}>Pendiente de entrega</Text>
-                          {partialTicket?.status === 'pending' && <AlertBanner tone="info">Entrega parcial pendiente de autorización.</AlertBanner>}
-                          <OperationalActionStack>
-                            {partialTicket?.status === 'approved' ? (
-                              <PrimaryButton icon="package-check" label="Ejecutar entrega parcial autorizada" onPress={() => setDeliveryPanel('partial_execute')} />
-                            ) : (
-                              canRegisterLabDelivery && <PrimaryButton icon="package-check" label="Registrar entrega" onPress={() => setDeliveryPanel('full')} />
-                            )}
-                            {!partialTicket && canRequestPartialDelivery && <AdministrativeButton icon="send" label="Solicitar entrega parcial" onPress={() => setDeliveryPanel('partial_request')} />}
-                          </OperationalActionStack>
-                        </>
-                      ) : (
-                        <>
-                          <Text style={styles.notice}>{deliveryStatus.delivered_equipment} de {deliveryStatus.total_equipment} equipos entregados · {deliveryStatus.exhibitions.filter((item) => item.status === 'completed').length} exhibición(es)</Text>
-                          {partialTicket?.status === 'pending' && <AlertBanner tone="info">Entrega parcial pendiente de autorización.</AlertBanner>}
-                          <OperationalActionStack>
-                            {partialTicket?.status === 'approved' ? (
-                              <PrimaryButton icon="package-check" label="Ejecutar entrega parcial autorizada" onPress={() => setDeliveryPanel('partial_execute')} />
-                            ) : (
-                              canRegisterLabDelivery && <PrimaryButton icon="package-check" label="Completar entrega" onPress={() => setDeliveryPanel('full')} />
-                            )}
-                            {!partialTicket && canRequestPartialDelivery && <AdministrativeButton icon="send" label="Solicitar otra entrega parcial" onPress={() => setDeliveryPanel('partial_request')} />}
-                          </OperationalActionStack>
-                        </>
-                      )}
-                      {!!deliveryStatus.exhibitions.length && (
-                        <OperationalActionStack>
-                          <SecondaryButton icon="history" label={deliveryHistoryOpen ? 'Ocultar historial de entregas' : 'Ver historial de entregas'} onPress={() => setDeliveryHistoryOpen((current) => !current)} />
-                        </OperationalActionStack>
-                      )}
-                      {deliveryHistoryOpen && deliveryStatus.exhibitions.map((exhibition) => (
-                        <View key={exhibition.id} style={styles.deliveryHistoryRow}>
-                          <Text style={styles.deliveryHistoryTitle}>
-                            Exhibición {exhibition.exhibition_number}{exhibition.delivery_type === 'partial' ? ' (parcial)' : ''} · {exhibition.status === 'voided' ? 'Anulada' : 'Completada'}
-                          </Text>
-                          <Text style={styles.detail}>{new Date(exhibition.delivered_at).toLocaleString('es-MX')} · Recibió: {exhibition.recipient_name}</Text>
-                          <OperationalActionStack>
-                            <SecondaryButton icon="printer" label="Ver / imprimir acuse" onPress={() => downloadDeliveryPdf(exhibition.id, 'print')} />
-                            <SecondaryButton icon="share-variant" label="Compartir / descargar acuse" onPress={() => downloadDeliveryPdf(exhibition.id, 'share')} />
-                            {activeDeliveryCount > 1 && exhibition.status === 'completed' && canVoidLabDelivery
-                              && exhibition.items.some((item) => item.work_order_id === workOrder.id) && (
-                              <AdministrativeButton icon="undo" label="Anular esta exhibición" onPress={() => { setVoidingDelivery(exhibition); setTicketDialogMode('void_delivery'); setTicketOpen(true); }} />
-                            )}
-                          </OperationalActionStack>
-                        </View>
-                      ))}
-                    </View>
-                  )}
+                  {renderDelivery()}
                   {deliveryPanel === 'closed' && !deliveryStatus && !!workOrder.departure_date && (
                     <AlertBanner tone="info">Fecha de salida histórica: {workOrder.departure_date}. Sin acuse digital.</AlertBanner>
                   )}
                   <OperationalActionStack>
                     {workOrder.status !== 'cancelled' && deliveryPanel === 'closed' && <SecondaryButton icon="printer" label={`Ver / imprimir OT ${workOrder.folio}`} onPress={() => downloadPdf('print')} />}
                     {workOrder.status !== 'cancelled' && <SecondaryButton icon="share-variant" label={`Compartir OT ${workOrder.folio}`} onPress={() => downloadPdf('share')} />}
+                    {isGeneralService(workOrder) && canReadTechnicalReports && workOrder.equipment
+                      .filter((item) => item.technical_report_status === 'completed')
+                      .map((item, _index, completedItems) => {
+                        const suffix = completedItems.length > 1 ? ` ${item.position}` : '';
+                        return (
+                          <Fragment key={`report-${item.id}`}>
+                            <SecondaryButton icon="file-pdf-box" label={`Ver reporte${suffix}`} onPress={() => openTechnicalReportPdf(item.id, 'print')} />
+                            <SecondaryButton icon="download" label={`Descargar reporte${suffix}`} onPress={() => openTechnicalReportPdf(item.id, 'share')} />
+                          </Fragment>
+                        );
+                      })}
                     {canDownloadLabPackages && <SecondaryButton icon="download" label="Descargar paquete de esta OT" onPress={() => downloadPackage('share', false)} />}
                     {canDownloadLabPackages && workOrder.related_work_orders.length > 1 && <SecondaryButton icon="download" label="Descargar paquete del grupo" onPress={() => downloadPackage('share', true)} />}
                     {/* "Reabrir orden" (canReopenDirectly) vive en Acciones
@@ -2509,13 +2741,14 @@ export default function WorkOrdersScreen() {
                   <FadeIn transitionKey={equipmentEditor === 'new' ? 'new' : equipmentEditor?.id}>
                   {equipmentEditor === 'new' ? (
                     <>
-                      <Text style={styles.sectionTitle}>Añadir equipo</Text>
-                      <Text style={styles.sectionDescription}>Datos del equipo, cliente documental y servicio en una sola operación.</Text>
+                      <Text style={styles.sectionTitle}>{equipmentFormProfile(workOrder?.operational_category ?? DEFAULT_OPERATIONAL_CATEGORY).addEquipmentTitle}</Text>
+                      <Text style={styles.sectionDescription}>{equipmentFormProfile(workOrder?.operational_category ?? DEFAULT_OPERATIONAL_CATEGORY).addEquipmentDescription}</Text>
                       <LabEquipmentForm
                         busy={busy}
                         canResolveLabFolios={canResolveLabFolios}
                         fieldErrors={equipmentErrors}
                         mode="create"
+                        operationalCategory={workOrder?.operational_category}
                         onCancel={() => setEquipmentEditor(null)}
                         onFieldChange={clearEquipmentError}
                         onSubmit={saveConfiguredEquipment}
@@ -2526,14 +2759,16 @@ export default function WorkOrdersScreen() {
                   ) : equipmentEditor ? (
                     <>
                       <Text style={styles.sectionTitle}>Editar equipo</Text>
-                      <Text style={styles.sectionDescription}>Datos del equipo, cliente documental y servicio. El folio se muestra de referencia y no se edita aquí.</Text>
+                      <Text style={styles.sectionDescription}>{equipmentFormProfile(workOrder?.operational_category ?? DEFAULT_OPERATIONAL_CATEGORY).editEquipmentDescription}</Text>
                       <LabEquipmentForm
                         busy={busy}
                         canResolveLabFolios={canResolveLabFolios}
                         fieldErrors={equipmentErrors}
-                        folioDisplay={describeEquipmentSummary(equipmentEditor, workOrder?.client_name ?? '').folio}
-                        initialValues={hydrateEquipmentFormValues(equipmentEditor)}
+                        folioDisplay={describeEquipmentSummary(equipmentEditor, workOrder?.client_name ?? '', workOrder?.operational_category).folio}
+                        initialValues={hydrateEquipmentFormValues(equipmentEditor, workOrder?.operational_category ?? DEFAULT_OPERATIONAL_CATEGORY)}
                         mode="edit"
+                        operationalCategory={workOrder?.operational_category}
+                        reportFolio={equipmentEditor.technical_report_folio}
                         onCancel={() => setEquipmentEditor(null)}
                         onFieldChange={clearEquipmentError}
                         onSubmit={saveEquipmentEdit}
@@ -2560,6 +2795,68 @@ export default function WorkOrdersScreen() {
               </KeyboardAvoidingView>
             </View>
           )}
+          {workOrder && reportFlow && (() => {
+            const reportEquipment = workOrder.equipment.find((item) => item.id === reportFlow.equipmentId);
+            if (!reportEquipment) return null;
+            return (
+              <View style={styles.overlay}>
+                <KeyboardAvoidingView
+                  enabled={Platform.OS === 'android'}
+                  behavior={Platform.OS === 'android' ? 'height' : undefined}
+                  style={styles.overlayCard}
+                >
+                  <ScrollView
+                    automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+                    contentContainerStyle={styles.overlayContent}
+                    keyboardShouldPersistTaps="handled"
+                  >
+                    <View style={styles.overlayHandle} />
+                    <FadeIn transitionKey={reportFlow.mode}>
+                      {reportFlow.mode === 'select' ? (
+                        <>
+                          <Text style={styles.sectionEyebrow}>OT {workOrder.folio} · EQUIPO {reportEquipment.position}</Text>
+                          <Text style={styles.sectionTitle}>Seleccionar reporte</Text>
+                          <Text style={styles.sectionDescription}>Elige el tipo de reporte técnico para {reportEquipment.instrument}.</Text>
+                          {TECHNICAL_REPORT_TYPE_OPTIONS.map((option) => (
+                            <Pressable
+                              key={option.value}
+                              accessibilityLabel={`Tipo de reporte: ${option.title}`}
+                              accessibilityRole="button"
+                              accessibilityState={{ disabled: !option.enabled || busy }}
+                              disabled={!option.enabled || busy}
+                              onPress={() => { void createTechnicalReport(reportEquipment, option.value); }}
+                              style={[styles.workflowModeCard, !option.enabled && styles.workflowModeCardDisabled]}
+                            >
+                              <Text style={styles.workflowModeTitle}>{option.title}</Text>
+                              <Text style={styles.workflowModeDescription}>{option.description}</Text>
+                            </Pressable>
+                          ))}
+                          <SecondaryButton disabled={busy} icon="close" label="Cancelar" onPress={() => setReportFlow(null)} />
+                        </>
+                      ) : (
+                        <LabInstallationReport
+                          api={createTechnicalReportApi({
+                            accessToken: session?.access_token ?? '',
+                            apiUrl,
+                            equipmentId: reportEquipment.id,
+                            request,
+                            workOrderId: workOrder.id,
+                          })}
+                          canCapture={canCaptureTechnicalReports}
+                          clientName={workOrder.client_name}
+                          equipment={reportEquipment}
+                          onChanged={() => { void refreshAfterReportChange(); }}
+                          onClose={closeReportFlow}
+                          onDraftDeleted={closeReportFlow}
+                          workOrderFolio={workOrder.folio}
+                        />
+                      )}
+                    </FadeIn>
+                  </ScrollView>
+                </KeyboardAvoidingView>
+              </View>
+            );
+          })()}
           {ticketOpen && (
             canCreateTickets
             || (ticketDialogMode === 'cancel' && canCancel)
@@ -3300,6 +3597,10 @@ const styles = StyleSheet.create({
   workflowModeCardSelected: {
     backgroundColor: '#e4f4ef',
     borderColor: '#08756f',
+  },
+
+  workflowModeCardDisabled: {
+    opacity: 0.55,
   },
 
   workflowModeTitle: {

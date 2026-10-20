@@ -3,7 +3,7 @@ import type { RealtimeEnvelope, RealtimeState } from '@/src/realtime/types';
 
 export const REALTIME_PROTOCOL = 'myc.realtime.v1';
 
-type Timer = ReturnType<typeof setTimeout>;
+type Timer = number | ReturnType<typeof setTimeout>;
 
 export type RealtimeSocket = Pick<WebSocket, 'onopen' | 'onmessage' | 'onclose' | 'onerror' | 'close' | 'send'>;
 

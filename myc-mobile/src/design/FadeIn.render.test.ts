@@ -229,6 +229,7 @@ test('6. los consumidores siguen usando FadeIn sin cambios funcionales ni estilo
     'app/(technician)/work-orders.tsx': [
       ...Array(7).fill('<FadeIn transitionKey={step}>'),
       "<FadeIn transitionKey={equipmentEditor === 'new' ? 'new' : equipmentEditor?.id}>",
+      '<FadeIn transitionKey={reportFlow.mode}>',
     ],
     'app/(technician)/clients.tsx': ['<FadeIn transitionKey={mode}>', '<FadeIn transitionKey={resultsKey}>'],
     'src/components/lab/LabTechnicalCapture.tsx': ["<FadeIn transitionKey={`${activeEquipment.id}:${sheet?.id ?? 'selector'}`}>"],

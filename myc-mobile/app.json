@@ -53,6 +53,14 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "MYC Mobile necesita acceso a tus fotos para adjuntar evidencia al reporte técnico.",
+          "cameraPermission": "MYC Mobile necesita acceso a la cámara para documentar evidencia del servicio.",
+          "microphonePermission": false
+        }
+      ],
+      [
         "react-native-ble-manager",
         {
           "bluetoothAlwaysPermission": "Se usa para conectar con la impresora de etiquetas térmicas MYC.",

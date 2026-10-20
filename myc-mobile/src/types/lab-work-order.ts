@@ -20,6 +20,16 @@ export type LabWorkOrderStatus =
 // logout/reload, nunca se infiere en Mobile.
 export type LabWorkOrderWorkflowMode = 'group' | 'equipment_by_equipment';
 
+// Categoría técnica de la OT (SG-1/SG-3). 'calibration' produce FieldSheets y
+// folios metrológicos; 'general_service' produce TechnicalReports. Es
+// independiente de LabEquipment.service_type, que sigue siendo exclusivamente
+// metrológico (accredited/traceable/linked).
+export type LabOperationalCategory = 'calibration' | 'general_service';
+
+export type TechnicalReportType = 'installation' | 'verification' | 'repair' | 'maintenance' | 'sale';
+
+export type TechnicalReportStatus = 'draft' | 'in_progress' | 'ready_for_signatures' | 'completed' | 'cancelled';
+
 export type LabEquipment = {
   id: number;
   position: number;
@@ -42,6 +52,12 @@ export type LabEquipment = {
   folio_ticket_id: number | null;
   field_sheet_id: number | null;
   field_sheet_status: string | null;
+  // Proyección del TechnicalReport vigente (sólo Servicio General).
+  technical_report_id: number | null;
+  technical_report_type: TechnicalReportType | null;
+  technical_report_folio: string | null;
+  technical_report_status: TechnicalReportStatus | null;
+  technical_report_revision_count: number;
   certificate_client_mode: 'order' | 'different';
   final_lab_client_id: number | null;
   final_client_company_snapshot: string | null;
@@ -84,6 +100,7 @@ export type LabWorkOrder = {
   notes: string | null;
   status: LabWorkOrderStatus;
   workflow_mode: LabWorkOrderWorkflowMode;
+  operational_category: LabOperationalCategory;
   lab_client_id: number | null;
   revision_number: number;
   edit_version: number;
@@ -165,6 +182,12 @@ export type LabDeliveryPendingEquipmentItem = {
   identification: string;
   serial_number: string;
   certificate_folio: string | null;
+  /** Servicio General: sólo entregable con su reporte finalizado (backend decide). */
+  delivery_eligible?: boolean;
+  delivery_blocked_reason?: string | null;
+  technical_report_folio?: string | null;
+  /** Declaración congelada del reporte; el receptor la acepta al firmar. */
+  client_conformity_text?: string | null;
 };
 
 export type LabDeliveryGroupStatus = {
@@ -211,6 +234,7 @@ export type LabListItem = {
   completed_equipment_count: number;
   revision_number: number;
   signature_required: boolean;
+  operational_category?: LabOperationalCategory;
 };
 
 export type GeneralData = {
