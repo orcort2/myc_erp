@@ -430,7 +430,7 @@ def test_quotation_contact_migration_is_the_single_head():
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
     # Integration: quotation signing and Mobile technical interventions.
-    assert script.get_heads() == ["69fc4e5d622e"]
+    assert script.get_heads() == ["ffcd7b40ac46"]
     assert script.get_revision("f6b9c3d4e5a7") is not None
     assert script.get_revision("d4f7a1b2c3e5").down_revision == "c3e6a9b2d4f8"
 
