@@ -1720,7 +1720,15 @@ def _refresh_current_field_sheet_projection(
     if not documentary_changed and not identity_changed:
         return
     from app.services.lab_field_sheets import _clone_field_sheet_for_correction
+    from app.services.lab_delivery_correction_impacts import get_active_delivery_item_for_equipment
 
+    # Editing inherited identity must not become a second reopening authority.
+    # An explicitly reopened sheet is already editable and takes the branch above.
+    if get_active_delivery_item_for_equipment(db, equipment.id) is not None:
+        raise HTTPException(status_code=409, detail={
+            "code": "DELIVERY_IMPACT_REQUIRED",
+            "message": "El equipo está entregado: solicita primero la corrección administrativa de la hoja",
+        })
     _retire_current_field_sheet_revision(equipment)
     _clone_field_sheet_for_correction(db, equipment, sheet, user, overrides=documentary_changed)
 

@@ -8,7 +8,7 @@ técnicos de resultados; el detalle de una hoja vive en su propio contrato.
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.field_sheet import FieldSheetRead
 
@@ -23,6 +23,21 @@ class MobileExecutionFieldSheetSummary(BaseModel):
     final_pdf_generated_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class MobileExecutionCorrectionImpact(BaseModel):
+    id: int
+    impact_type: Literal["documentation_reissue", "delivery_invalidated"]
+    status: Literal["pending", "resolved", "cancelled"]
+
+
+class MobileExecutionEquipmentDelivery(BaseModel):
+    delivered: bool = False
+    delivery_id: int | None = None
+    delivery_item_id: int | None = None
+    exhibition_number: int | None = None
+    delivered_at: datetime | None = None
+    active_correction_impact: MobileExecutionCorrectionImpact | None = None
 
 
 class MobileExecutionEquipment(BaseModel):
@@ -49,9 +64,11 @@ class MobileExecutionEquipment(BaseModel):
     folio_status: str
     field_sheet: MobileExecutionFieldSheetSummary | None
     field_sheet_revision_count: int
+    delivery: MobileExecutionEquipmentDelivery = Field(default_factory=MobileExecutionEquipmentDelivery)
 
 
 class MobileExecutionWorkOrder(BaseModel):
+    authorized_correction_session: bool = False
     id: int
     folio: int
     sequence_number: int
@@ -79,9 +96,16 @@ class MobileExecutionProjection(BaseModel):
     root_work_order_id: int | None = None
     root_folio: int | None = None
     work_orders: list[MobileExecutionWorkOrder] = Field(default_factory=list)
+    # Token opaco de cohorte: EXACTAMENTE el valor que request_mobile_correction
+    # compara contra expected_cohort_revision (cohort_revision).
+    cohort_revision: str | None = None
+    has_pending_delivery_impacts: bool = False
+    pending_documentation_reissues: int = 0
+    pending_delivery_invalidations: int = 0
 
 
 class MobileExecutionFieldSheetDetail(BaseModel):
+    authorized_correction_session: bool = False
     """Lectura administrativa de UNA hoja LAB: sin inputs ni autoridad de
     escritura. ``field_sheet`` es la revisión vigente (o None)."""
 
@@ -90,15 +114,22 @@ class MobileExecutionFieldSheetDetail(BaseModel):
     work_order_id: int
     work_order_folio: int
     work_order_status: str
+    cohort_revision: str | None = None
     equipment: MobileExecutionEquipment
     field_sheet: FieldSheetRead | None
     revisions: list[MobileExecutionFieldSheetSummary] = Field(default_factory=list)
 
 
 class MobileExecutionCorrectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     reason: str = Field(min_length=1, max_length=2000)
     # Sólo aplica cuando la OT ya está cerrada (reapertura de la cohorte).
     signature_policy: Literal["preserve", "invalidate"] = "preserve"
+    # Consecuencia administrativa sobre la entrega ya realizada. Obligatorio
+    # sólo si el equipo tiene una Delivery vigente; si no, omitirlo o "none".
+    delivery_impact: Literal["none", "documentation_reissue", "delivery_invalidated"] | None = None
+    # Opcional: si se envía, debe coincidir con `cohort_revision` de la proyección.
+    expected_cohort_revision: str | None = Field(default=None, max_length=64)
 
 
 class MobileExecutionCancellation(BaseModel):

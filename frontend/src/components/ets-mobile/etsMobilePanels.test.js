@@ -62,7 +62,10 @@ test('vistas LAB usan el design system del ERP y clases .ets-lab-* sólo de layo
 });
 
 test('CSS LAB: layout con minmax(0, …), container queries y variables del ERP; sin tocar clases legacy', () => {
-  const block = css.slice(css.indexOf('/* Ejecución técnica LAB dentro del ERP'));
+  const start = css.indexOf('/* Ejecución técnica LAB dentro del ERP');
+  const end = css.indexOf('/* EMAIL-UX-03:', start);
+  assert.ok(start >= 0 && end > start);
+  const block = css.slice(start, end);
   assert.doesNotMatch(block, /ets-mobile-/);
   assert.match(block, /\.glass-card-mini\.ets-lab-equipment-card \{[^}]*grid-template-columns: minmax\(0, 1\.1fr\) minmax\(0, 2\.6fr\) minmax\(0, auto\);/);
   assert.match(block, /container-type: inline-size;/);
@@ -155,17 +158,19 @@ test('detalle: PDF final congelado y revisiones vigente/histórica con timestamp
 
 test('enviar a corrección: visible en el detalle sólo con work_orders.reopen y modo válido; mismo diálogo', () => {
   assert.match(detail, /const canCorrect = permissions\.canRequestCorrection && Boolean\(correctionMode\);/);
-  assert.match(detail, /correctionModeFor\(\{ status: detail\.work_order_status \}, \{ field_sheet: sheet \}\)/);
+  assert.match(detail, /correctionModeFor\(\{ status: detail\.work_order_status, authorized_correction_session: detail\.authorized_correction_session \}, \{ field_sheet: sheet \}\)/);
   assert.match(detail, /\{canCorrect \? \(/);
   assert.match(detail, /import EtsMobileCorrectionDialog from '\.\/EtsMobileCorrectionDialog\.jsx'/);
   assert.match(panel, /import EtsMobileCorrectionDialog from '\.\/EtsMobileCorrectionDialog\.jsx'/);
   // Desde Captura el detalle abierto es el mismo componente y recibe el usuario.
   assert.match(capture, /<EtsMobileEquipmentDetail[\s\S]*?user=\{user\}/);
   assert.match(page, /<EtsMobileCapturePanel[\s\S]*?user=\{user\}/);
-  // El diálogo sigue exigiendo motivo; sólo edita motivo/política de firmas.
+  // El diálogo sigue exigiendo motivo; sólo edita motivo/política de firmas/impacto de entrega.
   assert.match(correction, /if \(!reason\.trim\(\)\) \{\s*setError\('El motivo es obligatorio\.'\)/);
   assert.equal((correction.match(/<textarea/g) || []).length, 1);
-  assert.equal((correction.match(/<select/g) || []).length, 1);
+  // Fase 3B: política de firmas + (sólo equipo entregado) impacto sobre la entrega.
+  assert.equal((correction.match(/<select/g) || []).length, 2);
+  assert.match(correction, /delivered \? \(/);
   assert.doesNotMatch(correction, /<input/);
   assert.match(correction, /requestServiceOrderMobileCorrection\(serviceOrderId, target\.equipment\.id/);
 });
@@ -178,4 +183,14 @@ test('vínculo: "Vincular servicio MYC Mobile" sólo con permiso de gestión', (
 
 test('copy de Captura describe el paquete OT + hojas por OT', () => {
   assert.match(capture, /por OT, el PDF final oficial de la OT y las Hojas de Campo finales/);
+});
+
+
+test('Fase 3B: estados administrativos y recarga tras conflicto visibles', () => {
+  assert.match(panel, /projection.has_pending_delivery_impacts/);
+  assert.match(panel, /projection.pending_documentation_reissues/);
+  assert.match(panel, /projection.pending_delivery_invalidations/);
+  assert.match(detail, /equipment.delivery.active_correction_impact/);
+  assert.match(correction, /Recargar estado/);
+  for (const source of [panel, detail]) assert.match(source, /onReload=.*await load\(\)/);
 });

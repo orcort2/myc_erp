@@ -61,7 +61,7 @@ export default function EtsMobileEquipmentDetail({ serviceOrderId, equipmentId, 
   const equipment = detail?.equipment;
   const sheet = detail?.field_sheet;
   const correctionMode = detail
-    ? correctionModeFor({ status: detail.work_order_status }, { field_sheet: sheet })
+    ? correctionModeFor({ status: detail.work_order_status, authorized_correction_session: detail.authorized_correction_session }, { field_sheet: sheet })
     : null;
   const canCorrect = permissions.canRequestCorrection && Boolean(correctionMode);
   const currentRevision = detail?.revisions?.find((revision) => revision.is_current);
@@ -95,6 +95,16 @@ export default function EtsMobileEquipmentDetail({ serviceOrderId, equipmentId, 
           <section className="quotation-section ets-lab-detail__section">
             <div className="quotation-section__title"><div><p>Equipo</p><h3>Identidad y recepción</h3></div></div>
             <ReadOnlyGrid rows={describeEquipmentReadOnly(equipment)} />
+            {equipment.delivery?.delivered ? (
+              <p role="status">
+                Entrega registrada · Exhibición {equipment.delivery.exhibition_number}
+                {equipment.delivery.active_correction_impact ? (
+                  equipment.delivery.active_correction_impact.impact_type === 'delivery_invalidated'
+                    ? ' · Invalidación administrativa pendiente'
+                    : ' · Reemisión documental pendiente'
+                ) : ' · Sin impacto administrativo pendiente'}
+              </p>
+            ) : null}
           </section>
           <section className="quotation-section ets-lab-detail__section">
             <div className="quotation-section__title"><div><p>Cliente documental</p><h3>Destinatario del certificado</h3></div></div>
@@ -159,6 +169,7 @@ export default function EtsMobileEquipmentDetail({ serviceOrderId, equipmentId, 
       ) : null}
       {correcting && detail ? (
         <EtsMobileCorrectionDialog
+          onReload={async () => { setCorrecting(false); await load(); }}
           onCancel={() => setCorrecting(false)}
           onDone={async (projection) => {
             setCorrecting(false);
@@ -167,7 +178,7 @@ export default function EtsMobileEquipmentDetail({ serviceOrderId, equipmentId, 
             onChanged?.(projection);
           }}
           serviceOrderId={serviceOrderId}
-          target={{ equipment, workOrderFolio: detail.work_order_folio, mode: correctionMode }}
+          target={{ equipment, workOrderFolio: detail.work_order_folio, mode: correctionMode, cohortRevision: detail.cohort_revision }}
         />
       ) : null}
     </EtsMobileModal>

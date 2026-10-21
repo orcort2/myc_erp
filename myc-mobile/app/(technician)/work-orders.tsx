@@ -1192,10 +1192,14 @@ export default function WorkOrdersScreen() {
             {deliveryStatus.group_complete ? (
               <>
                 <Text style={styles.notice}>Entrega completada · {deliveryStatus.exhibitions.filter((item) => item.status === 'completed').length} exhibición(es)</Text>
-                <OperationalActionStack>
+                {deliveryStatus.final_receipt_available ? <OperationalActionStack>
                   <SecondaryButton icon="printer" label="Ver / imprimir acuse final" onPress={() => downloadFinalReceiptPdf('print')} />
                   <SecondaryButton icon="share-variant" label="Compartir / descargar acuse final" onPress={() => downloadFinalReceiptPdf('share')} />
-                </OperationalActionStack>
+                </OperationalActionStack> : <AlertBanner tone="info">
+                  {deliveryStatus.final_receipt_blocked_reason === 'DELIVERY_INVALIDATION_PENDING'
+                    ? 'Entrega física completada. Acuse final bloqueado por una invalidación administrativa pendiente.'
+                    : 'Entrega física completada. Acuse final aún no disponible.'}
+                </AlertBanner>}
               </>
             ) : deliveryStatus.exhibitions.length === 0 ? (
               <>

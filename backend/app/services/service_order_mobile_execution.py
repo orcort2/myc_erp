@@ -23,7 +23,17 @@ from app.models.lab_work_order import LabWorkOrder, LabWorkOrderEquipment
 from app.models.service_order import ServiceOrder
 from app.models.service_order_lab_link import ServiceOrderLabLink
 from app.schemas.field_sheet import FieldSheetRead
+from app.services.lab_delivery_correction_impacts import (
+    is_authorized_correction_session,
+    get_active_delivery_items_by_equipment,
+    group_administrative_state,
+    pending_impacts_for_items,
+    pending_impacts_for_group,
+    select_active_impact,
+)
 from app.schemas.service_order_mobile_execution import (
+    MobileExecutionCorrectionImpact,
+    MobileExecutionEquipmentDelivery,
     MobileExecutionEquipment,
     MobileExecutionFieldSheetDetail,
     MobileExecutionFieldSheetSummary,
@@ -49,6 +59,18 @@ def active_lab_link(db: Session, service_order_id: int) -> ServiceOrderLabLink |
             ServiceOrderLabLink.status == "active",
         )
     )
+
+
+def cohort_revision(members: list[LabWorkOrder]) -> str:
+    """Token optimista opaco de la cohorte: SHA-256 de todos los pares
+    (work_order_id, edit_version) en orden estable por id. Cualquier cambio de
+    cualquier miembro lo cambia (a diferencia de max/suma). Única autoridad:
+    la proyección lo expone y request_mobile_correction lo compara; el
+    frontend sólo lo conserva y lo devuelve."""
+    canonical = "|".join(
+        f"{item.id}:{item.edit_version}" for item in sorted(members, key=lambda member: member.id)
+    )
+    return sha256(canonical.encode()).hexdigest()
 
 
 def linked_lab_group(db: Session, root_id: int) -> list[LabWorkOrder]:
@@ -134,13 +156,14 @@ def work_order_final_pdf_available(work_order: LabWorkOrder) -> bool:
     return work_order.status in {"completed", "partially_closed"} and bool(work_order.final_pdf)
 
 
-def _work_order(work_order: LabWorkOrder, root_id: int) -> MobileExecutionWorkOrder:
+def _work_order(db: Session, work_order: LabWorkOrder, root_id: int) -> MobileExecutionWorkOrder:
     return MobileExecutionWorkOrder(
         id=work_order.id,
         folio=work_order.folio,
         sequence_number=work_order.sequence_number,
         is_root=work_order.id == root_id,
         status=work_order.status,
+        authorized_correction_session=is_authorized_correction_session(db, work_order),
         workflow_mode=work_order.workflow_mode,
         client_name=work_order.client_name,
         reception_date=work_order.reception_date,
@@ -163,14 +186,55 @@ def get_mobile_execution_projection(db: Session, service_order_id: int) -> Mobil
     root_id = link.lab_root_work_order_id
     members = linked_lab_group(db, root_id)
     root = next((item for item in members if item.id == root_id), None)
+    work_orders = [_work_order(db, item, root_id) for item in members]
+    _attach_delivery_state(
+        db, [equipment for work_order in work_orders for equipment in work_order.equipment]
+    )
+    state = group_administrative_state(impact.impact_type for impact in pending_impacts_for_group(db, root_id))
     return MobileExecutionProjection(
         service_order_id=service_order_id,
         linked=True,
         link_id=link.id,
         root_work_order_id=root_id,
         root_folio=root.folio if root is not None else None,
-        work_orders=[_work_order(item, root_id) for item in members],
+        work_orders=work_orders,
+        cohort_revision=cohort_revision(members),
+        has_pending_delivery_impacts=state.has_pending_delivery_impacts,
+        pending_documentation_reissues=state.pending_documentation_reissues,
+        pending_delivery_invalidations=state.pending_delivery_invalidations,
     )
+
+
+def _attach_delivery_state(db: Session, equipment_models: list[MobileExecutionEquipment]):
+    """Completa ``delivery`` de cada equipo (sólo lectura) con el
+    LabDeliveryItem vigente y su impacto pending prevaleciente. Devuelve todos
+    los impactos pending del grupo para los contadores."""
+    items = get_active_delivery_items_by_equipment(db, [item.id for item in equipment_models])
+    pending = pending_impacts_for_items(db, [item.id for item in items.values()])
+    all_pending = []
+    for equipment in equipment_models:
+        item = items.get(equipment.id)
+        if item is None:
+            continue
+        rows = pending.get(item.id, [])
+        all_pending.extend(rows)
+        active = select_active_impact(rows)
+        delivery = item.delivery
+        equipment.delivery = MobileExecutionEquipmentDelivery(
+            delivered=True,
+            delivery_id=delivery.id,
+            delivery_item_id=item.id,
+            exhibition_number=delivery.exhibition_number,
+            delivered_at=delivery.delivered_at,
+            active_correction_impact=(
+                MobileExecutionCorrectionImpact(
+                    id=active.id, impact_type=active.impact_type, status=active.status
+                )
+                if active is not None
+                else None
+            ),
+        )
+    return all_pending
 
 
 def get_mobile_execution_field_sheet(
@@ -179,12 +243,16 @@ def get_mobile_execution_field_sheet(
     _link, members = require_linked_lab_group(db, service_order_id)
     work_order, equipment = require_group_equipment(members, equipment_id)
     current = equipment.current_field_sheet
+    equipment_read = _equipment(equipment)
+    _attach_delivery_state(db, [equipment_read])
     return MobileExecutionFieldSheetDetail(
         service_order_id=service_order_id,
         work_order_id=work_order.id,
         work_order_folio=work_order.folio,
         work_order_status=work_order.status,
-        equipment=_equipment(equipment),
+        authorized_correction_session=is_authorized_correction_session(db, work_order),
+        cohort_revision=cohort_revision(members),
+        equipment=equipment_read,
         field_sheet=(
             FieldSheetRead.model_validate(current)
             if current is not None and current.is_active

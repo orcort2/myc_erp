@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -19,6 +20,10 @@ class ReopenTicketCreate(BaseModel):
 
 
 class TicketReview(BaseModel):
+    correction_equipment_ids: list[int] | None = None
+    delivery_impacts: dict[int, Literal["none", "documentation_reissue", "delivery_invalidated"]] | None = None
+    expected_cohort_revision: str | None = Field(default=None, max_length=64)
+
     model_config = ConfigDict(extra="forbid")
 
     signature_policy: str = Field(pattern="^(preserve|invalidate)$")
@@ -121,6 +126,9 @@ class CertificateFolioBlockCreate(BaseModel):
 
 
 class TicketResolve(BaseModel):
+    delivery_impacts: dict[int, Literal["none", "documentation_reissue", "delivery_invalidated"]] | None = None
+    expected_cohort_revision: str | None = Field(default=None, max_length=64)
+
     model_config = ConfigDict(extra="forbid")
 
     authorized_folio: str | None = Field(default=None, max_length=120)

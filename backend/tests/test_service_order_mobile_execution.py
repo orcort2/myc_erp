@@ -6,13 +6,16 @@ que el ERP sólo consulta y gobierna mediante los servicios de dominio LAB.
 """
 from __future__ import annotations
 
+import os
+import uuid
+
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from hashlib import sha256
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event, func, select
+from sqlalchemy import create_engine, event, func, select, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -144,13 +147,25 @@ class Lab:
 @pytest.fixture()
 def ctx(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "storage_root", str(tmp_path))
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool,
-    )
+    postgres_url = os.getenv("MYC_PHASE3B_POSTGRES_TEST_URL")
+    schema = f"phase3b_{uuid.uuid4().hex}"
+    admin_engine = None
+    if postgres_url:
+        from sqlalchemy.engine import make_url
+        target = make_url(postgres_url)
+        assert target.host == "127.0.0.1" and target.database == "myc_phase3b_test", "isolated test database only"
+        admin_engine = create_engine(postgres_url)
+        with admin_engine.begin() as connection:
+            connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+        engine = create_engine(postgres_url, connect_args={"options": f"-csearch_path={schema}"})
+    else:
+        engine = create_engine(
+            "sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool,
+        )
 
-    @event.listens_for(engine, "connect")
-    def foreign_keys(connection, _):
-        connection.execute("PRAGMA foreign_keys=ON")
+        @event.listens_for(engine, "connect")
+        def foreign_keys(connection, _):
+            connection.execute("PRAGMA foreign_keys=ON")
 
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
@@ -201,6 +216,12 @@ def ctx(tmp_path, monkeypatch):
         http.close()
         app.dependency_overrides.clear()
         app.dependency_overrides.update(previous)
+        engine.dispose()
+        if admin_engine is not None:
+            with admin_engine.begin() as connection:
+                connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+            admin_engine.dispose()
+
 
 
 def _link(ctx, work_order_id=None, order_key="order"):
@@ -230,6 +251,8 @@ def test_projection_without_link_is_empty_and_readable(ctx):
     assert response.json() == {
         "source": "lab", "service_order_id": ctx["order"], "linked": False, "link_id": None,
         "root_work_order_id": None, "root_folio": None, "work_orders": [],
+        "cohort_revision": None, "has_pending_delivery_impacts": False, "pending_documentation_reissues": 0,
+        "pending_delivery_invalidations": 0,
     }
 
 

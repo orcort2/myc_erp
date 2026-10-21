@@ -46,7 +46,15 @@ class LabDeliveryItem(IntegerPkMixin, TimestampMixin, Base):
     delivery: Mapped["LabWorkOrderDelivery"] = relationship(back_populates="items")
     work_order: Mapped["LabWorkOrder | None"] = relationship(foreign_keys=[work_order_id])
     equipment: Mapped["LabWorkOrderEquipment | None"] = relationship(foreign_keys=[equipment_id])
+    # Sin cascade de borrado: los impactos administrativos son histórico (FK RESTRICT).
+    correction_impacts: Mapped[list["LabDeliveryItemCorrectionImpact"]] = relationship(
+        back_populates="delivery_item",
+        cascade="save-update, merge",
+        passive_deletes="all",
+        order_by="LabDeliveryItemCorrectionImpact.id",
+    )
 
 
 from app.models.lab_work_order_delivery import LabWorkOrderDelivery  # noqa: E402
 from app.models.lab_work_order import LabWorkOrder, LabWorkOrderEquipment  # noqa: E402
+from app.models.lab_delivery_item_correction_impact import LabDeliveryItemCorrectionImpact  # noqa: E402

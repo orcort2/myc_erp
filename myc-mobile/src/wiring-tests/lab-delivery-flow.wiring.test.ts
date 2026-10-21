@@ -83,3 +83,14 @@ test('LabDeliveryFlow no introduce márgenes manuales entre las acciones apilada
 test('OperationalActionStack está importado desde los primitives compartidos, no reimplementado localmente', () => {
   assert.match(deliveryFlowSource, /import \{[^}]*OperationalActionStack[^}]*\} from '@\/src\/design\/primitives'/);
 });
+
+test('una entrega física completa no ofrece acuse bloqueado administrativamente', () => {
+  const start = workOrdersSource.indexOf('{deliveryStatus.final_receipt_available ?');
+  assert.ok(start > 0);
+  const end = workOrdersSource.indexOf('</AlertBanner>}', start);
+  const section = workOrdersSource.slice(start, end);
+  assert.match(section, /Ver \/ imprimir acuse final/);
+  assert.match(section, /Compartir \/ descargar acuse final/);
+  assert.match(section, /final_receipt_blocked_reason === 'DELIVERY_INVALIDATION_PENDING'/);
+  assert.match(section, /Entrega física completada/);
+});

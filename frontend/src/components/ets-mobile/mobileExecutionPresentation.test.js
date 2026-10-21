@@ -208,3 +208,9 @@ test('cabecera de OT y documentos de Captura (OT final + hojas)', () => {
   assert.equal(describeCaptureBlocker({ code: 'LAB_WORK_ORDER_FINAL_PDF_MISSING', work_order_folio: 6439 }),
     'OT 6439: OT cerrada sin PDF final oficial');
 });
+
+test('sesión de corrección persistida habilita hojas posteriores sin autorizar draft ordinario', () => {
+  const equipment = { field_sheet: { status: 'completed' } };
+  assert.equal(correctionModeFor({ status: 'draft', authorized_correction_session: true }, equipment), 'field_sheet_reopen');
+  assert.equal(correctionModeFor({ status: 'draft', authorized_correction_session: false }, equipment), null);
+});

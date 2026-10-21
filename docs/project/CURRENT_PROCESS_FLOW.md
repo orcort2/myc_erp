@@ -930,3 +930,15 @@ por el sistema operativo limpia el enrolamiento y pide reconfigurarla. Un
 `401`/`403` de `exchange` hace lo mismo. "Desactivar acceso biométrico en este
 dispositivo" (visible en Home tras iniciar sesión) revoca en backend
 (best-effort) y limpia ambas claves locales; logout nunca lo hace.
+
+## Corrección de equipo entregado LAB — Fase 3B (2026-10-20)
+
+1. ETS consulta equipo, entrega, impactos y revisión de cohorte; solicita motivo, política de firma si corresponde y decisión de impacto cuando hay entrega vigente.
+2. LAB comprueba los permisos existentes; bloquea la raíz/cohorte, relee estado y valida revisión, pertenencia, entrega única vigente y hoja origen. Las rutas directas y las resoluciones de tickets realizan la misma validación; se conserva la prohibición de autoaprobación.
+3. En la misma transacción registra decisión (incluido `none`), impacto cuando aplique y efecto administrativo sobre recibo; congela revisión OT cuando corresponde y abre N+1 de las hojas seleccionadas técnicamente, preservando N.
+4. Persiste auditorías y confirma una sola vez el cambio de negocio. Despacha las notificaciones por el mecanismo existente; ante error anterior al commit revierte todas las mutaciones.
+5. ETS muestra pendientes y permite recargar tras un conflicto. La corrección continúa en Mobile. La resolución de impactos y reemisión/reentrega posterior no forman parte de Fase 3B.
+
+## Correcciones Fase 3B autorizadas — 2026-10-20
+
+Tras reabrir una cohorte se pueden corregir otras hojas completed sin otra revisión OT: validar sesión persistida, permiso de hoja, token, decisión si entregado, clonar y auditar atómicamente. Mobile informa entrega física completa sin acuse disponible cuando existe DELIVERY_INVALIDATION_PENDING. Véase [evidencia](../audits/PHASE3B_INTEGRATION_2026-10-20.md).

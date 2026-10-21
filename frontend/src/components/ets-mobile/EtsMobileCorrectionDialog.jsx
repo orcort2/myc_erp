@@ -1,30 +1,47 @@
 import React, { useState } from 'react';
 
 import { requestServiceOrderMobileCorrection } from '../../services/api.js';
+import {
+  DELIVERY_IMPACT_OPTIONS,
+  buildCorrectionPayload,
+  deliveryImpactError,
+  isEquipmentDelivered,
+} from './correctionDeliveryImpact.js';
 import EtsMobileModal from './EtsMobileModal.jsx';
 
 // "Enviar a corrección en MYC Mobile": el ERP NO edita la hoja. El dominio
 // LAB conserva la revisión N (y su PDF final) y abre N+1 editable en Mobile.
 // Único diálogo de la acción: lo usan la vista de ejecución y el detalle.
-export default function EtsMobileCorrectionDialog({ serviceOrderId, target, onDone, onCancel }) {
+export default function EtsMobileCorrectionDialog({ serviceOrderId, target, onDone, onCancel, onReload }) {
   const [reason, setReason] = useState('');
   const [signaturePolicy, setSignaturePolicy] = useState('preserve');
+  const [deliveryImpact, setDeliveryImpact] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const closedWorkOrder = target.mode === 'work_order_reopen';
+  const delivered = isEquipmentDelivered(target.equipment);
+  const impactMissing = Boolean(deliveryImpactError(target.equipment, deliveryImpact));
 
   async function submit() {
     if (!reason.trim()) {
       setError('El motivo es obligatorio.');
       return;
     }
+    const impactError = deliveryImpactError(target.equipment, deliveryImpact);
+    if (impactError) {
+      setError(impactError);
+      return;
+    }
     setBusy(true);
     setError('');
     try {
-      const projection = await requestServiceOrderMobileCorrection(serviceOrderId, target.equipment.id, {
-        reason: reason.trim(),
-        signature_policy: signaturePolicy,
-      });
+      const projection = await requestServiceOrderMobileCorrection(serviceOrderId, target.equipment.id, buildCorrectionPayload({
+        reason,
+        signaturePolicy,
+        equipment: target.equipment,
+        deliveryImpact,
+        cohortRevision: target.cohortRevision,
+      }));
       onDone(projection);
     } catch (requestError) {
       setError(requestError.message);
@@ -58,10 +75,28 @@ export default function EtsMobileCorrectionDialog({ serviceOrderId, target, onDo
           </select>
         </label>
       ) : null}
+      {delivered ? (
+        <label className="quotation-client-search" data-testid="delivery-impact">
+          <span>Este equipo ya fue entregado. ¿Cómo afecta la corrección a la entrega? (obligatorio)</span>
+          <select onChange={(event) => setDeliveryImpact(event.target.value)} value={deliveryImpact}>
+            <option value="">Selecciona una opción…</option>
+            {DELIVERY_IMPACT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <span className="muted">
+            {DELIVERY_IMPACT_OPTIONS.find((option) => option.value === deliveryImpact)?.description
+              || 'Elige la consecuencia para la entrega ya realizada; no se anula automáticamente.'}
+          </span>
+        </label>
+      ) : null}
       {error ? <div className="form-error" role="alert">{error}</div> : null}
       <div className="toolbar-actions">
+        {error && onReload ? (
+          <button className="table-button" disabled={busy} onClick={onReload} type="button">Recargar estado</button>
+        ) : null}
         <button className="table-button" onClick={onCancel} type="button">Cancelar</button>
-        <button className="table-button table-button--primary" disabled={busy || !reason.trim()} onClick={submit} type="button">
+        <button className="table-button table-button--primary" disabled={busy || !reason.trim() || impactMissing} onClick={submit} type="button">
           Enviar a corrección
         </button>
       </div>

@@ -57,6 +57,11 @@ from app.services.notification_events import (
     notify_ticket_resolved,
 )
 from app.services.push_notifications import commit_and_dispatch_notifications
+from app.services.lab_delivery_correction_impacts import (
+    can_reopen_field_sheet,
+    attach_source_revision, establish_reopening_decisions, lock_correction_group,
+    rollback_failed_reopening,
+)
 
 
 def _ticket_query():
@@ -319,8 +324,8 @@ def create_field_sheet_reopen_ticket(
     misma OT todavía en captura. Cuando la OT SÍ ya está cerrada, ese caso
     usa el ticket reopen_work_order existente (equipment_id opcional ahí),
     que reabre la OT completa con su propia ceremonia de firmas/versión."""
-    work_order = _get(db, payload.work_order_id, lock=True)
-    if work_order.status not in {"received_signed", "in_progress", "ready_to_close"}:
+    work_order, _members = lock_correction_group(db, payload.work_order_id)
+    if not can_reopen_field_sheet(db, work_order):
         raise HTTPException(
             status_code=409,
             detail="La OT ya está cerrada; solicita la reapertura de la OT completa",
@@ -747,6 +752,11 @@ def _reopen_closed_cohort(
     signature_policy: str,
     equipment_id: int | None,
     reopen_ticket_id: int | None,
+    reason: str,
+    delivery_impact: str | None = None,
+    delivery_impacts: dict[int, str] | None = None,
+    correction_equipment_ids: list[int] | None = None,
+    expected_cohort_revision: str | None = None,
 ) -> tuple[LabWorkOrder, list[LabWorkOrder], dict | None]:
     """Núcleo compartido de reapertura: valida que la cohorte de cierre esté
     realmente cerrada, congela un LabWorkOrderRevision por miembro (snapshot
@@ -756,22 +766,15 @@ def _reopen_closed_cohort(
     approve_reopen_ticket (mediado por ticket) y reopen_work_order_directly
     (Admin con autoridad directa, sin ticket artificial) terminan cada uno
     con su propia bitácora."""
-    work_order, historical_group = _lock_historical_group(db, work_order_id)
-    from app.models.lab_delivery_item import LabDeliveryItem
-    from app.models.lab_work_order_delivery import LabWorkOrderDelivery
-    if db.scalar(
-        select(LabDeliveryItem.id)
-        .join(LabWorkOrderDelivery, LabDeliveryItem.delivery_id == LabWorkOrderDelivery.id)
-        .where(
-            LabDeliveryItem.work_order_id.in_([item.id for item in historical_group]),
-            LabWorkOrderDelivery.status == "completed",
-        )
-        .limit(1)
-    ) is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="La OT ya registra la entrega física de los equipos. Anula primero el acuse de entrega o genera una nueva OT si los equipos regresaron a MYC.",
-        )
+    required_permission = (
+        "work_orders.reopen_preserve_signatures" if signature_policy == "preserve"
+        else "work_orders.reopen_invalidate_signatures"
+    )
+    if signature_policy not in {"preserve", "invalidate"}:
+        raise HTTPException(status_code=422, detail="INVALID_SIGNATURE_POLICY")
+    if not user_has_permission(user, "work_orders.reopen") or not user_has_permission(user, required_permission):
+        raise HTTPException(status_code=403, detail="REOPEN_NOT_AUTHORIZED")
+    work_order, historical_group = lock_correction_group(db, work_order_id, expected_cohort_revision)
     if work_order.status not in {"completed", "partially_closed"}:
         raise HTTPException(status_code=409, detail="OT_NOT_CLOSED")
     cohort = _signature_cohort(
@@ -779,6 +782,24 @@ def _reopen_closed_cohort(
     )
     if not cohort or any(item.status not in {"completed", "partially_closed"} for item in cohort):
         raise HTTPException(status_code=409, detail="CLOSURE_COHORT_NOT_CLOSED")
+    if equipment_id is None and delivery_impacts and correction_equipment_ids is None:
+        raise HTTPException(status_code=422, detail="CORRECTION_SELECTION_REQUIRED")
+    correction_ids = [equipment_id] if equipment_id is not None else (correction_equipment_ids or [])
+    if equipment_id is not None and correction_equipment_ids is not None and correction_equipment_ids != [equipment_id]:
+        raise HTTPException(status_code=422, detail="CORRECTION_SELECTION_CONFLICT")
+    if len(correction_ids) != len(set(correction_ids)):
+        raise HTTPException(status_code=422, detail="DUPLICATE_CORRECTION_EQUIPMENT")
+    cohort_ids = {item.id for item in cohort}
+    for correction_id in correction_ids:
+        equipment = db.get(LabWorkOrderEquipment, correction_id)
+        if equipment is None or not equipment.is_active or equipment.work_order_id not in cohort_ids:
+            raise HTTPException(status_code=422, detail="CORRECTION_EQUIPMENT_OUTSIDE_COHORT")
+        if equipment.field_sheet is None or not equipment.field_sheet.is_active or equipment.field_sheet.status != "completed":
+            raise HTTPException(status_code=409, detail="CORRECTION_SOURCE_SHEET_REQUIRED")
+    impacts = establish_reopening_decisions(
+        db, members=cohort, equipment_id=equipment_id, user=user, reason=reason,
+        delivery_impact=delivery_impact, delivery_impacts=delivery_impacts,
+    )
     now = datetime.now(timezone.utc)
     preserve = signature_policy == "preserve"
     for item in cohort:
@@ -820,33 +841,36 @@ def _reopen_closed_cohort(
         item.final_pdf_generated_at = None
 
     retired_snapshot = None
-    if equipment_id is not None:
-        equipment = db.scalar(
-            select(LabWorkOrderEquipment)
-            .where(LabWorkOrderEquipment.id == equipment_id)
-            .with_for_update()
-        )
-        if equipment is not None:
-            retired = equipment.field_sheet
+    retired_sheets = []
+    for correction_id in correction_ids:
+        equipment = db.get(LabWorkOrderEquipment, correction_id)
+        retired = equipment.field_sheet
+        if retired is not None and retired.status == "completed":
             _retire_current_field_sheet_revision(equipment)
-            if retired is not None and retired.status == "completed":
-                # No deja hueco operativo: N permanece intacta como
-                # histórico (is_current=False) y N+1 nace ya clonada y
-                # editable en la misma transacción -- ver
-                # _clone_field_sheet_for_correction para el porqué (el
-                # técnico corrige un dato, nunca vuelve a capturar desde
-                # cero).
-                _clone_field_sheet_for_correction(db, equipment, retired, user)
-                retired_snapshot = {
-                    "retired_field_sheet_id": retired.id,
-                    "retired_revision_number": retired.revision_number,
-                }
+            _clone_field_sheet_for_correction(db, equipment, retired, user)
+            retired_sheets.append({
+                "equipment_id": equipment.id,
+                "retired_field_sheet_id": retired.id,
+                "retired_revision_number": retired.revision_number,
+            })
+    if retired_sheets:
+        retired_snapshot = (
+            {key: value for key, value in retired_sheets[0].items() if key != "equipment_id"}
+            if equipment_id is not None else {"retired_field_sheets": retired_sheets}
+        )
+    db.flush()
+    for impact in impacts:
+        attach_source_revision(db, impact, impact.work_order_id_snapshot)
     return work_order, cohort, retired_snapshot
 
 
+@rollback_failed_reopening
 def reopen_work_order_directly(
     db: Session, work_order_id: int, user: User, *, signature_policy: str, reason: str,
-    equipment_id: int | None = None,
+    equipment_id: int | None = None, delivery_impact: str | None = None,
+    delivery_impacts: dict[int, str] | None = None,
+    correction_equipment_ids: list[int] | None = None,
+    expected_cohort_revision: str | None = None,
 ) -> LabWorkOrderRead:
     """Reapertura administrativa directa: el actor YA posee
     work_orders.reopen + la política correspondiente, así que ejecuta la
@@ -870,6 +894,9 @@ def reopen_work_order_directly(
     work_order, _cohort, retired = _reopen_closed_cohort(
         db, work_order_id, user,
         signature_policy=signature_policy, equipment_id=equipment_id, reopen_ticket_id=None,
+        reason=reason, delivery_impact=delivery_impact, delivery_impacts=delivery_impacts,
+        correction_equipment_ids=correction_equipment_ids,
+        expected_cohort_revision=expected_cohort_revision,
     )
     new_values = {
         "status": "draft",
@@ -878,7 +905,7 @@ def reopen_work_order_directly(
     }
     if equipment_id is not None:
         new_values["equipment_id"] = equipment_id
-        new_values.update(retired or {})
+    new_values.update(retired or {})
     write_audit_log(
         db,
         action="lab_work_order.reopened_directly",
@@ -898,6 +925,7 @@ def reopen_work_order_directly(
     return _read_work_order(db, _get(db, work_order.id))
 
 
+@rollback_failed_reopening
 def approve_reopen_ticket(
     db: Session, ticket_id: int, payload: TicketReview, user: User
 ) -> TicketRead:
@@ -920,7 +948,10 @@ def approve_reopen_ticket(
         db, ticket.work_order_id, user,
         signature_policy=payload.signature_policy,
         equipment_id=ticket.equipment_id,
-        reopen_ticket_id=ticket.id,
+        reopen_ticket_id=ticket.id, reason=payload.comment or ticket.reason,
+        delivery_impacts=payload.delivery_impacts,
+        correction_equipment_ids=payload.correction_equipment_ids,
+        expected_cohort_revision=payload.expected_cohort_revision,
     )
     if retired_snapshot is not None:
         ticket.resolution_snapshot = retired_snapshot
@@ -988,6 +1019,7 @@ def reject_ticket(
     return _read(_get_ticket(db, ticket.id))
 
 
+@rollback_failed_reopening
 def resolve_operational_ticket(
     db: Session, ticket_id: int, payload: TicketResolve, user: User
 ) -> TicketRead:
@@ -1060,13 +1092,17 @@ def resolve_operational_ticket(
         ticket.resolution_snapshot = work_order.partial_close_pending_snapshot
         action = "lab_partial_close.approved"
     elif ticket.type == "field_sheet_reopen":
-        equipment = db.scalar(
-            select(LabWorkOrderEquipment)
-            .where(LabWorkOrderEquipment.id == ticket.equipment_id)
-            .with_for_update()
+        from app.services.lab_field_sheets import _FIELD_SHEET_REOPEN_ELIGIBLE_WORK_ORDER_STATUSES
+        work_order, members = lock_correction_group(db, ticket.work_order_id, payload.expected_cohort_revision)
+        if not can_reopen_field_sheet(db, work_order):
+            raise HTTPException(status_code=409, detail="OT_NOT_OPEN")
+        establish_reopening_decisions(
+            db, members=members, equipment_id=ticket.equipment_id, user=user,
+            reason=payload.comment or ticket.reason, delivery_impacts=payload.delivery_impacts,
         )
-        if equipment is None:
-            raise HTTPException(status_code=409, detail="El equipo solicitado ya no está disponible")
+        equipment = db.get(LabWorkOrderEquipment, ticket.equipment_id)
+        if equipment is None or equipment.work_order_id != ticket.work_order_id:
+            raise HTTPException(status_code=409, detail="CORRECTION_EQUIPMENT_OUTSIDE_COHORT")
         current = equipment.field_sheet
         if current is None or current.status != "completed":
             raise HTTPException(status_code=409, detail="La hoja ya no está completed; nada que reabrir")
@@ -1081,6 +1117,7 @@ def resolve_operational_ticket(
         # produce ready_to_close hacia adelante -- no es un estado nuevo.
         if equipment.work_order.status == "ready_to_close":
             equipment.work_order.status = "in_progress"
+        equipment.work_order.edit_version += 1
         ticket.resolution_snapshot = {
             "retired_field_sheet_id": current.id,
             "retired_revision_number": current.revision_number,

@@ -52,3 +52,18 @@ Una observación se elimina de esta tabla cuando existe evidencia verificable
 de resolución y, si afecta avance, se sincroniza
 [`PROJECT_STATUS.md`](PROJECT_STATUS.md). Si el pendiente es exclusivamente
 técnico, se registra sólo en `TECHNICAL_DEBT.md`; no se copia aquí.
+
+## Integración Fase 3B — observaciones del 2026-10-20
+
+- ✅ Resuelta en el árbol de trabajo: sustitución del bloqueo absoluto por decisión LAB validada para todas las reaperturas explícitas; sin bandera cliente y sin reutilizar impactos anteriores como autorización.
+- ✅ Resuelta en el árbol de trabajo: transacción completa de decisión, impacto, reapertura, auditoría y recibo; protección de clonación indirecta y preservación de contadores tras retiro lógico.
+- ⚠ Pendiente por alcance aprobado: ciclo de resolución/cancelación administrativa, reemisión y reentrega. No se declara cerrado el ciclo de vida completo.
+- ⚠ Regresión general frontend: dos fallos preexistentes verificados sobre HEAD (navegación de notificaciones y dependencia `vitest`). ETS Mobile tiene su gate específico.
+
+Los resultados verificables y límites de la ejecución se registran en [la evidencia Fase 3B](../audits/PHASE3B_INTEGRATION_2026-10-20.md). Sin commit, publicación ni migración operativa; pendiente de revisión final del usuario.
+
+Regresión PostgreSQL adicional: `test_postgresql_concurrent_individual_cohorts_get_distinct_versions` falla también sobre HEAD porque su equipo de prueba carece de tipo de servicio (`LAB_RECEPTION_INCOMPLETE`). Se mantiene fuera de esta integración; 16 de las otras pruebas PostgreSQL previamente omitidas pasan.
+
+## Correcciones Fase 3B autorizadas — 2026-10-20
+
+Los cinco hallazgos focalizados quedan corregidos localmente. Pruebas y límites en la evidencia Fase 3B. No se considera cerrado el ciclo de resolución administrativa ni autorizada la publicación. Véase [evidencia](../audits/PHASE3B_INTEGRATION_2026-10-20.md).

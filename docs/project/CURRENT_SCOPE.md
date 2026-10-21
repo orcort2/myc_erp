@@ -553,3 +553,13 @@ Infrastructure Broker, passkeys/WebAuthn, claves públicas device-bound,
 terminal embebida, panel de dispositivos y selector multi-cuenta biométrico
 siguen expresamente fuera de esta fase. Validación física iOS/Android
 pendiente.
+
+## Fase 3B — correcciones LAB sobre entregas (2026-10-20)
+
+Integración selectiva en main, pendiente de revisión final: impacto administrativo por ítem entregado, decisión validada por LAB, reapertura directa/por ticket de OT y hojas, control optimista de cohorte y proyección ETS Mobile. Las entregas, vouchers y snapshots permanecen históricos. Incluye protección de la clonación indirecta por edición documental.
+
+Fuera de alcance: resolver/cancelar impactos administrativos, reentrega y orquestación de reemisión documental. Completar la corrección técnica no resuelve esos pendientes. No se modifican roles, permisos, notificaciones ni reglas de Servicio General. No se han migrado bases operativas ni publicado cambios.
+
+## Correcciones Fase 3B autorizadas — 2026-10-20
+
+Incluidas las cinco correcciones autorizadas: sesiones sucesivas, selección técnica, disponibilidad de acuse backend/Mobile, downgrade seguro y default pending. Excluida resolución/cancelación de impactos, reemisión y reentrega. Véase [evidencia](../audits/PHASE3B_INTEGRATION_2026-10-20.md).

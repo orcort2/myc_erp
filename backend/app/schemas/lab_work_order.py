@@ -315,6 +315,10 @@ class LabCancellationWrite(BaseModel):
 
 
 class LabDirectReopenWrite(BaseModel):
+    correction_equipment_ids: list[int] | None = None
+    delivery_impacts: dict[int, Literal["none", "documentation_reissue", "delivery_invalidated"]] | None = None
+    expected_cohort_revision: str | None = Field(default=None, max_length=64)
+
     model_config = ConfigDict(extra="forbid")
 
     requested_signature_policy: str = Field(pattern="^(preserve|invalidate)$")
@@ -335,6 +339,9 @@ class LabFieldSheetCreate(BaseModel):
 
 
 class LabFieldSheetDirectReopenWrite(BaseModel):
+    delivery_impacts: dict[int, Literal["none", "documentation_reissue", "delivery_invalidated"]] | None = None
+    expected_cohort_revision: str | None = Field(default=None, max_length=64)
+
     model_config = ConfigDict(extra="forbid")
 
     reason: str = Field(min_length=3, max_length=2000)
@@ -499,6 +506,8 @@ class LabDeliveryItemRead(BaseModel):
 
 
 class LabDeliveryRead(BaseModel):
+    final_receipt_available: bool = False
+    final_receipt_blocked_reason: str | None = None
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -547,6 +556,7 @@ class LabDeliveryGroupStatusRead(BaseModel):
     exhibitions: list[LabDeliveryRead]
     group_complete: bool
     final_receipt_available: bool
+    final_receipt_blocked_reason: str | None = None
     final_receipt_version: int | None = None
     pending_partial_delivery_ticket_id: int | None = None
 

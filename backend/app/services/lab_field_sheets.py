@@ -17,6 +17,12 @@ from app.schemas.lab_work_order import (
     LabFieldSheetTrayItem,
     LabFieldSheetTrayPage,
 )
+from app.services.lab_delivery_correction_impacts import (
+    can_reopen_field_sheet,
+    is_authorized_correction_session,
+    establish_reopening_decisions, lock_correction_group, rollback_failed_reopening,
+)
+
 from app.services.audit_logs import write_audit_log
 from app.services.field_sheet_templates import (
     CANONICAL_PDF_RENDERER_KEY,
@@ -252,7 +258,7 @@ def get_lab_equipment(
     return equipment
 
 
-def _ensure_capture_allowed(equipment: LabWorkOrderEquipment, *, external: bool) -> None:
+def _ensure_capture_allowed(db: Session, equipment: LabWorkOrderEquipment, *, external: bool) -> None:
     # Fase 3: la captura técnica (FieldSheets) sólo procede DESPUÉS de que la
     # recepción quedó firmada -- ya no en draft. received_signed cubre el
     # arranque; in_progress cubre la captura ya en marcha (ver
@@ -265,6 +271,9 @@ def _ensure_capture_allowed(equipment: LabWorkOrderEquipment, *, external: bool)
     # final llega recién en finalize_equipment_by_equipment_work_order.
     allowed_statuses = {"received_signed", "in_progress"}
     if equipment.work_order.workflow_mode == "equipment_by_equipment":
+        allowed_statuses.add("draft")
+    if (is_authorized_correction_session(db, equipment.work_order)
+            and equipment.work_order.signature_preserved and not equipment.work_order.signature_required):
         allowed_statuses.add("draft")
     if equipment.work_order.status not in allowed_statuses:
         raise HTTPException(status_code=409, detail="La OT no admite captura técnica")
@@ -302,7 +311,7 @@ def create_lab_field_sheet(
             status_code=409,
             detail="Servicio General usa reportes técnicos, no hojas de campo",
         )
-    _ensure_capture_allowed(equipment, external=external)
+    _ensure_capture_allowed(db, equipment, external=external)
     if equipment.field_sheet is not None:
         raise HTTPException(status_code=409, detail="El equipo ya tiene una hoja de campo")
     # Fase 6: modelo de revisión. equipment.field_sheets ya trae todas las
@@ -648,7 +657,9 @@ def update_lab_field_sheet(
     # -- reusar el genérico ahí rompería PATCH sobre una hoja hermana
     # todavía pendiente en ese caso preexistente, no relacionado con este
     # cierre.
-    if equipment.work_order.workflow_mode == "group" and equipment.work_order.status == "draft":
+    if (equipment.work_order.workflow_mode == "group" and equipment.work_order.status == "draft"
+            and not (is_authorized_correction_session(db, equipment.work_order)
+                     and equipment.work_order.signature_preserved and not equipment.work_order.signature_required)):
         raise HTTPException(status_code=409, detail="La OT no admite captura técnica")
     previous = _serialize_field_sheet(sheet)
     updates = payload.model_dump(
@@ -847,7 +858,7 @@ def change_lab_field_sheet_template(
     autorización que create_lab_field_sheet, así que esta acción nunca abre
     una ventana de captura que el flujo normal no permitiría."""
     equipment = get_lab_equipment(db, work_order_id, equipment_id, lock=True)
-    _ensure_capture_allowed(equipment, external=external)
+    _ensure_capture_allowed(db, equipment, external=external)
     sheet = equipment.field_sheet
     if sheet is None or not sheet.is_active:
         raise HTTPException(status_code=404, detail="Hoja de campo LAB no encontrada")
@@ -935,8 +946,11 @@ def change_lab_field_sheet_template(
 _FIELD_SHEET_REOPEN_ELIGIBLE_WORK_ORDER_STATUSES = {"received_signed", "in_progress", "ready_to_close"}
 
 
+@rollback_failed_reopening
 def reopen_lab_field_sheet_directly(
     db: Session, work_order_id: int, equipment_id: int, user: User, *, reason: str,
+    delivery_impact: str | None = None, delivery_impacts: dict[int, str] | None = None,
+    expected_cohort_revision: str | None = None,
 ) -> FieldSheetRead:
     """Reapertura administrativa directa de UNA FieldSheet completed: el
     actor YA posee lab_folios.resolve -- la misma autoridad que
@@ -954,8 +968,9 @@ def reopen_lab_field_sheet_directly(
     sin tocar) y N+1 nace ya clonada y editable en la misma transacción."""
     if not user_has_permission(user, "lab_folios.resolve"):
         raise HTTPException(status_code=403, detail="REOPEN_NOT_AUTHORIZED")
+    _, members = lock_correction_group(db, work_order_id, expected_cohort_revision)
     equipment = get_lab_equipment(db, work_order_id, equipment_id, lock=True)
-    if equipment.work_order.status not in _FIELD_SHEET_REOPEN_ELIGIBLE_WORK_ORDER_STATUSES:
+    if not can_reopen_field_sheet(db, equipment.work_order):
         raise HTTPException(
             status_code=409,
             detail="La OT ya está cerrada; solicita la reapertura de la OT completa",
@@ -963,6 +978,11 @@ def reopen_lab_field_sheet_directly(
     current = equipment.field_sheet
     if current is None or current.status != "completed":
         raise HTTPException(status_code=409, detail="La hoja ya no está completed; nada que reabrir")
+    establish_reopening_decisions(
+        db, members=members, equipment_id=equipment_id, user=user, reason=reason,
+        delivery_impact=delivery_impact, delivery_impacts=delivery_impacts,
+    )
+    equipment.work_order.edit_version += 1
     _retire_current_field_sheet_revision(equipment)
     _clone_field_sheet_for_correction(db, equipment, current, user)
     if equipment.work_order.status == "ready_to_close":

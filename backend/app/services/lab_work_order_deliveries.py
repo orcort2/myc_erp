@@ -214,8 +214,15 @@ def _reload_delivery(db: Session, delivery_id: int) -> LabWorkOrderDelivery:
     return delivery
 
 
-def _read_delivery(delivery: LabWorkOrderDelivery) -> LabDeliveryRead:
+def _read_delivery(db: Session, delivery: LabWorkOrderDelivery) -> LabDeliveryRead:
+    blocked = has_pending_delivery_invalidation(db, delivery.root_work_order_id)
+    receipt_id = db.scalar(select(LabDeliveryGroupReceipt.id).where(
+        LabDeliveryGroupReceipt.root_work_order_id == delivery.root_work_order_id,
+        LabDeliveryGroupReceipt.superseded_at.is_(None),
+    ).limit(1))
     return LabDeliveryRead(
+        final_receipt_available=receipt_id is not None and not blocked,
+        final_receipt_blocked_reason="DELIVERY_INVALIDATION_PENDING" if blocked else None,
         id=delivery.id,
         root_work_order_id=delivery.root_work_order_id,
         exhibition_number=delivery.exhibition_number,
@@ -319,9 +326,10 @@ def get_lab_delivery_group_status(db: Session, work_order_id: int) -> LabDeliver
             )
             for equipment in pending
         ],
-        exhibitions=[_read_delivery(item) for item in deliveries],
+        exhibitions=[_read_delivery(db, item) for item in deliveries],
         group_complete=total_equipment > 0 and not pending,
-        final_receipt_available=receipt is not None,
+        final_receipt_available=receipt is not None and not has_pending_delivery_invalidation(db, root_id),
+        final_receipt_blocked_reason=("DELIVERY_INVALIDATION_PENDING" if has_pending_delivery_invalidation(db, root_id) else None),
         final_receipt_version=receipt.version if receipt else None,
         pending_partial_delivery_ticket_id=pending_ticket_id,
     )
@@ -451,9 +459,33 @@ def _supersede_final_receipt_if_any(db: Session, root_id: int, when: datetime) -
         current.superseded_at = when
 
 
+def has_pending_delivery_invalidation(db: Session, root_work_order_id: int) -> bool:
+    """¿Algún item de una Delivery vigente del grupo tiene un impacto
+    delivery_invalidated pending? (Fase 3B)"""
+    from app.models.lab_delivery_item_correction_impact import LabDeliveryItemCorrectionImpact
+
+    return db.scalar(
+        select(LabDeliveryItemCorrectionImpact.id)
+        .join(LabDeliveryItem, LabDeliveryItemCorrectionImpact.delivery_item_id == LabDeliveryItem.id)
+        .join(LabWorkOrderDelivery, LabDeliveryItem.delivery_id == LabWorkOrderDelivery.id)
+        .where(
+            LabWorkOrderDelivery.root_work_order_id == root_work_order_id,
+            LabWorkOrderDelivery.status == "completed",
+            LabDeliveryItemCorrectionImpact.impact_type == "delivery_invalidated",
+            LabDeliveryItemCorrectionImpact.status == "pending",
+        )
+        .limit(1)
+    ) is not None
+
+
 def _generate_final_receipt(
     db: Session, *, root_work_order: LabWorkOrder, user: User
-) -> None:
+) -> bool:
+    # Guard 3B: mientras exista una invalidación pending no nace una nueva
+    # versión; la resolución/reentrega futura la generará. La entrega física
+    # en curso (group_complete) no se altera.
+    if has_pending_delivery_invalidation(db, root_work_order.id):
+        return False
     now = datetime.now(timezone.utc)
     deliveries = list(
         db.scalars(
@@ -501,6 +533,7 @@ def _generate_final_receipt(
             "exhibitions_count": len(deliveries),
         },
     )
+    return True
 
 
 def _finalize_delivery(
@@ -586,7 +619,7 @@ def complete_lab_delivery(
             technical_report_ids=_delivered_technical_report_ids(pending),
         )
         db.commit()
-        return _read_delivery(_reload_delivery(db, delivery.id))
+        return _read_delivery(db, _reload_delivery(db, delivery.id))
     except Exception:
         db.rollback()
         raise
@@ -644,7 +677,7 @@ def execute_partial_delivery(
             new_values={"status": "resolved", "delivery_id": delivery.id},
         )
         db.commit()
-        return _read_delivery(_reload_delivery(db, delivery.id))
+        return _read_delivery(db, _reload_delivery(db, delivery.id))
     except Exception:
         db.rollback()
         raise
@@ -695,7 +728,7 @@ def void_lab_delivery(
             new_values={"status": "voided", "delivery_id": delivery.id, "void_reason": delivery.void_reason},
         )
         db.commit()
-        return _read_delivery(_reload_delivery(db, delivery.id))
+        return _read_delivery(db, _reload_delivery(db, delivery.id))
     except Exception:
         db.rollback()
         raise

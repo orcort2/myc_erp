@@ -153,6 +153,8 @@ export type LabDeliveryItem = {
 };
 
 export type LabDelivery = {
+  final_receipt_available?: boolean;
+  final_receipt_blocked_reason?: string | null;
   id: number;
   // null cuando el grupo entero fue eliminado (última OT del cohorte).
   root_work_order_id: number | null;
@@ -198,6 +200,7 @@ export type LabDeliveryGroupStatus = {
   exhibitions: LabDelivery[];
   group_complete: boolean;
   final_receipt_available: boolean;
+  final_receipt_blocked_reason?: string | null;
   final_receipt_version: number | null;
   pending_partial_delivery_ticket_id: number | null;
 };

@@ -206,3 +206,15 @@ Una deuda se elimina sólo cuando la condición deja de existir y la validación
   el ERP. Tres pruebas de frontend ya fallaban en `main`
   antes del 2026-10-19 (`notificationNavigation.test.js` aserción `work_order`, `clients.test.js`,
   CSS LAB); no se tocaron.
+
+## Pendiente explícito Fase 3B (2026-10-20)
+
+El ciclo administrativo de `LabDeliveryItemCorrectionImpact` (resolver/cancelar, evidencia, permisos específicos si se aprueban, reemisión y reentrega) permanece fuera de alcance. Los impactos creados quedan `pending`; el cierre técnico no los resuelve. Una invalidación pendiente impide generar un nuevo recibo final. No desbloquearla mediante edición directa de BD.
+
+La regresión general frontend conserva dos fallos reproducidos en HEAD: expectativa de navegación de notificaciones y `clients.test.js` dependiente de `vitest` no declarado/disponible en el entorno actual. No se alteran esas funcionalidades en Fase 3B. El detalle de comandos y resultados está en la evidencia de integración.
+
+Regresión PostgreSQL adicional: `test_postgresql_concurrent_individual_cohorts_get_distinct_versions` falla también sobre HEAD porque su equipo de prueba carece de tipo de servicio (`LAB_RECEPTION_INCOMPLETE`). Se mantiene fuera de esta integración; 16 de las otras pruebas PostgreSQL previamente omitidas pasan.
+
+## Correcciones Fase 3B autorizadas — 2026-10-20
+
+Resueltos los cinco defectos focalizados Fase 3B. Sigue pendiente resolución/cancelación/reemisión/reentrega. TypeScript Mobile encuentra dependencias locales ausentes expo-image-manipulator y expo-image-picker; no se alteran dependencias fuera de alcance. Véase [evidencia](../audits/PHASE3B_INTEGRATION_2026-10-20.md).

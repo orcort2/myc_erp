@@ -902,10 +902,12 @@ de cada exhibición se conserva siempre, sólo el texto se abrevia. `N` cuenta
 Anular una exhibición (`void`, nunca delete) devuelve sus equipos a
 pendientes, recalcula `departure_date` de las OT afectadas y, si rompe la
 completitud del grupo, marca el resumen final vigente como superseded sin
-borrar sus bytes; la siguiente entrega completa genera una nueva versión. Un
-equipo con `LabDeliveryItem` vigente (entrega `completed` no anulada) bloquea
-tanto reabrir como cancelar esa OT — si el equipo regresa físicamente a MYC
-después de entregado, el contrato es una OT nueva, nunca reabrir la anterior.
+borrar sus bytes; la siguiente entrega completa genera una nueva versión salvo
+invalidación administrativa pendiente. Un equipo con `LabDeliveryItem` vigente
+continúa bloqueando la cancelación de OT. Desde Fase 3B, una corrección técnica
+puede reabrir mediante decisión administrativa LAB validada, conservando la
+entrega histórica. El regreso físico para un nuevo servicio mantiene el contrato
+de nueva OT; esta reapertura no crea una reentrega.
 Un `departure_date` heredado de datos históricos previos a este dominio (sin
 `LabWorkOrderDelivery`/`LabDeliveryItem` reales) es sólo metadata legacy: no
 se interpreta como entrega digital ni genera acuse/voucher retroactivo.
@@ -1007,3 +1009,43 @@ Los sprints posteriores —incluida la reparación de firma/orientación del
 2026-08-24— requieren repetir el recorrido completo en Android e iPhone antes
 de distribuirse. Hasta esa evidencia nueva el módulo se mantiene `EN
 DESARROLLO`, no `SELLADO`.
+
+
+## Fase 3B — impacto administrativo de correcciones (2026-10-20)
+
+`lab_delivery_item_correction_impacts` guarda `documentation_reissue` o
+`delivery_invalidated`, inicialmente `pending`, con actor, motivo, ítem, identidad
+snapshot y hoja/revisión origen. La revisión OT se vincula cuando hay reapertura
+de cohorte. `none` sólo genera auditoría. FK de ítem/hoja/usuario RESTRICT y de
+revisión OT SET NULL; índice único parcial por ítem/hoja pendiente. Migración
+`a3c5e7f9b1d2` sobre `ffcd7b40ac46`, aditiva, sin backfill ni modificación de vouchers.
+
+Las rutas de OT directa, aprobación de ticket y hojas directa/por resolución de
+ticket aceptan `delivery_impacts` (mapa de equipment_id a decisión) y
+`expected_cohort_revision` opcional. LAB verifica permisos vigentes, alcance,
+cohorte y entrega única, bajo bloqueo; la reapertura completa exige todas las
+decisiones de equipos entregados activos de la cohorte. Sólo las hojas de
+`correction_equipment_ids` se clonan dentro de la misma transacción. Sin entrega, los contratos anteriores
+siguen vigentes. No existe bandera de autorización cliente.
+
+La edición de identidad/documentación no puede clonar implícitamente una hoja
+completada entregada: requiere primero la reapertura administrativa. Los
+impactos históricos no autorizan otra corrección. Las decisiones, impactos,
+revisiones, auditorías, ticket y sustitución administrativa del recibo comparten
+el commit de negocio. Las notificaciones mantienen su despacho posterior.
+
+`documentation_reissue` conserva el recibo; `delivery_invalidated` lo marca
+superseded sin borrar PDF/hash y bloquea nueva generación mientras esté pending.
+Los contadores de grupo incluyen impactos de equipos retirados lógicamente.
+Resolver/cancelar impactos, reemisión y reentrega quedan fuera de alcance; completar
+la corrección técnica no cambia esos estados.
+
+## Correcciones autorizadas Fase 3B — 2026-10-20
+
+Una reapertura individual posterior admite OT draft sólo con autor/fecha de reapertura y snapshot persistido de la revisión inmediatamente anterior. Conserva lab_folios.resolve, bloqueo/relectura de cohorte, control de concurrencia y auditoría; aumenta edit_version sólo en la OT afectada, sin otra revisión de toda la cohorte. La captura group exige además firmas preservadas y no pendientes; invalidar firmas mantiene el flujo de firma existente. ETS expone authorized_correction_session, calculado en LAB; no lo acepta como autoridad desde el cliente.
+
+correction_equipment_ids selecciona hojas técnicas en reaperturas completas directas o por ticket. Se validan duplicados, pertenencia activa a cohorte y hoja completed activa antes de mutar. delivery_impacts conserva decisiones por todos los entregados de la cohorte, independientemente de la selección: un impacto administrativo puede registrarse sin clonar su hoja. none se audita y también puede acompañar una corrección técnica. La lista es obligatoria si una reapertura completa transporta decisiones administrativas; [] significa sólo corrección documental de la OT. En reapertura individual, una lista contradictoria con el equipo de solicitud/ticket se rechaza.
+
+group_complete significa entrega física completa. final_receipt_available y final_receipt_blocked_reason se devuelven en el grupo y cada entrega. DELIVERY_INVALIDATION_PENDING impide emitir otro acuse sin revertir entregas físicas; _generate_final_receipt devuelve false explícito. Mobile sólo muestra impresión/descarga cuando existe disponibilidad.
+
+El downgrade online adquiere ACCESS EXCLUSIVE antes de consultar filas; cualquier registro pending/resolved/cancelled impide DDL destructivo. Se rechaza downgrade offline porque no puede demostrar tabla vacía. Modelo y Alembic comparten server_default pending. Resolución/cancelación administrativa, reemisión y reentrega siguen fuera de alcance.

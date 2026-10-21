@@ -26,12 +26,16 @@ from app.schemas.service_order_mobile_execution import (
 )
 from app.services.audit_logs import write_audit_log
 from app.services.lab_field_sheets import (
-    _FIELD_SHEET_REOPEN_ELIGIBLE_WORK_ORDER_STATUSES,
     reopen_lab_field_sheet_directly,
 )
-from app.services.lab_work_orders import cancel_work_order, restore_work_order
+from app.services.lab_delivery_correction_impacts import (
+    can_reopen_field_sheet,
+    get_active_delivery_item_for_equipment, validate_delivery_impact, rollback_failed_reopening,
+)
+from app.services.lab_work_orders import _lock_historical_group, cancel_work_order, restore_work_order
 from app.services.operational_tickets import reopen_work_order_directly
 from app.services.service_order_mobile_execution import (
+    cohort_revision,
     get_mobile_execution_projection,
     require_group_equipment,
     require_linked_lab_group,
@@ -80,6 +84,7 @@ def _trace(db: Session, service_order_id: int, user: User, action: str, values: 
     )
 
 
+@rollback_failed_reopening
 def request_mobile_correction(
     db: Session,
     service_order_id: int,
@@ -94,6 +99,26 @@ def request_mobile_correction(
     reason = _reason(payload.reason)
     _link, members = require_linked_lab_group(db, service_order_id)
     work_order, equipment = require_group_equipment(members, equipment_id)
+    # Boundary transaccional único: la cohorte se bloquea ANTES de decidir y
+    # se relee fresca, de modo que decisión de impacto + reapertura ven el
+    # mismo estado y dos solicitudes simultáneas se serializan.
+    _lock_historical_group(db, work_order.id)
+    db.expire_all()
+    _link, members = require_linked_lab_group(db, service_order_id)
+    work_order, equipment = require_group_equipment(members, equipment_id)
+    if (
+        payload.expected_cohort_revision is not None
+        and payload.expected_cohort_revision != cohort_revision(members)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "COHORT_REVISION_CONFLICT",
+                "message": "La OT cambió desde que abriste la solicitud; recarga e inténtalo de nuevo",
+            },
+        )
+    delivery_item = get_active_delivery_item_for_equipment(db, equipment.id)
+    delivery_impact = validate_delivery_impact(delivery_item, payload.delivery_impact)
     current = equipment.current_field_sheet
     if current is None or not current.is_active or current.status != "completed":
         raise HTTPException(
@@ -103,7 +128,7 @@ def request_mobile_correction(
                 "message": "Sólo una Hoja de Campo completada puede enviarse a corrección; una hoja editable ya está disponible en MYC Mobile",
             },
         )
-    if work_order.status in _FIELD_SHEET_REOPEN_ELIGIBLE_WORK_ORDER_STATUSES:
+    if can_reopen_field_sheet(db, work_order):
         mode = "field_sheet_reopen"
     elif work_order.status in CLOSED_WORK_ORDER_STATUSES:
         mode = "work_order_reopen"
@@ -126,18 +151,21 @@ def request_mobile_correction(
             "field_sheet_id": current.id,
             "revision_number": current.revision_number,
             **({"signature_policy": payload.signature_policy} if mode == "work_order_reopen" else {}),
+            **({"delivery_impact": delivery_impact} if delivery_item is not None else {}),
         },
         reason,
     )
-    # El servicio de dominio verifica su propia autoridad (lab_folios.resolve
-    # o work_orders.reopen + política) y hace commit de todo, incluida la
-    # trazabilidad ETS; si rechaza, la sesión se descarta sin cambios.
     if mode == "field_sheet_reopen":
-        reopen_lab_field_sheet_directly(db, work_order.id, equipment.id, user, reason=reason)
+        reopen_lab_field_sheet_directly(
+            db, work_order.id, equipment.id, user, reason=reason,
+            delivery_impact=payload.delivery_impact,
+            expected_cohort_revision=payload.expected_cohort_revision,
+        )
     else:
         reopen_work_order_directly(
-            db, work_order.id, user,
-            signature_policy=payload.signature_policy, reason=reason, equipment_id=equipment.id,
+            db, work_order.id, user, signature_policy=payload.signature_policy,
+            reason=reason, equipment_id=equipment.id, delivery_impact=payload.delivery_impact,
+            expected_cohort_revision=payload.expected_cohort_revision,
         )
     return get_mobile_execution_projection(db, service_order_id)
 

@@ -171,6 +171,8 @@ Cierre acotado post-PR #4: [LAB EXTERNO y folios propios](../closures/LAB_EXTERN
 
 ## Auditorías
 
+Evidencia de integración local: [Fase 3B, 2026-10-20](../audits/PHASE3B_INTEGRATION_2026-10-20.md), fotografía de cambios sin commit y validaciones aisladas; no sustituye los contratos canónicos ni declara cierre.
+
 | Documento | Fecha / autoridad |
 | --- | --- |
 | [`../audits/ADMINISTRATIVE_OPERATIONS_INVENTORY_2026-08-25.md`](../audits/ADMINISTRATIVE_OPERATIONS_INVENTORY_2026-08-25.md) | Inventario transversal 2026-08-25 de operaciones extraordinarias, owners, prioridades y límites seguros; fotografía que fundamenta Fase 15. |

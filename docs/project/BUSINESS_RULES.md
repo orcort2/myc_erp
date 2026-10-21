@@ -428,3 +428,17 @@ persistidos y PDFs reales en `backend/tests/test_quotation_pdf.py`.
 Estos toggles no modifican el texto almacenado ni el dominio de la cotización.
 El PDF conserva el permiso `quotations.read` y entrega `application/pdf` con
 `Content-Disposition: inline`; la presentación web no altera esa autorización.
+
+## Correcciones posteriores a entrega LAB — Fase 3B (2026-10-20)
+
+- Una corrección técnica no anula una entrega física histórica. Para cada equipo entregado afectado se exige una decisión explícita validada por el actor con los permisos LAB vigentes.
+- `none` conserva entrega y recibo y se audita; no crea impacto. `documentation_reissue` registra un pendiente sin retirar el recibo vigente. `delivery_invalidated` registra un pendiente y sustituye administrativamente el recibo final, conservando sus bytes y hash; bloquea una nueva versión mientras siga pendiente.
+- La decisión es dato de entrada, nunca autorización. Ninguna bandera del cliente ni impacto pendiente anterior permite omitir permisos, pertenencia, estado o validación de la corrección actual.
+- Una reapertura completa exige decisiones para todos los equipos entregados activos de la cohorte afectada y abre sólo las hojas seleccionadas en `correction_equipment_ids`. Una corrección individual afecta administrativamente sólo a su equipo, aunque la reapertura técnica preserve la semántica de cohorte existente.
+- Ediciones documentales que necesiten clonar una hoja completada entregada deben pasar primero por la reapertura administrativa explícita. Las hojas ya abiertas se editan por sus autoridades vigentes.
+- Decisión, impacto, recibo, revisiones, ticket y auditorías se confirman juntos. Las notificaciones conservan su despacho posterior al commit. No se garantiza rollback de una transacción ya confirmada por un fallo externo de notificación.
+- `resolved/cancelled` son estados reservados del modelo; su ciclo administrativo está pendiente y fuera de esta integración. El cierre técnico no los aplica.
+
+## Correcciones Fase 3B autorizadas — 2026-10-20
+
+Reaperturas sucesivas requieren evidencia LAB persistida, permisos y bloqueo. correction_equipment_ids es independiente de delivery_impacts; none es auditable y puede requerir clonación. Downgrade nunca elimina impactos históricos. Véase [evidencia](../audits/PHASE3B_INTEGRATION_2026-10-20.md).

@@ -4,9 +4,19 @@
 >
 > Autoridad: Media; no sustituye los documentos canónicos de project/
 >
-> Corte: ETS ↔ LAB Fase 3 (Mobile único editor técnico, gobierno ERP y Captura PDF-only) sobre `e4cfb42`, rama `feat/mobile-calibration-authority-2026`; push a origin sin merge ni deploy, pendiente de revisión.
+> Corte: 2026-10-20, integración local Fase 3B sobre main 752394a; pendiente de revisión final, sin commit ni publicación.
 
 # Estado operativo actual del ERP MYC
+
+## Integración selectiva Fase 3B (2026-10-20)
+
+- Implementación en árbol principal; fuente `myc_erp-phase3b` y respaldo existente conservados.
+- Decisiones administrativas LAB sin banderas cliente, impactos por ítem, reaperturas y recibos atómicos, protección de hojas directas/por ticket y clonación indirecta.
+- Grafo nuevo: `ffcd7b40ac46 -> a3c5e7f9b1d2`, head único. No aplicada a bases operativas. Validación PostgreSQL en clúster temporal exclusivo, base `myc_phase3b_test`, esquemas descartables y fixtures sintéticas.
+- Resolución/cancelación de impactos, reemisión y reentrega pendientes fuera de alcance. Los estados pending no cambian al cerrar correcciones técnicas.
+- Comandos, resultados, fallos preexistentes y relación exacta de archivos en [la evidencia de integración](audits/PHASE3B_INTEGRATION_2026-10-20.md).
+- No se regeneró `backup_erp_myc_antes_prueba.sql`: ninguna base operativa/local de desarrollo fue migrada; sólo se usó PostgreSQL desechable sin datos operativos.
+
 
 ## Ciclo de revisión de cotizaciones (2026-10-19, rama `feat/quotation-acceptance-revision-cycle`)
 
@@ -1065,3 +1075,9 @@ los componentes fiscales o de correo:
 10. Cerrar cada fase con pruebas y commit documentado.
 
 <!-- MYC_PRODUCTION_READINESS_END -->
+
+## Correcciones Fase 3B autorizadas — 2026-10-20
+
+Cinco correcciones implementadas; pruebas SQLite en memoria y PostgreSQL desechable 127.0.0.1:55484/myc_phase3b_test. Ninguna base operativa ni respaldo modificado. Grafo ffcd7b40ac46 → a3c5e7f9b1d2 sin cambios históricos; downgrade rechaza impactos persistidos. Archivos, resultados y límites vigentes en [evidencia local](audits/PHASE3B_INTEGRATION_2026-10-20.md).
+
+Validación vigente: backend 512 passed/18 skipped; integración PostgreSQL 90 passed; 18 casos adicionales PostgreSQL: 17 passed/1 fallo de fixture ya reproducido en HEAD. ETS web 35 passed; Mobile 1142 passed; build web OK. TypeScript Mobile: dos TS2307 por dependencias Expo locales ausentes. git diff --check limpio. Continúa pendiente revisión final, sin publicar.

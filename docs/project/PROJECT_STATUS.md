@@ -351,3 +351,13 @@ cold start sin restauración silenciosa con biometría activa, y overscroll de
 la Home técnica corregido. Suite backend/mobile verde; no constituye
 aceptación física iOS/Android ni sellado del módulo. Cierre en
 [BIOMETRIC_2_BIOMETRIC_LOGIN](../closures/BIOMETRIC_2_BIOMETRIC_LOGIN.md).
+
+## Fase 3B LAB / ETS — corte 2026-10-20
+
+Estado de esta integración: **EN DESARROLLO**, implementación local pendiente de revisión final. Recupera impactos administrativos de entregas y protege las reaperturas LAB directas/por ticket, incluidas hojas de campo. Conserva autoridades posteriores de main e históricos. No declara SELLADO el módulo ni el ciclo administrativo: resolución de impactos, reemisión y reentrega siguen fuera de alcance.
+
+Evidencia, comandos, fallos preexistentes y archivos: [integración Fase 3B](../audits/PHASE3B_INTEGRATION_2026-10-20.md). Cambios sin commit ni despliegue; migración probada sólo en PostgreSQL desechable.
+
+## Correcciones Fase 3B autorizadas — 2026-10-20
+
+Cinco correcciones Fase 3B implementadas localmente, pendientes de revisión final. Head propuesto a3c5e7f9b1d2 sin aplicación operativa ni commit. Resultados vigentes en la evidencia de integración. Véase [evidencia](../audits/PHASE3B_INTEGRATION_2026-10-20.md).

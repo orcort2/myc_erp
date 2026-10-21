@@ -548,11 +548,10 @@ def test_delete_equipment_preserves_delivery_history(lab_context):
         )
 
     delivery_id = delivery.json()["id"]
-    # _reopen_closed_cohort bloquea la reapertura mientras exista una entrega
-    # "completed" para el grupo (ver guard en operational_tickets.py) -- hay
-    # que anularla primero, igual que exigiría el flujo real ("Anula primero
-    # el acuse de entrega"), para poder reabrir y ejercitar el retiro de
-    # equipo sin dejar el historial de esa entrega ya anulada intacto.
+    # Fase 3B: una Delivery vigente ya no bloquea la reapertura técnica, pero
+    # Mobile (ticket/reapertura directa) exige un impacto administrativo
+    # establecido. Este test ejercita el retiro de equipo con el historial de
+    # una entrega ya anulada, así que se anula primero.
     voided = client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/delivery/{delivery_id}/void",
         json={"reason": "Reapertura administrativa para prueba"},

@@ -229,7 +229,7 @@ def apply_lab_external_structure(
     from app.services.lab_field_sheets import _ensure_capture_allowed, get_lab_equipment, read_lab_field_sheet
 
     equipment = get_lab_equipment(db, work_order_id, equipment_id, lock=True)
-    _ensure_capture_allowed(equipment, external=external)
+    _ensure_capture_allowed(db, equipment, external=external)
     sheet = equipment.field_sheet
     if sheet is None or not sheet.is_active:
         raise HTTPException(status_code=404, detail="Equipo sin hoja de campo LAB EXTERNO")

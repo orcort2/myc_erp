@@ -213,6 +213,13 @@ export default function EtsMobileExecutionPanel({ serviceOrderId, user, onLinkCh
               </div>
             ) : null}
           </div>
+          {projection.has_pending_delivery_impacts ? (
+            <div className="form-notice" role="status">
+              Pendientes administrativos: {projection.pending_documentation_reissues} reemisiones documentales
+              {' · '}{projection.pending_delivery_invalidations} invalidaciones de entrega.
+              Estos pendientes no se resuelven al completar la corrección técnica.
+            </div>
+          ) : null}
           <div className="ets-metric-strip">
             <span className="ets-metric-badge"><strong>{totals.workOrders}</strong>OT</span>
             <span className="ets-metric-badge"><strong>{totals.equipment}</strong>Equipos</span>
@@ -304,7 +311,7 @@ export default function EtsMobileExecutionPanel({ serviceOrderId, user, onLinkCh
                           {permissions.canRequestCorrection && correctionMode ? (
                             <button
                               className="table-button"
-                              onClick={() => setCorrectionTarget({ equipment, workOrderFolio: workOrder.folio, mode: correctionMode })}
+                              onClick={() => setCorrectionTarget({ equipment, workOrderFolio: workOrder.folio, mode: correctionMode, cohortRevision: projection.cohort_revision })}
                               type="button"
                             >
                               Enviar a corrección
@@ -331,6 +338,7 @@ export default function EtsMobileExecutionPanel({ serviceOrderId, user, onLinkCh
       ) : null}
       {correctionTarget ? (
         <EtsMobileCorrectionDialog
+          onReload={async () => { setCorrectionTarget(null); await load(); }}
           onCancel={() => setCorrectionTarget(null)}
           onDone={(next) => {
             setCorrectionTarget(null);

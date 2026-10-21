@@ -819,3 +819,15 @@ extendido con dependencias reales) y `quotation_signing_authority`; el nuevo
 `MYC-AC-AAAA-NNNNNN` usa `institutional_folios.allocate_sequence`. La ruta profunda canónica de una
 cotización es `/dashboard?quotation_id=ID#cotizaciones` (`/quotations` nunca existió en el frontend).
 Migración `a1b2c3d4e5f7`. Contrato en [`BUSINESS_RULES.md`](BUSINESS_RULES.md#ciclo-de-revisión-de-cotizaciones--2026-10-19-vigente-sustituye-las-reglas-13-de-la-sección-siguiente).
+
+## 2026-10-20 — Integración selectiva Fase 3B
+
+Se recuperan sólo los cambios funcionales locales de `myc_erp-phase3b` sobre main `752394a4d8040033635022d354f921a3209488fd`, con adaptación a las autoridades actuales. No se integra la divergencia histórica mediante operaciones Git automáticas.
+
+La autoridad de entrega reutiliza `technical_interventions`; una entrega vigente ambigua se rechaza. La autoridad de reapertura continúa en LAB: decisiones por equipo verificadas bajo bloqueo, sin `delivery_impact_declared` ni autorización derivada de impactos anteriores. El coordinador conserva el commit único y el mecanismo de notificaciones. Un guard de rollback cubre los coordinadores y el wrapper ETS.
+
+`a3c5e7f9b1d2` depende de `ffcd7b40ac46`; añade sólo la tabla de impactos, FK, checks e índices. No hay backfill de entregas. La resolución administrativa se difiere expresamente; no se incorpora una transición automática al completar correcciones.
+
+## Correcciones Fase 3B autorizadas — 2026-10-20
+
+Se reutilizan reopened_at/reopened_by_user_id y LabWorkOrderRevision como evidencia persistida; draft aislado no autoriza. Las decisiones administrativas y selección técnica se transportan por campos separados. Conservación histórica prevalece sobre downgrade con datos. Véase [evidencia](../audits/PHASE3B_INTEGRATION_2026-10-20.md).

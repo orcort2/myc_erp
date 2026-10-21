@@ -1225,6 +1225,8 @@ def post_reopen_lab_field_sheet_directly(
     ensure_lab_work_order_scope(db, work_order_id, context)
     return reopen_lab_field_sheet_directly(
         db, work_order_id, equipment_id, context.user, reason=payload.reason,
+        delivery_impacts=payload.delivery_impacts,
+        expected_cohort_revision=payload.expected_cohort_revision,
     )
 
 
@@ -1606,7 +1608,10 @@ def post_reopen_lab_work_order_directly(
     return reopen_work_order_directly(
         db, work_order_id, context.user,
         signature_policy=payload.requested_signature_policy,
+        correction_equipment_ids=payload.correction_equipment_ids,
         reason=payload.reason,
+        delivery_impacts=payload.delivery_impacts,
+        expected_cohort_revision=payload.expected_cohort_revision,
     )
 
 

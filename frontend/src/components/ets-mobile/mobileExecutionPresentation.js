@@ -72,7 +72,7 @@ export function getMobileExecutionPermissions(user) {
 export function correctionModeFor(workOrder, equipment) {
   const sheet = equipment?.field_sheet;
   if (!sheet || sheet.status !== 'completed') return null;
-  if (OPEN_CORRECTABLE_STATUSES.has(workOrder?.status)) return 'field_sheet_reopen';
+  if (OPEN_CORRECTABLE_STATUSES.has(workOrder?.status) || (workOrder?.status === 'draft' && workOrder?.authorized_correction_session === true)) return 'field_sheet_reopen';
   if (CLOSED_CORRECTABLE_STATUSES.has(workOrder?.status)) return 'work_order_reopen';
   return null;
 }

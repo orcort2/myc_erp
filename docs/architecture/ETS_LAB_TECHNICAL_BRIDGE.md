@@ -319,9 +319,9 @@ contrato abierto a futuras verticales Mobile sin asumir que todo servicio es cal
 | --- | --- | --- | --- | --- | --- |
 | Cancelar OT | `lab_work_orders.cancel_work_order` | `lab_work_orders.cancel` (staff) | Cualquiera sin entrega física vigente; idempotente | Sí (`previous_status`; no toca equipo/hojas/firmas/PDF) | **Expuesta** |
 | Restaurar OT | `restore_work_order` | `lab_work_orders.cancel` | `cancelled` con `previous_status` | Sí | **Expuesta** |
-| Reabrir OT por ticket | `create_reopen_ticket` / `approve_reopen_ticket` | `tickets.create`; aprobar `work_orders.reopen` + política, sin autoaprobación | `completed`/`partially_closed`, sin entrega vigente | Sí (`LabWorkOrderRevision`, PDF OT archivado) | No (flujo de tickets Mobile) |
-| Reapertura directa de OT | `operational_tickets.reopen_work_order_directly` | `work_orders.reopen` + `reopen_preserve/invalidate_signatures` | Cohorte cerrada, sin entrega vigente | Sí | Sólo dentro de "Enviar a corrección" (OT cerrada) |
-| Reapertura de FieldSheet por ticket | `create_field_sheet_reopen_ticket` + `resolve_operational_ticket` | `lab_folios.resolve` | OT `received_signed`/`in_progress`/`ready_to_close`, hoja `completed` | Sí (N intacta, N+1 clon) | No (equivalente directo) |
+| Reabrir OT por ticket | `create_reopen_ticket` / `approve_reopen_ticket` | `tickets.create`; aprobar `work_orders.reopen` + política, sin autoaprobación | `completed`/`partially_closed`; con entrega exige decisión administrativa Fase 3B | Sí (`LabWorkOrderRevision`, PDF OT archivado) | No (flujo de tickets Mobile) |
+| Reapertura directa de OT | `operational_tickets.reopen_work_order_directly` | `work_orders.reopen` + `reopen_preserve/invalidate_signatures` | Cohorte cerrada; con entrega exige decisión administrativa Fase 3B | Sí | Sólo dentro de "Enviar a corrección" (OT cerrada) |
+| Reapertura de FieldSheet por ticket | `create_field_sheet_reopen_ticket` + `resolve_operational_ticket` | `lab_folios.resolve` | OT `received_signed`/`in_progress`/`ready_to_close`, hoja `completed`; con entrega exige decisión Fase 3B | Sí (N intacta, N+1 clon) | No (equivalente directo) |
 | Reapertura directa de FieldSheet | `lab_field_sheets.reopen_lab_field_sheet_directly` | `lab_folios.resolve` | Igual que el ticket | Sí | Sólo dentro de "Enviar a corrección" (OT abierta) |
 | Cambiar workflow mode | `change_lab_work_order_workflow_mode` | `lab_work_orders.cancel` | `draft` sin sesión de firma | Sí (auditoría) | No: decisión de captura previa a la firma (Mobile) |
 | Retirar equipo | `void_equipment_entry` | `lab_work_orders.cancel` | OT editable, motivo y `expected_edit_version` | Sí (tombstone) | No: depende de la sesión de edición Mobile |
@@ -461,3 +461,32 @@ verticales (Calibración, Mantenimiento, Reparación, Verificación, Venta…); 
 operativos externos conservan la vista y flujo actuales. Los contratos nuevos usan
 nombres neutrales (`mobile-execution`, `source`) donde representan esa abstracción futura,
 sin abstraer el modelo LAB actual. Las demás verticales quedan para fases posteriores.
+
+
+## Fase 3B — contratos de corrección y entrega (2026-10-20)
+
+La solicitud ETS de corrección incorpora `delivery_impact` opcional para equipos
+no entregados (`none` u omisión), obligatorio si existe entrega vigente, con
+`none`, `documentation_reissue` o `delivery_invalidated`. `expected_cohort_revision`
+transporta el token SHA-256 de todos los pares ordenados `(work_order_id,
+edit_version)`; si se envía se contrasta bajo bloqueo y el desfase devuelve 409
+`COHORT_REVISION_CONFLICT`. Las mutaciones de hoja por reapertura avanzan edit_version.
+La entrega y hoja actuales se revalidan aun sin token; no se aceptan banderas de
+autorización ni campos extra en la solicitud ETS.
+
+Proyección/detalle exponen `cohort_revision`; cada equipo añade `delivery` con
+identidad de entrega/ítem, exhibición, fecha e impacto activo. El grupo incorpora
+`has_pending_delivery_impacts`, `pending_documentation_reissues` y
+`pending_delivery_invalidations`, incluidos impactos históricos de equipos
+retirados. Las lecturas no crean ni resuelven impactos.
+
+El diálogo exige selección para entregados y permite recargar tras error; panel
+y detalle muestran pendientes. Se conservan permisos y roles. La revisión N,
+PDF y hash permanecen históricos; sólo N+1 es editable en Mobile. El ciclo de
+resolución administrativa no está implementado y no se simula al cerrar la hoja.
+
+## Correcciones autorizadas Fase 3B — 2026-10-20
+
+ETS recibe `authorized_correction_session` calculado por LAB; permite solicitar otra corrección de hoja completed en una OT draft autorizada. El servidor vuelve a validar evidencia persistida, permisos y concurrencia. La selección técnica completa se transporta como `correction_equipment_ids`, independiente de `delivery_impacts`; `none` conserva trazabilidad de decisión y puede acompañar corrección técnica.
+
+El contrato LAB de entrega distingue entrega física y acuse mediante `final_receipt_available` y `final_receipt_blocked_reason`; MYC Mobile condiciona sus acciones al primero. Reglas de captura, downgrade y conservación histórica en [contrato LAB](LAB_WORK_ORDERS.md#correcciones-autorizadas-fase-3b--2026-10-20). Resolución de impactos fuera de alcance.
