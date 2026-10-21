@@ -784,11 +784,17 @@ def _quotation_item_values(
         if snapshot is None and existing_item is not None:
             snapshot = existing_item.operational_snapshot
 
-        if not isinstance(snapshot, dict) or snapshot.get("service_kind") != "composite":
-            raise HTTPException(
-                status_code=422,
-                detail="Las descripciones de componentes requieren un servicio compuesto",
-            )
+        is_composite = (
+            isinstance(snapshot, dict)
+            and snapshot.get("service_kind") == "composite"
+        )
+        if not is_composite:
+            if commercial_components:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Las descripciones de componentes requieren un servicio compuesto",
+                )
+            return values
 
         operational_items = snapshot.get("operational_items") or []
         allowed = {

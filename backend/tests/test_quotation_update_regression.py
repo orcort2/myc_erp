@@ -112,3 +112,71 @@ def test_real_change_invalidates_old_signing_link(status):
     invalidate.assert_called_once_with(db, quotation_id=48)
     snapshot.assert_called_once()
     db.commit.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "commercial_components",
+    [None, []],
+)
+def test_simple_quotation_item_accepts_no_components(commercial_components):
+    from app.schemas.quotation import QuotationItemUpdate
+    from app.services.quotations import _quotation_item_values
+
+    data = {
+        "service_name": "Calibración a flujómetro",
+        "description": "Descripción comercial actualizada",
+        "quantity": 2,
+        "unit_price": "1600.00",
+    }
+
+    if commercial_components is not None:
+        data["commercial_components"] = commercial_components
+
+    payload = QuotationItemUpdate(**data)
+
+    existing_item = SimpleNamespace(
+        operational_snapshot=None,
+    )
+
+    values = _quotation_item_values(
+        MagicMock(),
+        payload,
+        existing_item=existing_item,
+    )
+
+    assert values["service_name"] == "Calibración a flujómetro"
+    assert values["description"] == "Descripción comercial actualizada"
+    assert values["quantity"] == 2
+    assert values["unit_price"] == 1600
+    assert "commercial_components" not in values
+
+
+def test_simple_quotation_item_rejects_real_components():
+    from fastapi import HTTPException
+
+    from app.schemas.quotation import QuotationItemUpdate
+    from app.services.quotations import _quotation_item_values
+
+    payload = QuotationItemUpdate(
+        service_name="Calibración a flujómetro",
+        commercial_components=[
+            {
+                "catalog_item_id": 12,
+                "description": "Componente no permitido",
+            }
+        ],
+    )
+
+    existing_item = SimpleNamespace(
+        operational_snapshot=None,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        _quotation_item_values(
+            MagicMock(),
+            payload,
+            existing_item=existing_item,
+        )
+
+    assert exc.value.status_code == 422
+    assert "servicio compuesto" in exc.value.detail

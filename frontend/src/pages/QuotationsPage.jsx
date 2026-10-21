@@ -437,7 +437,8 @@ function buildQuotationItemPayload(itemForm) {
     catalog_item_id: itemForm.catalogItemId ? Number(itemForm.catalogItemId) : null,
     service_name: itemForm.description.trim(),
     description: itemForm.observations?.trim() || null,
-    ...(Array.isArray(itemForm.commercialComponents) ? {
+    ...(Array.isArray(itemForm.commercialComponents) &&
+    itemForm.commercialComponents.length > 0 ? {
       commercial_components: itemForm.commercialComponents.map((component) => ({
         catalog_item_id: component.catalog_item_id,
         description: component.description || ''
