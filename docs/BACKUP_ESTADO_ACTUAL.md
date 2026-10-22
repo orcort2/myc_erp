@@ -8,6 +8,17 @@
 
 # Estado operativo actual del ERP MYC
 
+## MYC-ASSISTANT-1A — vinculación Telegram ↔ usuario MYC (2026-10-21, sin commit)
+
+- Sólo núcleo backend: `assistant_link_requests` y `assistant_account_links` (modelos, servicio `assistant_account_linking`, auditoría `assistant_link.*`). Sin endpoints, Telegram, push, UI Mobile ni IA.
+- Migración `b7d2e4a6c8f1` sobre `a3c5e7f9b1d2` (head único); aditiva y reversible. No aplicada a bases operativas/locales; `backup_erp_myc_antes_prueba.sql` no regenerado. Validada en PostgreSQL 16 desechable (upgrade completo, downgrade -1, re-upgrade).
+- La aprobación exige el contexto Mobile autenticado y la credencial biométrica real de `resolve_biometric_credential`; el código de seis dígitos es sólo comparación visual.
+- Pendiente: capa HTTP/bot, notificación al usuario candidato, limitación de tasa de creación, revocación automática al deshabilitar cuentas (hoy `resolve_active_link` niega el acceso en lectura).
+- Corrección 1A.1 (2026-10-21, sin commit): orden único de bloqueos dispositivo → credencial → usuario → solicitudes (id asc) → vínculos activos; lecturas puras (estado efectivo por `expires_at`, sin escritura ni auditoría); sin commits en helpers de error (la denegación hace rollback y audita en sesión independiente); `comparison_code` nulo fuera de `pending` (check de BD; migración 1A editada en sitio por no estar desplegada); revocación exige cuenta interna activa. Pruebas de carreras en PostgreSQL desechable (`ASSISTANT_LINK_POSTGRES_TEST_URL`).
+- Corrección 1A.2 (2026-10-21, sin commit): orden de bloqueos uniforme (incl. `create_link_request` y `revoke_link`), `lock_timeout` acotado, rollback ante cualquier excepción no de dominio, `_deny` sólo hace rollback y la auditoría de denegaciones sale del dominio (`record_link_denial`, para el adaptador). Sin cambios de modelo ni migración. Pendiente MYC-ASSISTANT-1A.3: autorización reforzada de un solo uso (contrato en `DECISIONS.md`).
+- Dependencia de MYC-ASSISTANT-1B: aprobación por contraseña para usuarios sin biometría (contrato en `DECISIONS.md`); no implementada.
+- Prueba preexistente desactualizada: `test_quotation_contact_migration_is_the_single_head` espera el head `ffcd7b40ac46` (ya fallaba con `a3c5e7f9b1d2`).
+
 ## Integración selectiva Fase 3B (2026-10-20)
 
 - Implementación en árbol principal; fuente `myc_erp-phase3b` y respaldo existente conservados.

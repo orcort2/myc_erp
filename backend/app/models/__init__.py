@@ -105,6 +105,8 @@ from app.models.mobile_trusted_device import MobileTrustedDevice
 from app.models.mobile_auth_session import MobileAuthSession
 from app.models.mobile_biometric_credential import MobileBiometricCredential
 from app.models.developer_session import DeveloperSession
+from app.models.assistant_link_request import AssistantLinkRequest
+from app.models.assistant_account_link import AssistantAccountLink
 from app.models.notification import Notification, PushDevice
 from app.models.portal_invitation import PortalInvitation
 from app.models.portal_invitation_role import PortalInvitationRole
@@ -359,6 +361,8 @@ __all__ = [
     "MobileAuthSession",
     "MobileBiometricCredential",
     "DeveloperSession",
+    "AssistantLinkRequest",
+    "AssistantAccountLink",
     "User",
     "UserPermissionOverride",
 ]
