@@ -788,7 +788,9 @@ def regenerate_corrected_lab_field_sheet_pdf(db, field_sheet: FieldSheet) -> tup
     if digest == field_sheet.final_pdf_sha256:
         return old_content, filename
 
-    # Content-addressed name: a correction never overwrites historical bytes.
+    # A corrected artifact must never be produced implicitly by a read.
+    # The caller is responsible for authorization, audit, and transaction
+    # ownership; historical signed revisions remain immutable.
     stored = save_validated_content(
         directory=Path("field-sheets") / str(field_sheet.id) / "final",
         filename=f"corrected-{digest}.pdf",
