@@ -35,7 +35,7 @@ def test_every_http_operation_has_an_explicit_access_classification():
     # SG-4J-A4 adds technical intervention operations.
     # REVISION-CYCLE adds acceptance history/PDF and ETS archive read operations.
     # Integration audit: validate the combined runtime inventory.
-    assert len(operations) == 598
+    assert len(operations) == 599
     assert all(classify_operation(item.method, item.path, item.tags) for item in operations)
 
 
