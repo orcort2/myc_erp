@@ -597,8 +597,8 @@ def test_direct_domain_error_rolls_back_pending_changes(mobile_security_api):
         telegram_chat_id=TG + 1,
         candidate_user_id=data["staff"].id,
     ) == "invalid_identity"
-    assert code_of(db, "unrelated.direct_error_marker") == []
     assert not db.in_transaction()
+    assert code_of(db, "unrelated.direct_error_marker") == []
 
 
 def test_missing_strong_auth_rolls_back_pending_changes(mobile_security_api):
@@ -613,8 +613,8 @@ def test_missing_strong_auth_rolls_back_pending_changes(mobile_security_api):
         context=ctx,
         biometric_credential="",
     ) == "strong_auth_required"
-    assert code_of(db, "unrelated.strong_auth_marker") == []
     assert not db.in_transaction()
+    assert code_of(db, "unrelated.strong_auth_marker") == []
 
 
 def test_denial_audit_error_does_not_log_database_parameters(mobile_security_api, caplog):
