@@ -4280,6 +4280,60 @@ def distribute_pending_certificate_folios(
     return LabCertificateFolioDistributionResult(work_order_id=work_order.id, assigned=assigned)
 
 
+def reconcile_corrected_lab_field_sheet_pdf(
+    db: Session, work_order_id: int, equipment_id: int, user: User, reason: str
+) -> dict:
+    """Explicit administrative reconciliation after an authorized folio correction.
+
+    Does not change the equipment folio, signatures, or the historical PDF.
+    Delivery and completed-order corrections require the established reopening
+    workflow; this operation is intentionally restricted to an open correction.
+    """
+    from app.services.field_sheet_pdfs import (
+        guard_final_pdf_write,
+        regenerate_corrected_lab_field_sheet_pdf,
+    )
+    from app.services.lab_work_order_deliveries import get_active_delivery_item_for_equipment
+
+    reason = reason.strip()
+    if len(reason) < 10:
+        raise HTTPException(status_code=422, detail="CORRECTION_REASON_REQUIRED")
+    order = _get(db, work_order_id, lock=True)
+    if order.status in {"completed", "partially_closed", "cancelled"}:
+        raise HTTPException(status_code=409, detail="REOPEN_WORK_ORDER_BEFORE_PDF_CORRECTION")
+    equipment = next((item for item in order.equipment if item.id == equipment_id and item.is_active), None)
+    if equipment is None:
+        raise HTTPException(status_code=404, detail="Equipo LAB no encontrado")
+    if get_active_delivery_item_for_equipment(db, equipment.id) is not None:
+        raise HTTPException(status_code=409, detail="DELIVERY_IMPACT_REQUIRED")
+    sheet = equipment.field_sheet
+    if sheet is None:
+        raise HTTPException(status_code=409, detail="LAB_FIELD_SHEET_NOT_FOUND")
+    if not equipment.certificate_folio:
+        raise HTTPException(status_code=409, detail="CERTIFICATE_FOLIO_REQUIRED")
+    previous = {"path": sheet.final_pdf_path, "sha256": sheet.final_pdf_sha256}
+    with guard_final_pdf_write(db, sheet):
+        regenerate_corrected_lab_field_sheet_pdf(db, sheet)
+        result = {
+            "field_sheet_id": sheet.id,
+            "certificate_folio": equipment.certificate_folio,
+            "previous_pdf_sha256": previous["sha256"],
+            "final_pdf_sha256": sheet.final_pdf_sha256,
+            "changed": previous["sha256"] != sheet.final_pdf_sha256,
+        }
+        write_audit_log(
+            db,
+            action="lab_field_sheet.pdf_reconciled",
+            entity="field_sheets",
+            entity_id=sheet.id,
+            user_id=user.id,
+            previous_values=previous,
+            new_values={**result, "path": sheet.final_pdf_path, "reason": reason},
+        )
+        db.commit()
+    return result
+
+
 def get_pdf(db: Session, work_order_id: int) -> tuple[bytes, str]:
     work_order = _get(db, work_order_id)
     if work_order.status not in {"completed", "partially_closed"} or not work_order.final_pdf:
