@@ -1,5 +1,7 @@
 from typing import Literal
 
+from pydantic import BaseModel, Field
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -86,6 +88,7 @@ from app.services.lab_work_orders import (
     get_work_order,
     list_work_orders,
     preview_pending_certificate_folio_distribution,
+    reconcile_corrected_lab_field_sheet_pdf,
     prevalidate_equipment_by_equipment_finalization,
     prevalidate_lab_signature_group,
     set_equipment_certificate_client,
@@ -1612,6 +1615,28 @@ def post_reopen_lab_work_order_directly(
         reason=payload.reason,
         delivery_impacts=payload.delivery_impacts,
         expected_cohort_revision=payload.expected_cohort_revision,
+    )
+
+
+class LabPdfReconciliationRequest(BaseModel):
+    reason: str = Field(min_length=10, max_length=1000)
+
+
+@router.post("/{work_order_id}/equipment/{equipment_id}/field-sheet/reconcile-pdf")
+def post_reconcile_corrected_lab_field_sheet_pdf(
+    work_order_id: int,
+    equipment_id: int,
+    payload: LabPdfReconciliationRequest,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("work_orders.reopen", "lab_work_orders.use")
+    ),
+) -> dict:
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="PDF_CORRECTION_NOT_AUTHORIZED")
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return reconcile_corrected_lab_field_sheet_pdf(
+        db, work_order_id, equipment_id, context.user, payload.reason
     )
 
 
