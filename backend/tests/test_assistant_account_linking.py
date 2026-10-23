@@ -585,3 +585,48 @@ def test_unexpected_failure_rolls_back_and_releases_state(mobile_security_api, m
     monkeypatch.setattr(svc, "_audit", real_audit)
     assert svc.approve_link_request(db, public_id=request.public_id, context=ctx,
                                     biometric_credential=credential).status == "active"
+
+
+def test_direct_domain_error_rolls_back_pending_changes(mobile_security_api):
+    api, db, data = mobile_security_api
+    db.add(AuditLog(action="unrelated.direct_error_marker", entity="marker", entity_id=None))
+    assert err(
+        svc.create_link_request,
+        db,
+        telegram_user_id=TG,
+        telegram_chat_id=TG + 1,
+        candidate_user_id=data["staff"].id,
+    ) == "invalid_identity"
+    assert code_of(db, "unrelated.direct_error_marker") == []
+    assert not db.in_transaction()
+
+
+def test_missing_strong_auth_rolls_back_pending_changes(mobile_security_api):
+    api, db, data = mobile_security_api
+    ctx, _credential, _ = mobile(api, db, data["staff"])
+    request = new_request(db, data["staff"])
+    db.add(AuditLog(action="unrelated.strong_auth_marker", entity="marker", entity_id=None))
+    assert err(
+        svc.approve_link_request,
+        db,
+        public_id=request.public_id,
+        context=ctx,
+        biometric_credential="",
+    ) == "strong_auth_required"
+    assert code_of(db, "unrelated.strong_auth_marker") == []
+    assert not db.in_transaction()
+
+
+def test_denial_audit_error_does_not_log_database_parameters(mobile_security_api, caplog):
+    from sqlalchemy.exc import OperationalError
+
+    def broken_factory():
+        raise OperationalError("SENSITIVE_SQL_STATEMENT", {"token": "SENSITIVE_VALUE"}, Exception("down"))
+
+    with caplog.at_level("WARNING", logger=svc.__name__):
+        assert svc.record_link_denial(
+            action="assistant_link.approve_denied", code="not_found", session_factory=broken_factory
+        ) is False
+    assert "assistant link denial audit could not be persisted" in caplog.text
+    assert "SENSITIVE_SQL_STATEMENT" not in caplog.text
+    assert "SENSITIVE_VALUE" not in caplog.text

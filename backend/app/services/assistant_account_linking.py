@@ -168,20 +168,19 @@ def record_link_denial(
             audit_db.commit()
         return True
     except SQLAlchemyError:
-        logger.exception("assistant link denial audit could not be persisted")
+        logger.warning("assistant link denial audit could not be persisted")
         return False
 
 
 def _owns_transaction(function):
-    """Writers own their transaction: anything that is not a domain error
-    (those already rolled back via ``_deny``) rolls back before propagating."""
+    """Writers own their transaction: roll back on every failed exit,
+    including domain errors raised before ``_deny`` is reached.
+    A rollback after an explicitly committed expiry does not undo it."""
 
     @functools.wraps(function)
     def wrapper(db, *args, **kwargs):
         try:
             return function(db, *args, **kwargs)
-        except AssistantLinkError:
-            raise
         except BaseException:
             db.rollback()
             raise
