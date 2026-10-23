@@ -756,6 +756,52 @@ def freeze_final_field_sheet_pdf(db, field_sheet: FieldSheet) -> tuple[bytes, st
     return content, filename
 
 
+def regenerate_corrected_lab_field_sheet_pdf(db, field_sheet: FieldSheet) -> tuple[bytes, str]:
+    """Stage a corrected LAB PDF without overwriting its signed predecessor.
+
+    Caller must hold the row lock, authorize the correction, wrap this call
+    and its commit in guard_final_pdf_write, and audit the intervention.
+    This is deliberately NOT invoked by ordinary PDF downloads.
+    """
+    if (
+        field_sheet.lab_equipment_id is None
+        or not field_sheet.is_current
+        or field_sheet.status != "completed"
+        or not field_sheet.final_pdf_path
+        or not field_sheet.lab_signature_session_id
+    ):
+        raise HTTPException(status_code=409, detail="LAB_FIELD_SHEET_CORRECTION_NOT_ALLOWED")
+
+    old_file = require_deliverable_file(
+        field_sheet.final_pdf_path,
+        not_found_detail="El PDF original no esta disponible",
+    )
+    old_content = old_file.read_bytes()
+    if not field_sheet.final_pdf_sha256 or sha256(old_content).hexdigest() != field_sheet.final_pdf_sha256:
+        raise HTTPException(status_code=409, detail="LAB_FIELD_SHEET_ORIGINAL_HASH_MISMATCH")
+
+    content, filename = _render_pdf(db, field_sheet)
+    if not content.startswith(b"%PDF-"):
+        raise HTTPException(status_code=409, detail="LAB_FIELD_SHEET_INVALID_RENDER")
+
+    digest = sha256(content).hexdigest()
+    if digest == field_sheet.final_pdf_sha256:
+        return old_content, filename
+
+    # Content-addressed name: a correction never overwrites historical bytes.
+    stored = save_validated_content(
+        directory=Path("field-sheets") / str(field_sheet.id) / "final",
+        filename=f"corrected-{digest}.pdf",
+        content=content,
+        original_filename=filename,
+    )
+    field_sheet.final_pdf_path = stored.relative_path
+    field_sheet.final_pdf_sha256 = stored.checksum_sha256
+    field_sheet.final_pdf_generated_at = datetime.now(timezone.utc)
+    db.flush()
+    return content, filename
+
+
 def generate_field_sheet_pdf(db, field_sheet_id: int) -> tuple[bytes, str]:
     # Local import avoids a service cycle: completion invokes the low-level
     # freezer while the read endpoint still reuses the canonical loader.
